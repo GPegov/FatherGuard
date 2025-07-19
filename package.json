@@ -1,0 +1,10 @@
+{
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "dependencies": {
+    "docx": "^9.5.1",
+    "lowdb": "6.0.0",
+    "pdf-parse": "^1.1.1"
+  }
+}

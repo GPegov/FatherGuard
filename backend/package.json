@@ -1,0 +1,31 @@
+{
+  "dependencies": {
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "fs-extra": "^11.3.0",
+    "multer": "^2.0.1",
+    "natural": "^8.1.0",
+    "pdf-lib": "^1.17.1",
+    "lowdb": "^6.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "name": "backend",
+  "version": "1.0.0",
+  "type": "module",
+  
+  "description": "",
+  "main": "app.mjs",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node app.mjs",
+    "dev": "nodemon app.mjs"
+
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+  
+}
