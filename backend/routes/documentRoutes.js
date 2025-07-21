@@ -1,3 +1,4 @@
+import aiService from '../services/aiService.js';
 import { Router } from 'express'
 import pdf from 'pdf-parse'
 import fs from 'fs/promises'
@@ -151,31 +152,102 @@ export default function documentRoutes({ db, upload }) {
 
   // Анализ документа
   router.post('/:id/analyze', async (req, res) => {
-    try {
-      const doc = db.data.documents.find(d => d.id === req.params.id)
-      if (!doc) return res.status(404).json({ message: 'Документ не найден' })
-
-      // Заглушка для интеграции с AI
-      const analysisResult = {
-        summary: doc.originalText.substring(0, 150) + '... [анализ]',
-        keyParagraphs: doc.originalText.length > 200 ? [
-          doc.originalText.substring(50, 200),
-          doc.originalText.substring(300, Math.min(450, doc.originalText.length))
-        ] : [doc.originalText]
-      }
-
-      Object.assign(doc, {
-        summary: analysisResult.summary,
-        keyParagraphs: analysisResult.keyParagraphs,
-        updatedAt: new Date().toISOString()
-      })
-      
-      await db.write()
-      res.json(analysisResult)
-    } catch (err) {
-      res.status(500).json({ message: err.message })
+  try {
+    const { model, instructions, strictMode } = req.body;
+    const doc = db.data.documents.find(d => d.id === req.params.id);
+    
+    if (!doc) {
+      return res.status(404).json({ 
+        message: 'Документ не найден',
+        documentId: req.params.id
+      });
     }
-  })
+
+    console.log(`Анализ документа ${req.params.id} с моделью ${model}`);
+    
+    const analysis = await aiService.analyzeLegalText(
+      doc.originalText,
+      instructions,
+      strictMode
+    );
+
+    // Сохраняем только определенные поля
+    const updateData = {
+      summary: analysis.summary,
+      keyParagraphs: analysis.keyParagraphs,
+      updatedAt: new Date().toISOString(),
+      analysisStatus: 'completed'
+    };
+
+    Object.assign(doc, updateData);
+    await db.write();
+
+    res.json({
+      ...updateData,
+      modelUsed: model,
+      analyzedAt: updateData.updatedAt
+    });
+
+  } catch (err) {
+    console.error(`Ошибка анализа документа ${req.params.id}:`, err);
+    
+    res.status(500).json({
+      message: 'Ошибка при анализе документа',
+      error: err.message,
+      documentId: req.params.id,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+
+  router.delete('/:id', async (req, res) => {
+  try {
+    await db.read()
+    const initialLength = db.data.documents.length
+    db.data.documents = db.data.documents.filter(d => d.id !== req.params.id)
+    
+    if (db.data.documents.length === initialLength) {
+      return res.status(404).json({ message: 'Document not found' })
+    }
+    
+    await db.write()
+    res.status(204).end()
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+  
+})
+
+router.post('/:id/complaints', async (req, res) => {
+  try {
+    const { agency } = req.body;
+    if (!agency) return res.status(400).json({ message: 'Не указано ведомство' });
+
+    const complaint = await aiService.generateComplaintV2(
+      req.params.id, 
+      agency,
+      db
+    );
+
+    res.status(201).json(complaint);
+  } catch (err) {
+    res.status(500).json({ 
+      message: err.message || 'Ошибка генерации жалобы',
+      details: err.response?.data
+    });
+  }
+});
+
+router.get('/:id/complaints', async (req, res) => {
+  try {
+    const complaints = db.data.complaints?.filter(c => c.documentId === req.params.id) || [];
+    res.json(complaints);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 
   return router
 }

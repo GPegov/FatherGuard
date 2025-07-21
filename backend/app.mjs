@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from "express";
 import cors from "cors";
 import { fileURLToPath } from "url";
@@ -7,6 +8,7 @@ import { JSONFile } from "lowdb/node";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
+import aiRoutes from './routes/aiRoutes.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -105,6 +107,7 @@ async function startServer() {
         import('./routes/complaintRoutes.js').then(({ default: complaintRoutes }) => {
             app.use('/api/complaints', complaintRoutes({ db }));
         });
+        app.use('/api/ai', aiRoutes);
 
         // Запуск сервера
         const PORT = process.env.PORT || 3001;
@@ -116,6 +119,9 @@ async function startServer() {
         console.error('Server startup failed:', err);
         process.exit(1);
     }
+
 }
+
+
 
 startServer();

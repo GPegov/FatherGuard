@@ -2,6 +2,7 @@ import { Router } from 'express'
 import { v4 as uuidv4 } from 'uuid'
 import * as docx from 'docx';
 
+
 export default function complaintRoutes({ db }) {
   const router = Router()
 
@@ -87,6 +88,24 @@ export default function complaintRoutes({ db }) {
       res.status(500).json({ message: err.message })
     }
   })
+
+  router.delete('/:id', async (req, res) => {
+  try {
+    await db.read()
+    const initialLength = db.data.complaints.length
+    db.data.complaints = db.data.complaints.filter(c => c.id !== req.params.id)
+    
+    if (db.data.complaints.length === initialLength) {
+      return res.status(404).json({ message: 'Complaint not found' })
+    }
+    
+    await db.write()
+    res.status(204).end()
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
 
   return router
 }
