@@ -3,10 +3,22 @@ import { Router } from 'express'
 import pdf from 'pdf-parse'
 import fs from 'fs/promises'
 import { v4 as uuidv4 } from 'uuid'
+import express from 'express'
 import path from 'path'
 
 export default function documentRoutes({ db, upload }) {
   const router = Router()
+
+  router.use(express.json({
+  verify: (req, res, buf, encoding) => {
+    try {
+      JSON.parse(buf.toString());
+    } catch (e) {
+      console.error('Invalid JSON:', buf.toString());
+      throw new Error('Invalid JSON');
+    }
+  }
+}));
 
   // Универсальный обработчик загрузки (текст + файлы)
   router.post('/upload', upload.array('files'), async (req, res) => {
