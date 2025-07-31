@@ -20,6 +20,7 @@ coverage
 
 node_modules/
 models/
+.git/
 
 
 # Editor directories and files
