@@ -19,9 +19,7 @@ coverage
 /cypress/screenshots/
 
 node_modules/
-blobs/
-deepseek-r1-14b/
-manifests/
+models/
 
 
 # Editor directories and files
