@@ -7,6 +7,7 @@ export const useDocumentStore = defineStore('document', () => {
   const router = useRouter()
   
   // Состояние хранилища
+  
   const currentDocument = ref({
     id: null,
     date: new Date().toISOString().split('T')[0],
