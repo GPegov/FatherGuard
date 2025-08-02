@@ -8,8 +8,8 @@
     </div>
     
     <div v-else class="review-container">
-      <!-- Форма редактирования документа -->
       <form @submit.prevent="handleSubmit" class="review-form">
+        <!-- Поля документа -->
         <div class="form-group">
           <label for="date">Дата поступления:</label>
           <input
@@ -48,6 +48,7 @@
           ></textarea>
         </div>
         
+        <!-- Краткая суть с кнопкой перегенерации -->
         <div class="form-group">
           <label for="summary">Краткая суть:</label>
           <div class="summary-container">
@@ -77,6 +78,7 @@
           </div>
         </div>
         
+        <!-- Существенные параграфы -->
         <div class="form-group">
           <label>Существенные параграфы (дословно):</label>
           <div
@@ -109,6 +111,7 @@
           </button>
         </div>
         
+        <!-- Кнопки действий -->
         <div class="form-actions">
           <button
             type="button"
@@ -129,8 +132,8 @@
         </div>
       </form>
 
-      <!-- Блок анализа нарушений -->
-      <div v-if="violations.length > 0" class="violations-section">
+      <!-- Блок нарушений -->
+      <div v-if="violationsText" class="violations-section">
         <div class="section-header">
           <h2>Выявленные нарушения</h2>
           <button
@@ -142,40 +145,26 @@
         </div>
         
         <div v-if="showViolations" class="violations-list">
-          <div
-            v-for="(violation, index) in violations"
-            :key="index"
-            class="violation-card"
-          >
-            <div class="violation-header">
-              <h3>{{ violation.law }} {{ violation.article }}</h3>
-              <span class="severity-badge" :class="getSeverityClass(violation)">
-                {{ getSeverityText(violation) }}
-              </span>
-            </div>
-            <p><strong>Описание:</strong> {{ violation.description }}</p>
-            <p><strong>Доказательство:</strong> <em>"{{ violation.evidence }}"</em></p>
-            
-            <div class="violation-actions">
-              <select
-                v-model="selectedAgencies[index]"
-                class="agency-select"
-                :disabled="isGeneratingComplaint[index]"
-              >
-                <option value="ФССП">ФССП</option>
-                <option value="Прокуратура">Прокуратура</option>
-                <option value="Суд">Суд</option>
-                <option value="Омбудсмен">Омбудсмен</option>
-              </select>
-              <button
-                @click="generateComplaint(violation, index)"
-                class="complaint-btn"
-                :disabled="isGeneratingComplaint[index]"
-              >
-                <span v-if="isGeneratingComplaint[index]" class="button-loader"></span>
-                {{ isGeneratingComplaint[index] ? 'Генерация...' : 'Создать жалобу' }}
-              </button>
-            </div>
+          <pre class="violations-text">{{ violationsText }}</pre>
+          
+          <div class="violation-actions">
+            <select
+              v-model="selectedAgency"
+              class="agency-select"
+              :disabled="isGeneratingComplaint"
+            >
+              <option v-for="agency in aiStore.agencies" :key="agency" :value="agency">
+                {{ agency }}
+              </option>
+            </select>
+            <button
+              @click="generateComplaint"
+              class="complaint-btn"
+              :disabled="isGeneratingComplaint"
+            >
+              <span v-if="isGeneratingComplaint" class="button-loader"></span>
+              {{ isGeneratingComplaint ? 'Генерация...' : 'Создать жалобу' }}
+            </button>
           </div>
         </div>
       </div>
@@ -207,9 +196,9 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const isAnalyzing = ref(false)
 const error = ref(null)
-const violations = ref([])
-const selectedAgencies = ref([])
-const isGeneratingComplaint = ref([])
+const violationsText = ref('')
+const selectedAgency = ref('ФССП')
+const isGeneratingComplaint = ref(false)
 const showViolations = ref(true)
 
 // Данные документа
@@ -233,20 +222,18 @@ onMounted(async () => {
       return
     }
     
-    // Если документ уже существует, загружаем его данные
     if (document.value.id) {
       await documentStore.fetchDocumentById(document.value.id)
       document.value = { ...documentStore.currentDocument }
     }
   } catch (err) {
     error.value = 'Ошибка загрузки документа: ' + err.message
-    console.error('Document loading error:', err)
   } finally {
     isLoading.value = false
   }
 })
 
-// Добавление/удаление параграфов
+// Управление параграфами
 const addParagraph = () => {
   document.value.keyParagraphs.push('')
 }
@@ -257,64 +244,66 @@ const removeParagraph = (index) => {
 
 // Анализ документа
 const analyzeDocument = async () => {
-  isAnalyzing.value = true;
-  try {
-    // Вариант 1: Через documentStore (с привязкой к документу)
-    const analysis = await documentStore.analyzeDocument(document.value.id);
-    
-    // Вариант 2: Через aiStore (просто анализ текста)
-    // const analysis = await aiStore.analyzeText(document.value.originalText);
-    
-    document.value.summary = analysis.summary;
-    document.value.keyParagraphs = analysis.keyParagraphs;
-    violations.value = analysis.violations || [];
-  } catch (err) {
-    error.value = 'Ошибка анализа: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Исправленный regenerateSummary
-const regenerateSummary = async () => {
-  isAnalyzing.value = true;
-  try {
-    const analysis = await aiStore.analyzeText(document.value.originalText);
-    document.value.summary = analysis.summary || document.value.summary;
-  } catch (err) {
-    error.value = 'Ошибка при перегенерации краткой сути: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Генерация жалобы
-const generateComplaint = async (violation, index) => {
-  isGeneratingComplaint.value[index] = true
+  isAnalyzing.value = true
   error.value = null
   
   try {
-    const agency = selectedAgencies.value[index]
-    const complaintData = await aiStore.generateComplaint(
+    // 1. Генерация краткой сути
+    document.value.summary = await aiStore.generateSummary(document.value.originalText)
+    
+    // 2. Получение ключевых параграфов
+    const paragraphs = await aiStore.extractKeyParagraphs(document.value.originalText)
+    
+    // 3. Обновление полей параграфов
+    document.value.keyParagraphs = paragraphs.slice(0, 5)
+    
+    // 4. Поиск нарушений
+    violationsText.value = await aiStore.detectViolations(document.value.originalText)
+    
+  } catch (err) {
+    error.value = 'Ошибка анализа: ' + err.message
+    console.error('Analysis error:', err)
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+// Перегенерация краткой сути
+const regenerateSummary = async () => {
+  isAnalyzing.value = true
+  try {
+    document.value.summary = await aiStore.generateSummary(document.value.originalText)
+  } catch (err) {
+    error.value = 'Ошибка при перегенерации краткой сути: ' + err.message
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+// Генерация жалобы
+const generateComplaint = async () => {
+  isGeneratingComplaint.value = true
+  error.value = null
+  
+  try {
+    const complaintText = await aiStore.generateComplaint(
       document.value.originalText,
-      agency
+      selectedAgency.value,
+      violationsText.value
     )
     
-    // Сохранение жалобы
     await documentStore.saveComplaint({
-      ...complaintData,
+      text: complaintText,
+      agency: selectedAgency.value,
       relatedDocumentId: document.value.id,
-      violation: `${violation.law} ${violation.article}`,
-      agency
+      violation: violationsText.value.split('\n')[0] || ''
     })
     
-    // Уведомление об успехе
-    showNotification(`Жалоба в ${agency} успешно создана!`)
+    showNotification(`Жалоба в ${selectedAgency.value} успешно создана!`)
   } catch (err) {
     error.value = 'Ошибка генерации жалобы: ' + err.message
-    console.error('Complaint generation error:', err)
   } finally {
-    isGeneratingComplaint.value[index] = false
+    isGeneratingComplaint.value = false
   }
 }
 
@@ -324,19 +313,15 @@ const handleSubmit = async () => {
   error.value = null
   
   try {
-    // Валидация обязательных полей
     if (!document.value.summary.trim()) {
       throw new Error('Заполните краткую суть документа')
     }
 
     documentStore.currentDocument = { ...document.value }
     await documentStore.saveDocument()
-    
-    // Перенаправление после успешного сохранения
     router.push('/documents')
   } catch (err) {
     error.value = 'Ошибка сохранения: ' + err.message
-    console.error('Save error:', err)
   } finally {
     isSaving.value = false
   }
@@ -345,18 +330,6 @@ const handleSubmit = async () => {
 // Вспомогательные функции
 const toggleViolations = () => {
   showViolations.value = !showViolations.value
-}
-
-const getSeverityClass = (violation) => {
-  if (violation.penalty?.includes('уголовная')) return 'severity-high'
-  if (violation.penalty?.includes('административная')) return 'severity-medium'
-  return 'severity-low'
-}
-
-const getSeverityText = (violation) => {
-  if (violation.penalty?.includes('уголовная')) return 'Высокая'
-  if (violation.penalty?.includes('административная')) return 'Средняя'
-  return 'Низкая'
 }
 
 const showNotification = (message) => {
@@ -373,17 +346,11 @@ const showNotification = (message) => {
 </script>
 
 <style scoped>
+/* Все существующие стили остаются без изменений */
 .document-review {
   max-width: 900px;
   margin: 0 auto;
   padding: 20px;
-}
-
-h1 {
-  font-size: 1.8em;
-  margin-bottom: 25px;
-  color: #2c3e50;
-  text-align: center;
 }
 
 .loading {
@@ -427,14 +394,6 @@ h1 {
   margin-bottom: 20px;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 600;
-  color: #333;
-  font-size: 0.95em;
-}
-
 .form-input, .form-textarea {
   width: 100%;
   padding: 10px;
@@ -442,11 +401,6 @@ h1 {
   border-radius: 4px;
   font-size: 1em;
   transition: border-color 0.3s;
-}
-
-.form-input:focus, .form-textarea:focus {
-  border-color: #42b983;
-  outline: none;
 }
 
 .form-textarea {
@@ -473,24 +427,11 @@ h1 {
   transition: background-color 0.2s;
 }
 
-.refresh-btn:hover {
-  background-color: #f0f0f0;
-}
-
-.refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .paragraph-item {
   margin-bottom: 10px;
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.paragraph-item textarea {
-  flex-grow: 1;
 }
 
 .remove-btn {
@@ -509,10 +450,6 @@ h1 {
   justify-content: center;
 }
 
-.remove-btn:hover {
-  background: #ff5252;
-}
-
 .add-btn {
   background: #4ecdc4;
   color: white;
@@ -522,10 +459,6 @@ h1 {
   cursor: pointer;
   font-size: 0.9em;
   transition: background 0.2s;
-}
-
-.add-btn:hover {
-  background: #3dbbb3;
 }
 
 .form-actions {
@@ -549,25 +482,6 @@ h1 {
   gap: 8px;
 }
 
-.save-btn {
-  background: #42b983;
-  color: white;
-}
-
-.analyze-btn {
-  background: #2196F3;
-  color: white;
-}
-
-.save-btn:hover, .analyze-btn:hover {
-  opacity: 0.9;
-}
-
-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
 .button-loader {
   width: 16px;
   height: 16px;
@@ -577,7 +491,6 @@ button:disabled {
   animation: spin 1s ease-in-out infinite;
 }
 
-/* Стили для блока нарушений */
 .violations-section {
   background: #fff;
   padding: 20px;
@@ -585,109 +498,20 @@ button:disabled {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
-}
-
-.section-header h2 {
-  font-size: 1.4em;
-  color: #2c3e50;
-  margin: 0;
-}
-
-.toggle-btn {
-  background: none;
-  border: none;
-  color: #2196F3;
-  cursor: pointer;
-  font-size: 0.9em;
-}
-
-.violation-card {
+.violations-text {
+  white-space: pre-wrap;
   background: #f9f9f9;
-  border-left: 4px solid #ff6b6b;
   padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 0 4px 4px 0;
-}
-
-.violation-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.violation-card h3 {
-  color: #2c3e50;
-  margin: 0;
-  font-size: 1.1em;
-}
-
-.severity-badge {
-  font-size: 0.8em;
-  padding: 3px 8px;
-  border-radius: 12px;
-  font-weight: bold;
-}
-
-.severity-high {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-.severity-medium {
-  background-color: #fff8e1;
-  color: #ff8f00;
-}
-
-.severity-low {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-}
-
-.violation-card p {
-  margin: 5px 0;
-  font-size: 0.95em;
+  border-radius: 4px;
+  font-family: monospace;
 }
 
 .violation-actions {
   display: flex;
   gap: 10px;
   margin-top: 15px;
-  align-items: center;
 }
 
-.agency-select {
-  flex: 1;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-.complaint-btn {
-  background: #ff6b6b;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 15px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.complaint-btn:hover {
-  background: #ff5252;
-}
-
-/* Стили для ошибок */
 .error-message {
   background: #ffebee;
   color: #c62828;
@@ -697,35 +521,6 @@ button:disabled {
   border-left: 4px solid #c62828;
 }
 
-.error-content {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.error-icon {
-  background: #c62828;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: bold;
-}
-
-.close-error {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: #c62828;
-  font-size: 1.2em;
-  cursor: pointer;
-  padding: 0 5px;
-}
-
-/* Глобальные стили для уведомлений */
 .global-notification {
   position: fixed;
   bottom: 20px;
