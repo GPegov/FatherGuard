@@ -1,180 +1,113 @@
-import axios from "axios";
-import { readFile } from "fs/promises";
 
-class AIService {
+import axios from "axios";
+
+export class AIService {
   constructor() {
-    // Настройки для локальной модели
-    this.localModelUrl = process.env.LOCAL_MODEL_URL || "http://localhost:11434";
-    this.modelName = "deepseek-r1:14b";
-    this.defaultOptions = {
-      temperature: 0.3,
-      max_tokens: 2000,
-      repeat_penalty: 1.2,
-      format: "json" // Запрашиваем ответ в JSON формате
-    };
-    
-    // Кеш для результатов анализа
-    this.analysisCache = new Map();
+    this.baseUrl = "http://localhost:11434/api/generate";
+    this.model = "deepseek-r1:14b";
   }
 
   /**
-   * Основной метод для взаимодействия с локальной моделью
+   * Базовый метод для строковых запросов
    */
-  async queryLocalModel(prompt, customOptions = {}) {
-    const options = {
-      ...this.defaultOptions,
-      ...customOptions,
-      prompt: this.preparePrompt(prompt)
-    };
-
+  async queryModelString(prompt, options = {}) {
     try {
       const response = await axios.post(
-        `${this.localModelUrl}/api/generate`,
+        this.baseUrl,
         {
-          model: this.modelName,
-          ...options
+          model: this.model,
+          prompt: prompt,
+          format: "text", // Запрашиваем текстовый ответ
+          stream: false,
+          options: {
+            temperature: options.temperature || 0.3,
+            max_tokens: options.max_tokens || 4096,
+          },
         },
         {
-          timeout: 120000 // 2 минуты на обработку
+          timeout: 500000,
+          headers: { "Content-Type": "application/json" },
         }
       );
-      
-      return this.parseModelResponse(response.data);
+
+      // Возвращаем чистый текст ответа
+      return response.data?.response || response.data;
     } catch (error) {
-      console.error("Model query error:", {
-        error: error.response?.data || error.message,
-        config: error.config
-      });
-      throw this.normalizeError(error);
+      console.error("Ошибка запроса к модели:", error);
+      throw error;
     }
   }
 
   /**
-   * Улучшенный анализ юридического текста
+   * Генерация краткой сути (этап 1)
    */
-  async analyzeLegalText(text, instructions = "", strictMode = false) {
-    const cacheKey = this.generateCacheKey(text, instructions);
-    if (this.analysisCache.has(cacheKey)) {
-      return this.analysisCache.get(cacheKey);
-    }
-
-    const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
-    const result = await this.queryLocalModel(prompt, {
-      temperature: strictMode ? 0.1 : 0.3 // Более строгие ответы в strictMode
-    });
-
-    this.analysisCache.set(cacheKey, result);
-    return result;
+  async generateSummary(text) {
+    const prompt = `Сгенерируй краткую суть (3-5 предложений) следующего текста:\n\n${text.substring(
+      0,
+      5000
+    )}\n\nКраткая суть:`;
+    const summary = await this.queryModelString(prompt, { temperature: 0.2 });
+    return summary.trim();
   }
 
   /**
-   * Генерация жалобы с улучшенным промптом
+   * Выделение ключевых параграфов (этап 2)
    */
-  async generateComplaint(documentText, agency, violations = []) {
-    const prompt = this.buildComplaintPrompt(documentText, agency, violations);
-    const response = await this.queryLocalModel(prompt, {
-      temperature: 0.5, // Больше креативности для генерации текста
-      max_tokens: 3000
+  async extractKeyParagraphs(text) {
+    const prompt = `Выдели 3-5 самых важных дословных цитат из текста (сохрани оригинальную формулировку):\n\n${text.substring(
+      0,
+      5000
+    )}\n\nЦитаты (в формате JSON-массива): ["цитата1", "цитата2"]`;
+    const paragraphsStr = await this.queryModelString(prompt, {
+      temperature: 0.1,
     });
+
+    try {
+      // Пытаемся извлечь JSON из ответа
+      const jsonMatch = paragraphsStr.match(/\[.*\]/s);
+      return jsonMatch ? JSON.parse(jsonMatch[0]) : [paragraphsStr];
+    } catch (e) {
+      console.warn("Не удалось распарсить цитаты, возвращаем текст как есть");
+      return [paragraphsStr];
+    }
+  }
+  async detectViolations(text) {
+    const prompt = `Проанализируй текст на нарушения законодательства. Верни JSON-массив:
+[
+  {
+    "law": "Название закона",
+    "article": "Статья",
+    "description": "Описание нарушения"
+  }
+]
+
+Текст: ${text.substring(0, 5000)}`;
+
+    const violationsStr = await this.queryModelString(prompt);
+    try {
+      return JSON.parse(violationsStr.match(/\[.*\]/s)[0]);
+    } catch {
+      return [];
+    }
+  }
+  /**
+   * 
+  
+
+   * Полный анализ документа (последовательные запросы)
+   */
+  async analyzeDocument(text) {
+    const [summary, keyParagraphs] = await Promise.all([
+      this.generateSummary(text),
+      this.extractKeyParagraphs(text),
+    ]);
 
     return {
-      content: response.content,
-      violations: response.identifiedViolations || []
+      summary,
+      keyParagraphs,
+      violations: [], 
     };
   }
-
-  // Вспомогательные методы:
-
-  preparePrompt(text) {
-    return `Ты - юридический ассистент. Анализируй документы и создавай жалобы.
-Требования к ответу:
-1. Всегда возвращай валидный JSON
-2. Будь точным в цитатах
-3. Ссылайся на конкретные законы
-
-${text}`;
-  }
-
-  buildAnalysisPrompt(text, instructions, strictMode) {
-    return JSON.stringify({
-      task: "ANALYZE_LEGAL_DOCUMENT",
-      text: text.substring(0, 10000), // Ограничение длины
-      requirements: {
-        summaryLength: "3-5 предложений",
-        keyParagraphs: {
-          count: 3,
-          exactQuotes: true
-        },
-        strictAnalysis: strictMode,
-        additionalInstructions: instructions
-      },
-      lawsToCheck: [
-        "Федеральный закон 'Об исполнительном производстве' №229-ФЗ",
-        "Семейный кодекс РФ",
-        "КоАП РФ"
-      ]
-    });
-  }
-
-  buildComplaintPrompt(text, agency, violations) {
-    return JSON.stringify({
-      task: "GENERATE_COMPLAINT",
-      agency,
-      violations,
-      sourceText: text.substring(0, 5000),
-      requirements: {
-        style: "Официальный",
-        sections: [
-          "Шапка (кому/от кого)",
-          "Описание ситуации",
-          "Нарушения",
-          "Требования",
-          "Приложения"
-        ]
-      }
-    });
-  }
-
-  parseModelResponse(data) {
-    try {
-      // Обработка stream и non-stream ответов
-      const rawResponse = data.response || data;
-      const parsed = typeof rawResponse === 'string' ? JSON.parse(rawResponse) : rawResponse;
-      
-      // Валидация структуры ответа
-      if (parsed.error) {
-        throw new Error(parsed.error);
-      }
-      
-      return parsed;
-    } catch (e) {
-      console.error("Response parsing error:", e);
-      throw new Error("Неверный формат ответа от модели");
-    }
-  }
-
-  normalizeError(error) {
-    const serverError = error.response?.data?.error;
-    if (serverError) {
-      return new Error(`Модель вернула ошибку: ${serverError}`);
-    }
-    return error;
-  }
-
-  generateCacheKey(text, instructions = "") {
-    // Упрощенная хеш-функция для кеширования
-    const str = text.substring(0, 200) + instructions;
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      hash = (hash << 5) - hash + str.charCodeAt(i);
-      hash |= 0;
-    }
-    return hash.toString(36);
-  }
 }
-
-
-
-
 
 export default new AIService();

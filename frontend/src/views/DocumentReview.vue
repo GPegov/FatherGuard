@@ -259,16 +259,20 @@ const removeParagraph = (index) => {
 const analyzeDocument = async () => {
   isAnalyzing.value = true;
   try {
+    console.log('Начало анализа документа...');
     // Вариант 1: Через documentStore (с привязкой к документу)
     const analysis = await documentStore.analyzeDocument(document.value.id);
     
+
     // Вариант 2: Через aiStore (просто анализ текста)
-    // const analysis = await aiStore.analyzeText(document.value.originalText);
-    
+    //const analysis = await aiStore.analyzeText(document.value.originalText);
+    console.log('Результат анализа:', analysis);
+
     document.value.summary = analysis.summary;
     document.value.keyParagraphs = analysis.keyParagraphs;
     violations.value = analysis.violations || [];
   } catch (err) {
+    console.error('Ошибка в компоненте:', err);
     error.value = 'Ошибка анализа: ' + err.message;
   } finally {
     isAnalyzing.value = false;
