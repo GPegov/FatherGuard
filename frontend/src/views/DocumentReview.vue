@@ -9,7 +9,7 @@
     
     <div v-else class="review-container">
       <form @submit.prevent="handleSubmit" class="review-form">
-        <!-- Поля документа -->
+        <!-- Основные поля документа -->
         <div class="form-group">
           <label for="date">Дата поступления:</label>
           <input
@@ -37,18 +37,18 @@
         </div>
         
         <div class="form-group">
-          <label for="originalText">Дословный текст документа:</label>
+          <label for="originalText">Текст документа:</label>
           <textarea
             id="originalText"
             v-model="document.originalText"
             required
             class="form-textarea"
-            rows="6"
+            rows="8"
             placeholder="Вставьте текст или загрузите файл"
           ></textarea>
         </div>
         
-        <!-- Краткая суть с кнопкой перегенерации -->
+        <!-- Краткая суть -->
         <div class="form-group">
           <label for="summary">Краткая суть:</label>
           <div class="summary-container">
@@ -58,14 +58,14 @@
               required
               class="form-textarea"
               rows="3"
-              placeholder="Будет автоматически заполнено после анализа"
+              placeholder="Будет заполнено автоматически"
             ></textarea>
             <button
               v-if="document.summary"
               type="button"
               @click="regenerateSummary"
               class="refresh-btn"
-              :disabled="isAnalyzing"
+              :disabled="aiStore.isLoading"
               title="Перегенерировать краткую суть"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -78,9 +78,9 @@
           </div>
         </div>
         
-        <!-- Существенные параграфы -->
+        <!-- Ключевые параграфы -->
         <div class="form-group">
-          <label>Существенные параграфы (дословно):</label>
+          <label>Существенные параграфы:</label>
           <div
             v-for="(paragraph, index) in document.keyParagraphs"
             :key="index"
@@ -136,6 +136,9 @@
       <div v-if="violationsText" class="violations-section">
         <div class="section-header">
           <h2>Выявленные нарушения</h2>
+          <div class="model-status" :class="aiStore.apiStatus">
+            {{ aiStore.activeModelName }} ({{ aiStore.apiStatus === 'ready' ? 'онлайн' : 'офлайн' }})
+          </div>
           <button
             @click="toggleViolations"
             class="toggle-btn"
@@ -144,7 +147,7 @@
           </button>
         </div>
         
-        <div v-if="showViolations" class="violations-list">
+        <div v-if="showViolations" class="violations-content">
           <pre class="violations-text">{{ violationsText }}</pre>
           
           <div class="violation-actions">
@@ -160,7 +163,7 @@
             <button
               @click="generateComplaint"
               class="complaint-btn"
-              :disabled="isGeneratingComplaint"
+              :disabled="isGeneratingComplaint || !aiStore.isServerOnline"
             >
               <span v-if="isGeneratingComplaint" class="button-loader"></span>
               {{ isGeneratingComplaint ? 'Генерация...' : 'Создать жалобу' }}
@@ -178,17 +181,30 @@
         </div>
       </div>
     </div>
+  <div class="raw-response-section" v-if="rawModelResponse">
+    <h2>Полный ответ модели</h2>
+    <textarea 
+      v-model="rawModelResponse" 
+      readonly
+      class="raw-response-textarea"
+      placeholder="Здесь будет отображаться полный ответ модели..."
+    ></textarea>
   </div>
+  </div>
+
+
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useDocumentStore } from '@/stores/documentStore'
+import { ref, onMounted, computed } from 'vue'
 import { useAIStore } from '@/stores/aiStore'
+import { useDocumentStore } from '@/stores/documentStore'
 import { useRouter } from 'vue-router'
 
-const documentStore = useDocumentStore()
+const rawModelResponse = ref('')
+
 const aiStore = useAIStore()
+const documentStore = useDocumentStore()
 const router = useRouter()
 
 // Состояние компонента
@@ -211,12 +227,15 @@ const document = ref({
   ...documentStore.currentDocument
 })
 
-// Список ведомств
+// Список ведомств из хранилища
 const agenciesList = computed(() => documentStore.agenciesList)
 
-// Инициализация
+// Инициализация компонента
 onMounted(async () => {
   try {
+    // Проверка статуса сервера AI
+    await aiStore.checkServerStatus()
+    
     if (!document.value.id && !document.value.originalText) {
       router.push('/')
       return
@@ -227,7 +246,7 @@ onMounted(async () => {
       document.value = { ...documentStore.currentDocument }
     }
   } catch (err) {
-    error.value = 'Ошибка загрузки документа: ' + err.message
+    error.value = 'Ошибка загрузки: ' + err.message
   } finally {
     isLoading.value = false
   }
@@ -242,39 +261,51 @@ const removeParagraph = (index) => {
   document.value.keyParagraphs.splice(index, 1)
 }
 
-// Анализ документа
+// Основной анализ документа
 const analyzeDocument = async () => {
-  isAnalyzing.value = true
-  error.value = null
-  
+  isAnalyzing.value = true;
+  error.value = null;
+  rawModelResponse.value = '';
+
   try {
-    // 1. Генерация краткой сути
-    document.value.summary = await aiStore.generateSummary(document.value.originalText)
+    const analysis = await aiStore.analyzeDocument(document.value.originalText);
     
-    // 2. Получение ключевых параграфов
-    const paragraphs = await aiStore.extractKeyParagraphs(document.value.originalText)
-    
-    // 3. Обновление полей параграфов
-    document.value.keyParagraphs = paragraphs.slice(0, 5)
-    
-    // 4. Поиск нарушений
-    violationsText.value = await aiStore.detectViolations(document.value.originalText)
-    
+    // Сохраняем полный ответ
+    rawModelResponse.value = JSON.stringify({
+      summary: analysis.summary,
+      paragraphs: analysis.paragraphs,
+      violations: analysis.violations,
+      raw: analysis.rawResponse
+    }, null, 2);
+
+    // Безопасное обновление данных
+    document.value.summary = analysis.summary;
+    document.value.keyParagraphs = [
+      ...analysis.paragraphs,
+      ...Array(Math.max(0, 3 - analysis.paragraphs.length)).fill('')
+    ].slice(0, 5);
+
+    violationsText.value = analysis.violations;
+
   } catch (err) {
-    error.value = 'Ошибка анализа: ' + err.message
-    console.error('Analysis error:', err)
+    error.value = 'Системная ошибка при анализе';
+    rawModelResponse.value = JSON.stringify({
+      error: err.message,
+      stack: err.stack
+    }, null, 2);
   } finally {
-    isAnalyzing.value = false
+    isAnalyzing.value = false;
   }
-}
+};
 
 // Перегенерация краткой сути
 const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
     document.value.summary = await aiStore.generateSummary(document.value.originalText)
+    rawModelResponse.value = `Сгенерирована краткая суть:\n${response}`
   } catch (err) {
-    error.value = 'Ошибка при перегенерации краткой сути: ' + err.message
+    error.value = 'Ошибка перегенерации: ' + err.message
   } finally {
     isAnalyzing.value = false
   }
@@ -346,7 +377,36 @@ const showNotification = (message) => {
 </script>
 
 <style scoped>
-/* Все существующие стили остаются без изменений */
+
+
+.raw-response-section {
+  margin-top: 40px;
+  padding: 20px;
+  background-color: #f8f8f8;
+  border-radius: 8px;
+}
+
+.raw-response-section h2 {
+  font-size: 1.3em;
+  color: #2c3e50;
+  margin-bottom: 15px;
+}
+
+.raw-response-textarea {
+  width: 100%;
+  min-height: 150px;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: monospace;
+  background-color: #fefefe;
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+
+
 .document-review {
   max-width: 900px;
   margin: 0 auto;
@@ -371,10 +431,6 @@ const showNotification = (message) => {
   border-radius: 50%;
   border-top-color: #42b983;
   animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
 }
 
 .review-container {
@@ -498,18 +554,62 @@ const showNotification = (message) => {
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.model-status {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.8em;
+  background: #f0f0f0;
+}
+
+.model-status.ready {
+  background: #e8f5e9;
+  color: #2e7d32;
+}
+
+.model-status.error, .model-status.offline {
+  background: #ffebee;
+  color: #c62828;
+}
+
 .violations-text {
   white-space: pre-wrap;
   background: #f9f9f9;
   padding: 15px;
   border-radius: 4px;
   font-family: monospace;
+  line-height: 1.5;
 }
 
 .violation-actions {
   display: flex;
   gap: 10px;
   margin-top: 15px;
+}
+
+.agency-select {
+  flex: 1;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.complaint-btn {
+  background: #ff6b6b;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 
 .error-message {
@@ -536,6 +636,10 @@ const showNotification = (message) => {
 
 .fade-out {
   animation: fade-out 0.5s ease-out forwards;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @keyframes slide-in {

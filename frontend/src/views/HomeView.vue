@@ -32,7 +32,6 @@ import FileUpload from '@/components/common/FileUpload.vue';
 import { useDocumentStore } from '@/stores/documentStore';
 
 const documentStore = useDocumentStore();
-
 const router = useRouter();
 const userText = ref('');
 const files = ref([]);
@@ -47,9 +46,20 @@ const isFormValid = computed(() => {
 
 const submitData = async () => {
   try {
-    // Создаем документ с текстом
-    documentStore.currentDocument.originalText = userText.value;
-    documentStore.currentDocument.comments = userText.value;
+    // Сбрасываем текущий документ перед созданием нового
+    documentStore.resetCurrentDocument();
+    
+    // Устанавливаем обязательные поля
+    documentStore.currentDocument = {
+      ...documentStore.currentDocument,
+      originalText: userText.value,
+      comments: userText.value,
+      date: new Date().toISOString().split('T')[0], // Добавляем дату
+      agency: '', // Пустое значение по умолчанию
+      summary: '', // Пустое значение по умолчанию
+      keyParagraphs: [], // Пустой массив по умолчанию
+      attachments: [] // Пустой массив по умолчанию
+    };
     
     // Загружаем файлы (если есть)
     if (files.value.length > 0) {
@@ -57,11 +67,16 @@ const submitData = async () => {
     }
     
     // Сохраняем документ
-    await documentStore.saveDocument();
+    const savedDoc = await documentStore.saveDocument();
     
-    router.push('/review');
+    if (savedDoc?.id) {
+      router.push('/review');
+    } else {
+      throw new Error('Не удалось сохранить документ');
+    }
   } catch (error) {
     console.error('Ошибка сохранения:', error);
+    alert(`Ошибка сохранения: ${error.message}`);
   }
 };
 </script>
