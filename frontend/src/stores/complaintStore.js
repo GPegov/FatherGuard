@@ -1,108 +1,139 @@
-import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
-import axios from 'axios'
+import { defineStore } from 'pinia';
+import { ref, computed } from 'vue';
+import axios from 'axios';
+import { saveAs } from 'file-saver';
 
 export const useComplaintStore = defineStore('complaint', () => {
   // Состояние
-  const complaints = ref([])
-  const isLoading = ref(false)
-  const error = ref(null)
-  const selectedAgencies = ref([])
+  const complaints = ref([]);
+  const isLoading = ref(false);
+  const error = ref(null);
+  const isGenerating = ref(false);
+  const isExporting = ref(false);
 
   // Геттеры
-  const agenciesOptions = computed(() => {
-    return [
-      'ФССП',
-      'Прокуратура',
-      'Суд (административное исковое заявление)',
-      'Уполномоченный по правам человека (омбудсмен)'
-      
-    ]
-  })
+  const agenciesOptions = computed(() => [
+    'ФССП',
+    'Прокуратура', 
+    'Суд (административное исковое заявление)',
+    'Уполномоченный по правам человека (омбудсмен)'
+  ]);
 
-  // Базовый URL для API
-  const API_BASE_URL = 'http://localhost:3001/api/complaints'
+  const draftedComplaints = computed(() => 
+    complaints.value.filter(c => c.status === 'draft')
+  );
 
-  // Общая функция для обработки ошибок
-  const handleError = (error, defaultMessage = 'Произошла ошибка') => {
-    const message = error.response?.data?.message || error.message || defaultMessage
-    error.value = message
-    console.error('API Error:', error)
-    throw new Error(message)
-  }
+  const sentComplaints = computed(() =>
+    complaints.value.filter(c => c.status === 'sent')
+  );
 
   // Действия
-  const generateAIComplaint = async (payload) => {
-  const formData = new FormData();
-  formData.append('text', payload.comment);
-  formData.append('agency', payload.agency);
-  formData.append('documentId', payload.documentId);
-  
-  payload.files.forEach(file => {
-    formData.append('attachments', file);
-  });
-
-  const response = await axios.post('/api/complaints/ai-complaint', formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
-  
-  return response.data;
-};
-
   const fetchComplaints = async () => {
-    isLoading.value = true
+    isLoading.value = true;
     try {
-      const { data } = await axios.get(API_BASE_URL)
-      complaints.value = data
-      return data
+      const { data } = await axios.get('/api/complaints');
+      complaints.value = data;
     } catch (err) {
-      handleError(err, 'Ошибка загрузки жалоб')
+      error.value = err.response?.data?.message || err.message;
+      throw err;
     } finally {
-      isLoading.value = false
+      isLoading.value = false;
     }
-  }
+  };
+
+  const generateComplaint = async (payload) => {
+    isGenerating.value = true;
+    try {
+      const { data } = await axios.post('/api/complaints/generate', {
+        documentId: payload.documentId,
+        agency: payload.agency,
+        instructions: payload.instructions,
+        relatedDocumentId: null,
+      });
+      
+      complaints.value.unshift(data);
+      return data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isGenerating.value = false;
+    }
+  };
 
   const exportComplaint = async (complaintId, format = 'txt') => {
+    isExporting.value = true;
     try {
-      const { data } = await axios.get(
-        `${API_BASE_URL}/${complaintId}/export?format=${format}`,
-        { responseType: 'blob' }
-      )
-      return data
+      const response = await axios.get(
+        `/api/complaints/${complaintId}/export?format=${format}`,
+        { responseType: format === 'doc' ? 'blob' : 'text' }
+      );
+      
+      const complaint = complaints.value.find(c => c.id === complaintId);
+      const fileName = `Жалоба_${complaint.agency}_${new Date(complaint.createdAt).toLocaleDateString('ru-RU')}.${format}`;
+      
+      if (format === 'doc') {
+        saveAs(response.data, fileName);
+      } else {
+        const blob = new Blob([response.data], { type: 'text/plain;charset=utf-8' });
+        saveAs(blob, fileName);
+      }
+      
+      return response.data;
     } catch (err) {
-      handleError(err, 'Ошибка при экспорте жалобы')
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isExporting.value = false;
     }
-  }
+  };
 
   const deleteComplaint = async (id) => {
-    isLoading.value = true
+    isLoading.value = true;
     try {
-      await axios.delete(`${API_BASE_URL}/${id}`)
-      // Оптимистичное обновление UI
-      complaints.value = complaints.value.filter(c => c.id !== id)
-      return true
+      await axios.delete(`/api/complaints/${id}`);
+      complaints.value = complaints.value.filter(c => c.id !== id);
+      return true;
     } catch (err) {
-      handleError(err, 'Ошибка при удалении жалобы')
-      return false
+      error.value = err.response?.data?.message || err.message;
+      throw err;
     } finally {
-      isLoading.value = false
+      isLoading.value = false;
     }
-  }
+  };
+
+  const updateComplaintStatus = async (id, status) => {
+    try {
+      const { data } = await axios.patch(`/api/complaints/${id}`, { status });
+      const index = complaints.value.findIndex(c => c.id === id);
+      if (index !== -1) {
+        complaints.value[index] = data;
+      }
+      return data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    }
+  };
 
   return {
-    // State
+    // Состояние
     complaints,
     isLoading,
     error,
-    selectedAgencies,
+    isGenerating,
+    isExporting,
     
-    // Getters
+    // Геттеры
     agenciesOptions,
+    draftedComplaints,
+    sentComplaints,
     
-    // Actions
-    generateAIComplaint,
+    // Действия
     fetchComplaints,
+    generateComplaint,
     exportComplaint,
-    deleteComplaint
-  }
-})
+    deleteComplaint,
+    updateComplaintStatus
+  };
+});

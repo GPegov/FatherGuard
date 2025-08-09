@@ -10,9 +10,10 @@ const router = createRouter({
       component: HomeView,
     },
     {
-      path: "/review",
+      path: "/review/:id", // Добавляем динамический сегмент
       name: "review",
-      component: () => import("@/views/DocumentReview.vue"), // Соответствует вашей структуре
+      component: () => import("@/views/DocumentReview.vue"),
+      props: true,
     },
     {
       path: "/documents",
@@ -29,7 +30,7 @@ const router = createRouter({
       name: "DocumentDetail",
       component: () => import("@/views/DocumentDetail.vue"),
       props: true,
-    }
+    },
   ],
 });
 

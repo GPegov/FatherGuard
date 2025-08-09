@@ -1,114 +1,199 @@
 <template>
   <div class="document-review">
-    <h1>Проверка документа</h1>
-    
-    <div v-if="isLoading" class="loading">
-      <div class="spinner"></div>
-      Загрузка документа...
+    <div class="header">
+      <h1>Предпросмотр документа</h1>
+      <button @click="goBack" class="back-button">← Назад</button>
     </div>
-    
+
+    <div v-if="isLoading" class="loading-state">
+      <div class="spinner"></div>
+      <p>Загрузка данных...</p>
+    </div>
+
     <div v-else class="review-container">
-      <!-- Форма редактирования документа -->
       <form @submit.prevent="handleSubmit" class="review-form">
-        <div class="form-group">
-          <label for="date">Дата поступления:</label>
-          <input
-            type="date"
-            id="date"
-            v-model="document.date"
-            required
-            class="form-input"
-          />
-        </div>
-        
-        <div class="form-group">
-          <label for="agency">Ведомство:</label>
-          <input
-            type="text"
-            id="agency"
-            v-model="document.agency"
-            list="agencies"
-            required
-            class="form-input"
-          />
-          <datalist id="agencies">
-            <option v-for="agency in agenciesList" :key="agency">{{ agency }}</option>
-          </datalist>
-        </div>
-        
-        <div class="form-group">
-          <label for="originalText">Дословный текст документа:</label>
-          <textarea
-            id="originalText"
-            v-model="document.originalText"
-            required
-            class="form-textarea"
-            rows="6"
-            placeholder="Вставьте текст или загрузите файл"
-          ></textarea>
-        </div>
-        
-        <div class="form-group">
-          <label for="summary">Краткая суть:</label>
-          <div class="summary-container">
+        <!-- Основные поля -->
+        <div class="form-section">
+          <h2>Основная информация</h2>
+          <div class="form-group">
+            <label for="date">Дата поступления:</label>
+            <input
+              type="date"
+              id="date"
+              v-model="document.date"
+              required
+              class="form-input"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="agency">Ведомство, допустившее нарушение:</label>
+            <input
+              type="text"
+              id="agency"
+              v-model="document.agency"
+              list="agencies"
+              required
+              class="form-input"
+              placeholder="Выберите ведомство"
+            />
+            <datalist id="agencies">
+              <option v-for="agency in agenciesList" :key="agency">{{ agency }}</option>
+            </datalist>
+          </div>
+
+          <div class="form-group">
+            <label for="originalText">Текст документа:</label>
             <textarea
-              id="summary"
-              v-model="document.summary"
+              id="originalText"
+              v-model="document.originalText"
               required
               class="form-textarea"
-              rows="3"
-              placeholder="Будет автоматически заполнено после анализа"
+              rows="8"
+              placeholder="Введите текст документа"
             ></textarea>
-            <button
-              v-if="document.summary"
-              type="button"
-              @click="regenerateSummary"
-              class="refresh-btn"
-              :disabled="isAnalyzing"
-              title="Перегенерировать краткую суть"
+          </div>
+        </div>
+
+        <!-- Анализ документа -->
+        <div class="form-section" v-if="document.analysisStatus !== 'pending'">
+          <h2>Анализ документа</h2>
+          
+          <div class="form-group" v-if="document.analysisStatus === 'completed'">
+            <label>Краткая суть:</label>
+            <div class="summary-container">
+              <textarea
+                v-model="document.summary"
+                required
+                class="form-textarea"
+                rows="3"
+                placeholder="Анализ выполняется..."
+              ></textarea>
+              <button
+                type="button"
+                @click="regenerateSummary"
+                class="refresh-btn"
+                :disabled="aiStore.isLoading"
+                title="Перегенерировать краткую суть"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                  <path d="M3 3v5h5"/>
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                  <path d="M16 16h5v5"/>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Дата отправления документа:</label>
+            <input 
+              v-model="document.documentDate" 
+              type="date" 
+              class="form-input"
+            />
+          </div>
+
+          <div class="form-group">
+            <label>Ведомство-отправитель:</label>
+            <input 
+              v-model="document.senderAgency" 
+              class="form-input"
+              list="agencies"
+            />
+          </div>
+
+          <!-- Ключевые параграфы -->
+          <div class="form-group" v-if="document.keyParagraphs?.length">
+            <label>Существенные параграфы:</label>
+            <div
+              v-for="(paragraph, index) in document.keyParagraphs"
+              :key="index"
+              class="paragraph-item"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                <path d="M3 3v5h5"/>
-                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                <path d="M16 16h5v5"/>
-              </svg>
+              <textarea
+                v-model="document.keyParagraphs[index]"
+                required
+                class="form-textarea"
+                rows="2"
+              ></textarea>
+              <button
+                type="button"
+                @click="removeParagraph(index)"
+                class="remove-btn"
+                title="Удалить параграф"
+              >
+                ×
+              </button>
+            </div>
+            <button
+              type="button"
+              @click="addParagraph"
+              class="add-btn"
+              title="Добавить параграф"
+            >
+              + Добавить параграф
             </button>
           </div>
         </div>
-        
-        <div class="form-group">
-          <label>Существенные параграфы (дословно):</label>
-          <div
-            v-for="(paragraph, index) in document.keyParagraphs"
-            :key="index"
-            class="paragraph-item"
+
+        <!-- Вложения -->
+        <div class="form-section" v-if="document.attachments?.length">
+          <h2>Вложенные документы</h2>
+          <div 
+            v-for="(attachment, idx) in document.attachments" 
+            :key="attachment.id || idx"
+            class="attachment-analysis"
           >
-            <textarea
-              v-model="document.keyParagraphs[index]"
-              required
-              class="form-textarea"
-              rows="2"
-            ></textarea>
-            <button
-              type="button"
-              @click="removeParagraph(index)"
-              class="remove-btn"
-              title="Удалить параграф"
-            >
-              ×
-            </button>
+            <div class="attachment-header">
+              <h3>{{ attachment.name }}</h3>
+              <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
+            </div>
+            
+            <div v-if="attachment.analysis" class="attachment-details">
+              <div class="detail-row">
+                <span class="detail-label">Тип документа:</span>
+                <span>{{ attachment.analysis.documentType || 'Не указан' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Дата отправления:</span>
+                <span>{{ attachment.analysis.sentDate || 'Не указана' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Ведомство:</span>
+                <span>{{ attachment.analysis.senderAgency || 'Не указано' }}</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Краткая суть:</span>
+                <p>{{ attachment.analysis.summary || 'Не сгенерировано' }}</p>
+              </div>
+              
+              <div v-if="attachment.analysis.keyParagraphs?.length" class="key-paragraphs">
+                <h4>Ключевые параграфы:</h4>
+                <ul>
+                  <li v-for="(para, pIdx) in attachment.analysis.keyParagraphs" :key="pIdx">
+                    "{{ para }}"
+                  </li>
+                </ul>
+              </div>
+            </div>
+            <div v-else class="no-analysis">
+              <p>Анализ не выполнен</p>
+              <button 
+                @click="analyzeAttachment(attachment)"
+                class="analyze-btn"
+                :disabled="isAnalyzing"
+              >
+                Анализировать
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            @click="addParagraph"
-            class="add-btn"
-            title="Добавить параграф"
-          >
-            + Добавить параграф
-          </button>
         </div>
-        
+
+      
+
+        <!-- Кнопки действий -->
         <div class="form-actions">
           <button
             type="button"
@@ -117,66 +202,27 @@
             :disabled="isAnalyzing || !document.originalText"
           >
             <span v-if="isAnalyzing" class="button-loader"></span>
-            {{ isAnalyzing ? 'Идет анализ...' : 'Анализировать текст' }}
+            {{ isAnalyzing ? 'Анализ...' : 'Анализировать документ' }}
           </button>
+          
           <button
             type="submit"
             class="save-btn"
-            :disabled="isSaving || !document.summary"
+            :disabled="isSaving"
           >
             {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
           </button>
         </div>
       </form>
 
-      <!-- Блок анализа нарушений -->
-      <div v-if="violations.length > 0" class="violations-section">
-        <div class="section-header">
-          <h2>Выявленные нарушения</h2>
-          <button
-            @click="toggleViolations"
-            class="toggle-btn"
-          >
-            {{ showViolations ? 'Скрыть' : 'Показать' }}
-          </button>
+      <!-- Блок статуса -->
+      <div class="status-section">
+        <div class="status-indicator" :class="document.analysisStatus">
+          Статус анализа: 
+          <span>{{ getStatusText(document.analysisStatus) }}</span>
         </div>
-        
-        <div v-if="showViolations" class="violations-list">
-          <div
-            v-for="(violation, index) in violations"
-            :key="index"
-            class="violation-card"
-          >
-            <div class="violation-header">
-              <h3>{{ violation.law }} {{ violation.article }}</h3>
-              <span class="severity-badge" :class="getSeverityClass(violation)">
-                {{ getSeverityText(violation) }}
-              </span>
-            </div>
-            <p><strong>Описание:</strong> {{ violation.description }}</p>
-            <p><strong>Доказательство:</strong> <em>"{{ violation.evidence }}"</em></p>
-            
-            <div class="violation-actions">
-              <select
-                v-model="selectedAgencies[index]"
-                class="agency-select"
-                :disabled="isGeneratingComplaint[index]"
-              >
-                <option value="ФССП">ФССП</option>
-                <option value="Прокуратура">Прокуратура</option>
-                <option value="Суд">Суд</option>
-                <option value="Омбудсмен">Омбудсмен</option>
-              </select>
-              <button
-                @click="generateComplaint(violation, index)"
-                class="complaint-btn"
-                :disabled="isGeneratingComplaint[index]"
-              >
-                <span v-if="isGeneratingComplaint[index]" class="button-loader"></span>
-                {{ isGeneratingComplaint[index] ? 'Генерация...' : 'Создать жалобу' }}
-              </button>
-            </div>
-          </div>
+        <div v-if="document.lastAnalyzedAt" class="last-analyzed">
+          Последний анализ: {{ formatDate(document.lastAnalyzedAt) }}
         </div>
       </div>
 
@@ -193,60 +239,52 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useDocumentStore } from '@/stores/documentStore'
-import { useAIStore } from '@/stores/aiStore'
+import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useAIStore } from '@/stores/aiStore'
+import { useDocumentStore } from '@/stores/documentStore'
 
-const documentStore = useDocumentStore()
-const aiStore = useAIStore()
 const router = useRouter()
+const aiStore = useAIStore()
+const documentStore = useDocumentStore()
 
-// Состояние компонента
 const isLoading = ref(true)
 const isSaving = ref(false)
 const isAnalyzing = ref(false)
 const error = ref(null)
-const violations = ref([])
-const selectedAgencies = ref([])
-const isGeneratingComplaint = ref([])
-const showViolations = ref(true)
 
-// Данные документа
 const document = ref({
-  date: new Date().toISOString().split('T')[0],
-  agency: '',
-  originalText: '',
-  summary: '',
-  keyParagraphs: [''],
   ...documentStore.currentDocument
 })
 
-// Список ведомств
 const agenciesList = computed(() => documentStore.agenciesList)
 
-// Инициализация
 onMounted(async () => {
   try {
+    await aiStore.checkServerStatus()
+    
     if (!document.value.id && !document.value.originalText) {
       router.push('/')
       return
     }
     
-    // Если документ уже существует, загружаем его данные
     if (document.value.id) {
       await documentStore.fetchDocumentById(document.value.id)
-      document.value = { ...documentStore.currentDocument }
+      document.value = { 
+        ...documentStore.currentDocument,
+        attachments: documentStore.currentDocument.attachments?.map(att => ({
+          ...att,
+          analysis: att.analysis || null
+        })) || []
+      }
     }
   } catch (err) {
-    error.value = 'Ошибка загрузки документа: ' + err.message
-    console.error('Document loading error:', err)
+    error.value = 'Ошибка загрузки: ' + err.message
   } finally {
     isLoading.value = false
   }
 })
 
-// Добавление/удаление параграфов
 const addParagraph = () => {
   document.value.keyParagraphs.push('')
 }
@@ -255,150 +293,140 @@ const removeParagraph = (index) => {
   document.value.keyParagraphs.splice(index, 1)
 }
 
-// Анализ документа
 const analyzeDocument = async () => {
-  isAnalyzing.value = true;
-  try {
-    console.log('Начало анализа документа...');
-    // Вариант 1: Через documentStore (с привязкой к документу)
-    const analysis = await documentStore.analyzeDocument(document.value.id);
-    
-
-    // Вариант 2: Через aiStore (просто анализ текста)
-    //const analysis = await aiStore.analyzeText(document.value.originalText);
-    console.log('Результат анализа:', analysis);
-
-    document.value.summary = analysis.summary;
-    document.value.keyParagraphs = analysis.keyParagraphs;
-    violations.value = analysis.violations || [];
-  } catch (err) {
-    console.error('Ошибка в компоненте:', err);
-    error.value = 'Ошибка анализа: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Исправленный regenerateSummary
-const regenerateSummary = async () => {
-  isAnalyzing.value = true;
-  try {
-    const analysis = await aiStore.analyzeText(document.value.originalText);
-    document.value.summary = analysis.summary || document.value.summary;
-  } catch (err) {
-    error.value = 'Ошибка при перегенерации краткой сути: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Генерация жалобы
-const generateComplaint = async (violation, index) => {
-  isGeneratingComplaint.value[index] = true
+  isAnalyzing.value = true
   error.value = null
   
   try {
-    const agency = selectedAgencies.value[index]
-    const complaintData = await aiStore.generateComplaint(
-      document.value.originalText,
-      agency
-    )
+    const analysis = await documentStore.analyzeDocument()
     
-    // Сохранение жалобы
-    await documentStore.saveComplaint({
-      ...complaintData,
-      relatedDocumentId: document.value.id,
-      violation: `${violation.law} ${violation.article}`,
-      agency
-    })
-    
-    // Уведомление об успехе
-    showNotification(`Жалоба в ${agency} успешно создана!`)
+    document.value = {
+      ...document.value,
+      summary: analysis.summary,
+      keyParagraphs: analysis.paragraphs,
+      documentDate: analysis.documentDate || '',
+      senderAgency: analysis.senderAgency || '',
+      analysisStatus: 'completed',
+      lastAnalyzedAt: new Date().toISOString()
+    }
   } catch (err) {
-    error.value = 'Ошибка генерации жалобы: ' + err.message
-    console.error('Complaint generation error:', err)
+    error.value = 'Ошибка анализа: ' + err.message
   } finally {
-    isGeneratingComplaint.value[index] = false
+    isAnalyzing.value = false
   }
 }
 
-// Сохранение документа
+const analyzeAttachment = async (attachment) => {
+  if (!attachment.text) return
+  
+  isAnalyzing.value = true
+  try {
+    const analysis = await aiStore.analyzeAttachment(attachment.text)
+    attachment.analysis = analysis
+    
+    // Находим и обновляем вложение в основном документе
+    const index = document.value.attachments.findIndex(a => a.id === attachment.id)
+    if (index !== -1) {
+      document.value.attachments[index].analysis = analysis
+    }
+  } catch (err) {
+    error.value = 'Ошибка анализа вложения: ' + err.message
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+const regenerateSummary = async () => {
+  isAnalyzing.value = true
+  try {
+    document.value.summary = await aiStore.generateSummary(document.value.originalText)
+  } catch (err) {
+    error.value = 'Ошибка перегенерации: ' + err.message
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
 const handleSubmit = async () => {
   isSaving.value = true
   error.value = null
   
   try {
-    // Валидация обязательных полей
-    if (!document.value.summary.trim()) {
-      throw new Error('Заполните краткую суть документа')
-    }
-
-    documentStore.currentDocument = { ...document.value }
+    documentStore.currentDocument = document.value
     await documentStore.saveDocument()
-    
-    // Перенаправление после успешного сохранения
     router.push('/documents')
   } catch (err) {
     error.value = 'Ошибка сохранения: ' + err.message
-    console.error('Save error:', err)
   } finally {
     isSaving.value = false
   }
 }
 
-// Вспомогательные функции
-const toggleViolations = () => {
-  showViolations.value = !showViolations.value
+const goBack = () => {
+  router.push('/')
 }
 
-const getSeverityClass = (violation) => {
-  if (violation.penalty?.includes('уголовная')) return 'severity-high'
-  if (violation.penalty?.includes('административная')) return 'severity-medium'
-  return 'severity-low'
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  return new Date(dateString).toLocaleDateString('ru-RU')
 }
 
-const getSeverityText = (violation) => {
-  if (violation.penalty?.includes('уголовная')) return 'Высокая'
-  if (violation.penalty?.includes('административная')) return 'Средняя'
-  return 'Низкая'
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 KB'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+  )
 }
 
-const showNotification = (message) => {
-  const notification = document.createElement('div')
-  notification.className = 'global-notification'
-  notification.textContent = message
-  document.body.appendChild(notification)
-  
-  setTimeout(() => {
-    notification.classList.add('fade-out')
-    setTimeout(() => notification.remove(), 500)
-  }, 3000)
+const getStatusText = (status) => {
+  const statusMap = {
+    pending: 'Ожидает анализа',
+    processing: 'В процессе',
+    completed: 'Завершён',
+    failed: 'Ошибка'
+  }
+  return statusMap[status] || status
 }
 </script>
 
 <style scoped>
 .document-review {
-  max-width: 900px;
+  max-width: 1000px;
   margin: 0 auto;
   padding: 20px;
 }
 
-h1 {
-  font-size: 1.8em;
-  margin-bottom: 25px;
-  color: #2c3e50;
-  text-align: center;
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
 }
 
-.loading {
+.back-button {
+  background: none;
+  border: none;
+  color: #42b983;
+  cursor: pointer;
+  font-size: 1em;
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.back-button:hover {
+  background-color: #f0f0f0;
+}
+
+.loading-state {
   text-align: center;
   padding: 40px;
-  font-size: 1.2em;
-  color: #666;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 15px;
 }
 
 .spinner {
@@ -410,21 +438,25 @@ h1 {
   animation: spin 1s ease-in-out infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
 .review-container {
   display: flex;
   flex-direction: column;
   gap: 30px;
 }
 
-.review-form {
+.form-section {
   background: #fff;
   padding: 25px;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+.form-section h2 {
+  margin-top: 0;
+  color: #2c3e50;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eee;
+  margin-bottom: 20px;
 }
 
 .form-group {
@@ -434,9 +466,8 @@ h1 {
 .form-group label {
   display: block;
   margin-bottom: 8px;
-  font-weight: 600;
-  color: #333;
-  font-size: 0.95em;
+  font-weight: 500;
+  color: #555;
 }
 
 .form-input, .form-textarea {
@@ -466,7 +497,7 @@ h1 {
   position: absolute;
   right: 10px;
   top: 10px;
-  background: none;
+  background: #f5f5f5;
   border: none;
   cursor: pointer;
   padding: 5px;
@@ -478,12 +509,7 @@ h1 {
 }
 
 .refresh-btn:hover {
-  background-color: #f0f0f0;
-}
-
-.refresh-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  background: #e0e0e0;
 }
 
 .paragraph-item {
@@ -491,10 +517,6 @@ h1 {
   display: flex;
   gap: 10px;
   align-items: center;
-}
-
-.paragraph-item textarea {
-  flex-grow: 1;
 }
 
 .remove-btn {
@@ -514,7 +536,7 @@ h1 {
 }
 
 .remove-btn:hover {
-  background: #ff5252;
+  background: #ff4444;
 }
 
 .add-btn {
@@ -529,7 +551,74 @@ h1 {
 }
 
 .add-btn:hover {
-  background: #3dbbb3;
+  background: #3dbeb5;
+}
+
+.attachment-analysis {
+  background: #f8f8f8;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.attachment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.attachment-header h3 {
+  margin: 0;
+  color: #2c3e50;
+}
+
+.file-size {
+  color: #666;
+  font-size: 0.9em;
+}
+
+.attachment-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+}
+
+.detail-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.detail-label {
+  font-weight: bold;
+  color: #555;
+}
+
+.key-paragraphs {
+  grid-column: 1 / -1;
+  margin-top: 10px;
+}
+
+.key-paragraphs h4 {
+  margin-bottom: 5px;
+  color: #2c3e50;
+}
+
+.key-paragraphs ul {
+  padding-left: 20px;
+}
+
+.key-paragraphs li {
+  margin-bottom: 5px;
+  font-style: italic;
+}
+
+.no-analysis {
+  text-align: center;
+  padding: 20px;
+  color: #666;
 }
 
 .form-actions {
@@ -539,7 +628,7 @@ h1 {
   gap: 15px;
 }
 
-.save-btn, .analyze-btn {
+.analyze-btn, .save-btn {
   border: none;
   border-radius: 4px;
   padding: 12px 20px;
@@ -553,22 +642,23 @@ h1 {
   gap: 8px;
 }
 
-.save-btn {
+.analyze-btn {
   background: #42b983;
   color: white;
 }
 
-.analyze-btn {
-  background: #2196F3;
+.analyze-btn:disabled {
+  background: #cccccc;
+  cursor: not-allowed;
+}
+
+.save-btn {
+  background: #2c3e50;
   color: white;
 }
 
-.save-btn:hover, .analyze-btn:hover {
-  opacity: 0.9;
-}
-
-button:disabled {
-  opacity: 0.6;
+.save-btn:disabled {
+  background: #cccccc;
   cursor: not-allowed;
 }
 
@@ -581,117 +671,39 @@ button:disabled {
   animation: spin 1s ease-in-out infinite;
 }
 
-/* Стили для блока нарушений */
-.violations-section {
+.status-section {
   background: #fff;
-  padding: 20px;
+  padding: 15px;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 15px;
+.status-indicator {
+  font-weight: 500;
 }
 
-.section-header h2 {
-  font-size: 1.4em;
-  color: #2c3e50;
-  margin: 0;
+.status-indicator.pending {
+  color: #666;
 }
 
-.toggle-btn {
-  background: none;
-  border: none;
-  color: #2196F3;
-  cursor: pointer;
+.status-indicator.processing {
+  color: #ffbb33;
+}
+
+.status-indicator.completed {
+  color: #42b983;
+}
+
+.status-indicator.failed {
+  color: #ff4444;
+}
+
+.last-analyzed {
   font-size: 0.9em;
+  color: #666;
+  margin-top: 5px;
 }
 
-.violation-card {
-  background: #f9f9f9;
-  border-left: 4px solid #ff6b6b;
-  padding: 15px;
-  margin-bottom: 15px;
-  border-radius: 0 4px 4px 0;
-}
-
-.violation-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.violation-card h3 {
-  color: #2c3e50;
-  margin: 0;
-  font-size: 1.1em;
-}
-
-.severity-badge {
-  font-size: 0.8em;
-  padding: 3px 8px;
-  border-radius: 12px;
-  font-weight: bold;
-}
-
-.severity-high {
-  background-color: #ffebee;
-  color: #c62828;
-}
-
-.severity-medium {
-  background-color: #fff8e1;
-  color: #ff8f00;
-}
-
-.severity-low {
-  background-color: #e8f5e9;
-  color: #2e7d32;
-}
-
-.violation-card p {
-  margin: 5px 0;
-  font-size: 0.95em;
-}
-
-.violation-actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 15px;
-  align-items: center;
-}
-
-.agency-select {
-  flex: 1;
-  padding: 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-.complaint-btn {
-  background: #ff6b6b;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 15px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.complaint-btn:hover {
-  background: #ff5252;
-}
-
-/* Стили для ошибок */
 .error-message {
   background: #ffebee;
   color: #c62828;
@@ -708,52 +720,18 @@ button:disabled {
 }
 
 .error-icon {
-  background: #c62828;
-  color: white;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-weight: bold;
 }
 
 .close-error {
-  margin-left: auto;
   background: none;
   border: none;
-  color: #c62828;
-  font-size: 1.2em;
   cursor: pointer;
-  padding: 0 5px;
+  margin-left: auto;
+  font-size: 1.2em;
 }
 
-/* Глобальные стили для уведомлений */
-.global-notification {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  background: #42b983;
-  color: white;
-  padding: 12px 20px;
-  border-radius: 4px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
-  z-index: 1000;
-  animation: slide-in 0.3s ease-out;
-}
-
-.fade-out {
-  animation: fade-out 0.5s ease-out forwards;
-}
-
-@keyframes slide-in {
-  from { transform: translateY(100px); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-@keyframes fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

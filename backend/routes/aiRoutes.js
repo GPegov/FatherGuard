@@ -3,7 +3,6 @@ import AIService from '../services/aiService.js';
 
 const router = Router();
 
-
 // Анализ текста на нарушения
 
 // Унифицированный анализ текста

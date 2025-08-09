@@ -2,36 +2,28 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
 import { useRouter } from "vue-router";
-import cors from 'cors'
-
-const corsOptions = {
-  origin: 'http://localhost:5173', 
-  optionsSuccessStatus: 200
-}
-
-
-function simplifyError(error) {
-  if (error.message.includes('timeout')) return 'Превышено время ожидания (400 секунд)'
-  if (error.response?.status === 500) return 'Ошибка сервера AI'
-  if (error.message.includes('недостаточно памяти')) return 'Недостаточно памяти для обработки'
-  return error.message || 'Неизвестная ошибка анализа'
-}
+import { v4 as uuidv4 } from "uuid";
 
 export const useDocumentStore = defineStore("document", () => {
-  
   const router = useRouter();
 
-  // Состояние хранилища
+  const API_BASE = "http://localhost:3001";
 
+  // Состояние хранилища
   const currentDocument = ref({
     id: null,
     date: new Date().toISOString().split("T")[0],
     agency: "",
     originalText: "",
     summary: "",
+    documentDate: "",
+    senderAgency: "",
     keyParagraphs: [],
     attachments: [],
-    comments: "",
+    complaints: [],
+    complaintAgency: "",
+    analysisStatus: "pending", // 'pending' | 'processing' | 'completed' | 'failed'
+    lastAnalyzedAt: null,
   });
 
   const documents = ref([]);
@@ -41,46 +33,61 @@ export const useDocumentStore = defineStore("document", () => {
 
   // Геттеры
   const agenciesList = computed(() => {
-    const agencies = new Set(documents.value.map((doc) => doc.agency));
-    return Array.from(agencies).filter(Boolean);
+    const agencies = new Set();
+    documents.value.forEach((doc) => {
+      if (doc.agency) agencies.add(doc.agency);
+      if (doc.senderAgency) agencies.add(doc.senderAgency);
+    });
+    return Array.from(agencies).sort();
   });
 
   const hasAttachments = computed(() => {
     return currentDocument.value.attachments?.length > 0;
   });
 
+  const analyzedDocuments = computed(() => {
+    return documents.value.filter((doc) => doc.analysisStatus === "completed");
+  });
+
   // Действия
+  const fetchDocuments = async () => {
+    isLoading.value = true;
+    error.value = null;
 
-  const generateComplaint = async (documentId, agency) => {
-    isAnalyzing.value = true;
     try {
-      const { data } = await axios.post(
-        `http://localhost:3001/api/documents/${documentId}/complaints`,
-        { agency }
-      );
-
-      // Обновляем текущий документ
-      if (currentDocument.value.id === documentId) {
-        if (!currentDocument.value.complaints)
-          currentDocument.value.complaints = [];
-        currentDocument.value.complaints.push(data);
-      }
-
-      return data;
+      const { data } = await axios.get(`${API_BASE}/api/documents`);
+      documents.value = data.items || data;
     } catch (err) {
       error.value = err.response?.data?.message || err.message;
       throw err;
     } finally {
-      isAnalyzing.value = false;
+      isLoading.value = false;
     }
   };
 
-  const fetchComplaints = async (documentId) => {
+  const fetchDocumentById = async (id) => {
     isLoading.value = true;
+    error.value = null;
+
     try {
       const { data } = await axios.get(
-        `http://localhost:3001/api/documents/${documentId}/complaints`
+        `http://localhost:3001/api/documents/${id}`
       );
+      currentDocument.value = {
+        id: data.id,
+        date: data.date || new Date().toISOString().split("T")[0],
+        agency: data.agency || "",
+        originalText: data.originalText || "",
+        summary: data.summary || "",
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        keyParagraphs: data.keyParagraphs || [],
+        attachments: data.attachments || [],
+        comments: data.comments || "",
+        complaints: data.complaints || [],
+        analysisStatus: data.analysisStatus || "pending",
+        lastAnalyzedAt: data.lastAnalyzedAt || null,
+      };
       return data;
     } catch (err) {
       error.value = err.response?.data?.message || err.message;
@@ -97,12 +104,10 @@ export const useDocumentStore = defineStore("document", () => {
     try {
       const formData = new FormData();
 
-      // Добавляем текст документа если есть
       if (currentDocument.value.originalText) {
         formData.append("text", currentDocument.value.originalText);
       }
 
-      // Добавляем файлы
       Array.from(files).forEach((file) => {
         formData.append("files", file);
       });
@@ -111,13 +116,10 @@ export const useDocumentStore = defineStore("document", () => {
         "http://localhost:3001/api/documents/upload",
         formData,
         {
-          headers: {
-            "Content-Type": "multipart/form-data",
-          },
+          headers: { "Content-Type": "multipart/form-data" },
         }
       );
 
-      // Обновляем текущий документ
       currentDocument.value = {
         ...currentDocument.value,
         originalText: data.originalText || currentDocument.value.originalText,
@@ -139,45 +141,40 @@ export const useDocumentStore = defineStore("document", () => {
     error.value = null;
 
     try {
-      let savedDocument;
-      const docData = {
+      const docToSave = {
         ...currentDocument.value,
-        // Убедимся что attachments массив
-        attachments: currentDocument.value.attachments || [],
+        keyParagraphs: currentDocument.value.keyParagraphs.filter((p) =>
+          p.trim()
+        ),
+        attachments: currentDocument.value.attachments.map((att) => ({
+          id: att.id || uuidv4(),
+          name: att.name,
+          type: att.type,
+          size: att.size,
+          path: att.path,
+          text: att.text || "",
+          analysis: att.analysis || null,
+        })),
       };
 
-      // Если есть файлы - используем upload endpoint
-      if (docData.attachments.length > 0) {
-        const formData = new FormData();
-        formData.append("text", docData.originalText);
-        formData.append("comments", docData.comments);
+      let savedDocument;
 
-        // Отправляем существующие файлы через отдельный запрос
-        const { data } = await axios.post(
-          "http://localhost:3001/api/documents/upload",
-          formData,
-          {
-            headers: { "Content-Type": "multipart/form-data" },
-          }
+      if (docToSave.id) {
+        const { data } = await axios.put(
+          `${API_BASE}/api/documents/${docToSave.id}`,
+          docToSave
         );
         savedDocument = data;
-      }
-      // Если только текст - используем обычный endpoint
-      else if (docData.originalText) {
+      } else {
         const { data } = await axios.post(
           "http://localhost:3001/api/documents",
-          docData
+          docToSave
         );
         savedDocument = data;
       }
-      // Если нет ни текста ни файлов - ошибка
-      else {
-        throw new Error("Документ должен содержать текст или файлы");
-      }
 
-      // Обновляем локальное состояние
-      if (docData.id) {
-        const index = documents.value.findIndex((d) => d.id === docData.id);
+      if (docToSave.id) {
+        const index = documents.value.findIndex((d) => d.id === docToSave.id);
         if (index !== -1) {
           documents.value[index] = savedDocument;
         }
@@ -198,14 +195,13 @@ export const useDocumentStore = defineStore("document", () => {
   const deleteDocument = async (id) => {
     isLoading.value = true;
     try {
-      console.log("Пытаемся удалить документ с ID:", id);
-      const response = await axios.delete(
-        `http://localhost:3001/api/documents/${id}`
-      );
-      console.log("Ответ сервера:", response.status);
+      await axios.delete(`http://localhost:3001/api/documents/${id}`);
       documents.value = documents.value.filter((doc) => doc.id !== id);
+
+      if (currentDocument.value.id === id) {
+        resetCurrentDocument();
+      }
     } catch (err) {
-      console.error("Ошибка удаления:", err);
       error.value = err.response?.data?.message || err.message;
       throw err;
     } finally {
@@ -213,179 +209,144 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-  const fetchDocuments = async () => {
-    isLoading.value = true;
+  const analyzeDocument = async () => {
+    isAnalyzing.value = true;
     error.value = null;
 
     try {
-      const { data } = await axios.get("http://localhost:3001/api/documents");
-      documents.value = data.items || data;
-    } catch (err) {
-      error.value = err.response?.data?.message || err.message;
-      throw err;
-    } finally {
-      isLoading.value = false;
-    }
-  };
+      // Обновляем статус документа
+      currentDocument.value.analysisStatus = "processing";
+      await saveDocument();
 
-  const fetchDocumentById = async (id) => {
-    isLoading.value = true;
-    error.value = null;
-
-    try {
-      const { data } = await axios.get(
-        `http://localhost:3001/api/documents/${id}`
-      );
-      currentDocument.value = data; // Важно: сохраняем в currentDocument
-      return data;
-    } catch (err) {
-      error.value = err.response?.data?.message || err.message;
-      throw err;
-    } finally {
-      isLoading.value = false;
-    }
-  };
-
-  
-  const addAttachment = async (file) => {
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-
+      const docText = currentDocument.value.originalText;
       const { data } = await axios.post(
-        "http://localhost:3001/api/documents/attachments",
-        formData,
+        "http://localhost:11434/api/generate",
         {
-          headers: { "Content-Type": "multipart/form-data" },
+          model: "llama3:8b",
+          prompt: `Проанализируй юридический документ и выдели:
+1. Краткую суть (3-5 предложений)
+2. От 1 до 3 ключевых параграфа (дословно)
+3. Возможные нарушения
+4. Дату документа (если есть)
+5. Ведомство-отправитель (если есть)
+
+Текст документа:
+${docText.substring(0, 10000)}`,
+          format: "json",
+          temperature: 0.3,
+        },
+        {
+          timeout: 800000,
         }
       );
 
-      currentDocument.value.attachments.push(data);
+      // Обновляем документ с результатами анализа
+      currentDocument.value = {
+        ...currentDocument.value,
+        summary: data.summary || "",
+        keyParagraphs: data.keyParagraphs || [],
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        analysisStatus: "completed",
+        lastAnalyzedAt: new Date().toISOString(),
+      };
+
+      // Анализ вложений
+      if (currentDocument.value.attachments?.length) {
+        for (const attachment of currentDocument.value.attachments) {
+          if (attachment.text) {
+            const { data: analysis } = await axios.post(
+              "http://localhost:11434/api/generate",
+              {
+                model: "llama3:8b",
+                prompt: `Проанализируй вложенный документ:
+1. Укажи тип документа
+2. Выдели дату отправления (ДД.ММ.ГГГГ)
+3. Определи ведомство-отправитель
+4. Сгенерируй краткую суть
+5. Выдели от 1 до 3 ключевых параграфа (дословно)
+
+Текст документа:
+${attachment.text.substring(0, 10000)}`,
+                format: "json",
+                temperature: 0.2,
+              }
+            );
+            attachment.analysis = analysis;
+          }
+        }
+      }
+
+      await saveDocument();
+      return data;
+    } catch (err) {
+      currentDocument.value.analysisStatus = "failed";
+      await saveDocument();
+      error.value =
+        "Ошибка анализа: " + (err.response?.data?.message || err.message);
+      throw err;
+    } finally {
+      isAnalyzing.value = false;
+    }
+  };
+
+  const generateComplaint = async (documentId, agency) => {
+    isAnalyzing.value = true;
+    error.value = null;
+
+    try {
+      const doc = documents.value.find((d) => d.id === documentId);
+      if (!doc) throw new Error("Документ не найден");
+
+      const relatedDocs = documents.value.filter(
+        (d) => d.date <= doc.date && d.id !== documentId
+      );
+
+      const { data } = await axios.post(
+        "http://localhost:11434/api/generate",
+        {
+          documentId,
+          agency,
+          relatedDocuments: relatedDocs.map((d) => d.id),
+        }
+      );
+
+      if (currentDocument.value.id === documentId) {
+        if (!currentDocument.value.complaints) {
+          currentDocument.value.complaints = [];
+        }
+        currentDocument.value.complaints.push(data);
+        await saveDocument();
+      }
+
       return data;
     } catch (err) {
       error.value = err.response?.data?.message || err.message;
       throw err;
+    } finally {
+      isAnalyzing.value = false;
     }
   };
 
-  const removeAttachment = async (attachmentId) => {
+  const fetchComplaints = async (documentId) => {
+    isLoading.value = true;
     try {
-      await axios.delete(
-        `http://localhost:3001/api/documents/attachments/${attachmentId}`
+      const { data } = await axios.get(
+        `http://localhost:3001/api/documents/${documentId}/complaints`
       );
-      currentDocument.value.attachments =
-        currentDocument.value.attachments.filter(
-          (att) => att.id !== attachmentId
-        );
+
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = data;
+      }
+
+      return data;
     } catch (err) {
       error.value = err.response?.data?.message || err.message;
       throw err;
+    } finally {
+      isLoading.value = false;
     }
   };
-
-  
-
-  const analyzeDocument = async (documentId) => {
-  isAnalyzing.value = true;
-  const MAX_TEXT_LENGTH = 30000; // Увеличено до 30k символов
-  const ANALYSIS_TIMEOUT = 400000; // 400 секунд в миллисекундах
-  let analysisProgress = ref('Подготовка к анализу');
-  
-  try {
-    const docText = currentDocument.value.originalText;
-    if (!docText) throw new Error("Нет текста для анализа");
-
-    // Проверка и обрезка текста
-    const textToAnalyze = docText.length > MAX_TEXT_LENGTH 
-      ? docText.substring(0, MAX_TEXT_LENGTH) + "\n\n[Текст был обрезан до 30 000 символов]"
-      : docText;
-
-    console.log(`Начало анализа документа (${textToAnalyze.length} символов)...`);
-    
-    // Проверка доступности модели
-    analysisProgress.value = 'Проверка модели...';
-    const isModelAvailable = await aiService.checkModelStatus();
-    if (!isModelAvailable) {
-      throw new Error("Модель AI недоступна. Проверьте сервер Ollama.");
-    }
-
-    // 1. Генерация краткой сути с увеличенным таймаутом
-    analysisProgress.value = 'Анализ (1/2): Генерация краткой сути...';
-    console.log("Этап 1/2: Генерация краткой сути");
-    
-    const summary = await Promise.race([
-      aiService.generateSummary(textToAnalyze),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Таймаут генерации сути (превышено 400 секунд)")), ANALYSIS_TIMEOUT)
-      )
-    ]);
-    
-    console.log("Сгенерированная суть:", summary);
-    if (!summary || summary.length < 10) {
-      throw new Error("Не удалось сгенерировать содержательную краткую суть");
-    }
-
-    // 2. Извлечение ключевых параграфов с увеличенным таймаутом
-    analysisProgress.value = 'Анализ (2/2): Извлечение цитат...';
-    console.log("Этап 2/2: Извлечение цитат");
-    
-    let keyParagraphs = await Promise.race([
-      aiService.extractKeyParagraphs(textToAnalyze),
-      new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Таймаут извлечения цитат (превышено 400 секунд)")), ANALYSIS_TIMEOUT)
-      )
-    ]);
-
-    console.log("Извлеченные цитаты:", keyParagraphs);
-    if (!Array.isArray(keyParagraphs) || keyParagraphs.length === 0) {
-      console.warn("Модель не вернула валидные цитаты, используется fallback");
-      keyParagraphs = [textToAnalyze.substring(0, 500) + "..."]; // Увеличенный fallback
-    }
-
-    // 3. Валидация и сохранение результатов
-    analysisProgress.value = 'Сохранение результатов...';
-    const result = {
-      summary: summary.trim(),
-      keyParagraphs: keyParagraphs.slice(0, 10), // Увеличено до 10 цитат
-      analyzedAt: new Date().toISOString(),
-      originalTextLength: docText.length,
-      processedTextLength: textToAnalyze.length
-    };
-
-    if (currentDocument.value.id === documentId) {
-      currentDocument.value = {
-        ...currentDocument.value,
-        ...result,
-        status: 'analyzed'
-      };
-      await documentStore.saveDocument();
-    }
-
-    return result;
-  } catch (error) {
-    console.error("Ошибка анализа:", {
-      error: error.message,
-      stack: error.stack,
-      documentId,
-      textLength: currentDocument.value.originalText?.length,
-      timestamp: new Date().toISOString()
-    });
-    
-    if (currentDocument.value.id === documentId) {
-      currentDocument.value.analysisError = {
-        message: error.message,
-        timestamp: new Date().toISOString()
-      };
-    }
-    
-    throw new Error(`Анализ не удался: ${simplifyError(error)}`);
-  } finally {
-    isAnalyzing.value = false;
-    analysisProgress.value = '';
-  }
-};
-
-  
 
   const resetCurrentDocument = () => {
     currentDocument.value = {
@@ -394,17 +355,21 @@ export const useDocumentStore = defineStore("document", () => {
       agency: "",
       originalText: "",
       summary: "",
+      documentDate: "",
+      senderAgency: "",
       keyParagraphs: [],
       attachments: [],
       comments: "",
+      complaints: [],
+      analysisStatus: "pending",
+      lastAnalyzedAt: null,
     };
   };
 
-  const setCurrentDocument = (doc) => {
-    currentDocument.value = { ...doc };
+  const viewDocument = async (id) => {
+    await fetchDocumentById(id);
+    router.push(`/documents/${id}`);
   };
-
- 
 
   return {
     // Состояние
@@ -417,24 +382,18 @@ export const useDocumentStore = defineStore("document", () => {
     // Геттеры
     agenciesList,
     hasAttachments,
+    analyzedDocuments,
 
     // Действия
-    generateComplaint,
-    fetchComplaints,
-    uploadFiles,
-    addAttachment,
-    removeAttachment,
-    saveDocument,
     fetchDocuments,
     fetchDocumentById,
-    analyzeDocument,
-    resetCurrentDocument,
-    setCurrentDocument,
+    uploadFiles,
+    saveDocument,
     deleteDocument,
-
-    viewDocument: async (id) => {
-      await fetchDocumentById(id);
-      router.push(`/documents/${id}`);
-    },
+    analyzeDocument,
+    generateComplaint,
+    fetchComplaints,
+    resetCurrentDocument,
+    viewDocument,
   };
 });
