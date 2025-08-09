@@ -2,81 +2,99 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import axios from 'axios'
 import { useRouter } from 'vue-router'
+import { v4 as uuidv4 } from 'uuid';
 
 export const useDocumentStore = defineStore('document', () => {
   const router = useRouter()
   
   // Состояние хранилища
-  
   const currentDocument = ref({
     id: null,
     date: new Date().toISOString().split('T')[0],
     agency: '',
     originalText: '',
     summary: '',
+    documentDate: '',
+    senderAgency: '',
     keyParagraphs: [],
     attachments: [],
-    comments: ''
+    comments: '',
+    complaints: [],
+    complaintAgency: '',
+    analysisStatus: 'pending', // 'pending' | 'processing' | 'completed' | 'failed'
+    lastAnalyzedAt: null
   })
+
+  
   
   const documents = ref([])
   const isLoading = ref(false)
   const error = ref(null)
   const isAnalyzing = ref(false)
 
-
-
   // Геттеры
   const agenciesList = computed(() => {
-    const agencies = new Set(documents.value.map(doc => doc.agency))
-    return Array.from(agencies).filter(Boolean)
+    const agencies = new Set()
+    documents.value.forEach(doc => {
+      if (doc.agency) agencies.add(doc.agency)
+      if (doc.senderAgency) agencies.add(doc.senderAgency)
+    })
+    return Array.from(agencies).sort()
   })
 
   const hasAttachments = computed(() => {
     return currentDocument.value.attachments?.length > 0
   })
 
+  const analyzedDocuments = computed(() => {
+    return documents.value.filter(doc => doc.analysisStatus === 'completed')
+  })
+
   // Действия
-
-  const generateComplaint = async (documentId, agency) => {
-  isAnalyzing.value = true;
-  try {
-    const { data } = await axios.post(
-      `http://localhost:3001/api/documents/${documentId}/complaints`,
-      { agency }
-    );
+  const fetchDocuments = async () => {
+    isLoading.value = true
+    error.value = null
     
-    // Обновляем текущий документ
-    if (currentDocument.value.id === documentId) {
-      if (!currentDocument.value.complaints) currentDocument.value.complaints = [];
-      currentDocument.value.complaints.push(data);
+    try {
+      const { data } = await axios.get('http://localhost:3001/api/documents')
+      documents.value = data.items || data
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message
+      throw err
+    } finally {
+      isLoading.value = false
     }
+  }
+
+  const fetchDocumentById = async (id) => {
+    isLoading.value = true
+    error.value = null
     
-    return data;
-  } catch (err) {
-    error.value = err.response?.data?.message || err.message;
-    throw err;
-  } finally {
-    isAnalyzing.value = false;
+    try {
+      const { data } = await axios.get(`http://localhost:3001/api/documents/${id}`)
+      currentDocument.value = {
+        id: data.id,
+        date: data.date || new Date().toISOString().split('T')[0],
+        agency: data.agency || '',
+        originalText: data.originalText || '',
+        summary: data.summary || '',
+        documentDate: data.documentDate || '',
+        senderAgency: data.senderAgency || '',
+        keyParagraphs: data.keyParagraphs || [],
+        attachments: data.attachments || [],
+        comments: data.comments || '',
+        complaints: data.complaints || [],
+        analysisStatus: data.analysisStatus || 'pending',
+        lastAnalyzedAt: data.lastAnalyzedAt || null
+      }
+      return data
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message
+      throw err
+    } finally {
+      isLoading.value = false
+    }
   }
-};
-
-const fetchComplaints = async (documentId) => {
-  isLoading.value = true;
-  try {
-    const { data } = await axios.get(
-      `http://localhost:3001/api/documents/${documentId}/complaints`
-    );
-    return data;
-  } catch (err) {
-    error.value = err.response?.data?.message || err.message;
-    throw err;
-  } finally {
-    isLoading.value = false;
-  }
-};
-
-
 
   const uploadFiles = async (files) => {
     isLoading.value = true
@@ -85,23 +103,22 @@ const fetchComplaints = async (documentId) => {
     try {
       const formData = new FormData()
       
-      // Добавляем текст документа если есть
       if (currentDocument.value.originalText) {
         formData.append('text', currentDocument.value.originalText)
       }
       
-      // Добавляем файлы
       Array.from(files).forEach(file => {
         formData.append('files', file)
       })
 
-      const { data } = await axios.post('http://localhost:3001/api/documents/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
+      const { data } = await axios.post(
+        'http://localhost:3001/api/documents/upload', 
+        formData,
+        {
+          headers: { 'Content-Type': 'multipart/form-data' }
         }
-      })
+      )
 
-      // Обновляем текущий документ
       currentDocument.value = {
         ...currentDocument.value,
         originalText: data.originalText || currentDocument.value.originalText,
@@ -123,45 +140,38 @@ const fetchComplaints = async (documentId) => {
     error.value = null
     
     try {
-      let savedDocument
-      const docData = {
+      const docToSave = {
         ...currentDocument.value,
-        // Убедимся что attachments массив
-        attachments: currentDocument.value.attachments || []
+        keyParagraphs: currentDocument.value.keyParagraphs.filter(p => p.trim()),
+        attachments: currentDocument.value.attachments.map(att => ({
+          id: att.id || uuidv4(),
+          name: att.name,
+          type: att.type,
+          size: att.size,
+          path: att.path,
+          text: att.text || '',
+          analysis: att.analysis || null
+        }))
       }
 
-      // Если есть файлы - используем upload endpoint
-      if (docData.attachments.length > 0) {
-        const formData = new FormData()
-        formData.append('text', docData.originalText)
-        formData.append('comments', docData.comments)
-        
-        // Отправляем существующие файлы через отдельный запрос
-        const { data } = await axios.post(
-          'http://localhost:3001/api/documents/upload', 
-          formData,
-          {
-            headers: { 'Content-Type': 'multipart/form-data' }
-          }
+      let savedDocument
+      
+      if (docToSave.id) {
+        const { data } = await axios.put(
+          `http://localhost:3001/api/documents/${docToSave.id}`,
+          docToSave
         )
         savedDocument = data
-      } 
-      // Если только текст - используем обычный endpoint
-      else if (docData.originalText) {
+      } else {
         const { data } = await axios.post(
           'http://localhost:3001/api/documents',
-          docData
+          docToSave
         )
         savedDocument = data
-      } 
-      // Если нет ни текста ни файлов - ошибка
-      else {
-        throw new Error('Документ должен содержать текст или файлы')
       }
 
-      // Обновляем локальное состояние
-      if (docData.id) {
-        const index = documents.value.findIndex(d => d.id === docData.id)
+      if (docToSave.id) {
+        const index = documents.value.findIndex(d => d.id === docToSave.id)
         if (index !== -1) {
           documents.value[index] = savedDocument
         }
@@ -180,28 +190,14 @@ const fetchComplaints = async (documentId) => {
   }
 
   const deleteDocument = async (id) => {
-  isLoading.value = true
-  try {
-    console.log('Пытаемся удалить документ с ID:', id)  
-    const response = await axios.delete(`http://localhost:3001/api/documents/${id}`)
-    console.log('Ответ сервера:', response.status)  
-    documents.value = documents.value.filter(doc => doc.id !== id)
-  } catch (err) {
-    console.error('Ошибка удаления:', err)  
-    error.value = err.response?.data?.message || err.message
-    throw err
-  } finally {
-    isLoading.value = false
-  }
-}
-
-  const fetchDocuments = async () => {
     isLoading.value = true
-    error.value = null
-    
     try {
-      const { data } = await axios.get('http://localhost:3001/api/documents')
-      documents.value = data.items || data
+      await axios.delete(`http://localhost:3001/api/documents/${id}`)
+      documents.value = documents.value.filter(doc => doc.id !== id)
+      
+      if (currentDocument.value.id === id) {
+        resetCurrentDocument()
+      }
     } catch (err) {
       error.value = err.response?.data?.message || err.message
       throw err
@@ -210,164 +206,143 @@ const fetchComplaints = async (documentId) => {
     }
   }
 
-  const fetchDocumentById = async (id) => {
-  isLoading.value = true
-  error.value = null
-  
-  try {
-    const { data } = await axios.get(`http://localhost:3001/api/documents/${id}`)
-    currentDocument.value = data // Важно: сохраняем в currentDocument
-    return data
-  } catch (err) {
-    error.value = err.response?.data?.message || err.message
-    throw err
-  } finally {
-    isLoading.value = false
-  }
-}
-
-  // Остальные методы остаются без изменений
-  const addAttachment = async (file) => {
+  const analyzeDocument = async () => {
+    isAnalyzing.value = true
+    error.value = null
+    
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      
+      // Обновляем статус документа
+      currentDocument.value.analysisStatus = 'processing'
+      await saveDocument()
+
+      const docText = currentDocument.value.originalText
       const { data } = await axios.post(
-        'http://localhost:3001/api/documents/attachments', 
-        formData,
+        'http://localhost:11434/api/generate',
         {
-          headers: { 'Content-Type': 'multipart/form-data' }
+          model: 'llama3:8b',
+          prompt: `Проанализируй юридический документ и выдели:
+1. Краткую суть (3-5 предложений)
+2. Ключевые параграфы (дословно)
+3. Возможные нарушения
+4. Дату документа (если есть)
+5. Ведомство-отправитель (если есть)
+
+Текст документа:
+${docText.substring(0, 10000)}`,
+          format: 'json',
+          temperature: 0.3
+        },
+        {
+          timeout: 200000
         }
       )
 
-      currentDocument.value.attachments.push(data)
+      // Обновляем документ с результатами анализа
+      currentDocument.value = {
+        ...currentDocument.value,
+        summary: data.summary || '',
+        keyParagraphs: data.keyParagraphs || [],
+        documentDate: data.documentDate || '',
+        senderAgency: data.senderAgency || '',
+        analysisStatus: 'completed',
+        lastAnalyzedAt: new Date().toISOString()
+      }
+
+      // Анализ вложений
+      if (currentDocument.value.attachments?.length) {
+        for (const attachment of currentDocument.value.attachments) {
+          if (attachment.text) {
+            const { data: analysis } = await axios.post(
+              'http://localhost:11434/api/generate',
+              {
+                model: 'llama3:8b',
+                prompt: `Проанализируй вложенный документ:
+1. Укажи тип документа
+2. Выдели дату отправления (ДД.ММ.ГГГГ)
+3. Определи ведомство-отправитель
+4. Сгенерируй краткую суть
+5. Выдели ключевые параграфы дословно
+
+Текст документа:
+${attachment.text.substring(0, 10000)}`,
+                format: 'json',
+                temperature: 0.2
+              }
+            )
+            attachment.analysis = analysis
+          }
+        }
+      }
+      
+      await saveDocument()
+      return data
+    } catch (err) {
+      currentDocument.value.analysisStatus = 'failed'
+      await saveDocument()
+      error.value = 'Ошибка анализа: ' + (err.response?.data?.message || err.message)
+      throw err
+    } finally {
+      isAnalyzing.value = false
+    }
+  }
+
+  const generateComplaint = async (documentId, agency) => {
+    isAnalyzing.value = true
+    error.value = null
+    
+    try {
+      const doc = documents.value.find(d => d.id === documentId)
+      if (!doc) throw new Error('Документ не найден')
+      
+      const relatedDocs = documents.value.filter(d => 
+        d.date <= doc.date && d.id !== documentId
+      )
+      
+      const { data } = await axios.post(
+        'http://localhost:3001/api/complaints/generate',
+        {
+          documentId,
+          agency,
+          relatedDocuments: relatedDocs.map(d => d.id)
+        }
+      )
+      
+      if (currentDocument.value.id === documentId) {
+        if (!currentDocument.value.complaints) {
+          currentDocument.value.complaints = []
+        }
+        currentDocument.value.complaints.push(data)
+        await saveDocument()
+      }
+      
       return data
     } catch (err) {
       error.value = err.response?.data?.message || err.message
       throw err
+    } finally {
+      isAnalyzing.value = false
     }
   }
 
-  const removeAttachment = async (attachmentId) => {
+  const fetchComplaints = async (documentId) => {
+    isLoading.value = true
     try {
-      await axios.delete(`http://localhost:3001/api/documents/attachments/${attachmentId}`)
-      currentDocument.value.attachments = currentDocument.value.attachments.filter(
-        att => att.id !== attachmentId
+      const { data } = await axios.get(
+        `http://localhost:3001/api/documents/${documentId}/complaints`
       )
+      
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = data
+      }
+      
+      return data
     } catch (err) {
       error.value = err.response?.data?.message || err.message
       throw err
+    } finally {
+      isLoading.value = false
     }
   }
-
-  
-const analyzeDocument = async (documentId) => {
-  isAnalyzing.value = true;
-  try {
-    const docText = currentDocument.value.originalText;
-    const { data } = await axios.post(
-      'http://localhost:11434/api/generate',
-      {
-        model: 'deepseek-r1:14b',
-        prompt: `Проанализируй юридический документ и выдели:\n1. Краткую суть (3-5 предложений)\n2. Ключевые параграфы\n3. Возможные нарушения\n\nТекст документа:\n${docText}`,
-        format: 'json',
-        temperature: 0.3
-      },
-      {
-        timeout: 200000
-      }
-    );
-
-    if (currentDocument.value.id === documentId) {
-      currentDocument.value.summary = data.summary;
-      currentDocument.value.keyParagraphs = data.keyParagraphs;
-      currentDocument.value.violations = data.violations;
-    }
-
-    return data;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-
-
-//   const analyzeDocument = async (documentId) => {
-//     isAnalyzing.value = true;
-//     error.value = null;
-    
-//     try {
-//       // 1. Отправляем запрос с дополнительными параметрами
-//       const { data } = await axios.post(
-//         `http://localhost:3001/api/documents/${documentId}/analyze`,
-//         {
-//           model: 'deepseek-r1:14b',
-//           instructions: 'Выделите краткую суть и существенные параграфы',
-//           strictMode: true 
-//         },
-//         {
-//           timeout: 100000, 
-//           headers: {
-//             'X-Requested-With': 'XMLHttpRequest'
-//           }
-//         }
-//       );
-
-//       // 2. Валидация ответа
-//       if (!data.summary || !Array.isArray(data.keyParagraphs)) {
-//         throw new Error('Некорректный формат ответа от сервера');
-//       }
-
-//       // 3. Обновляем текущий документ
-//       if (currentDocument.value.id === documentId) {
-//         currentDocument.value = {
-//           ...currentDocument.value,
-//           summary: data.summary,
-//           keyParagraphs: data.keyParagraphs,
-//           lastAnalyzedAt: new Date().toISOString()
-//         };
-//       }
-
-//       // 4. Обновляем документ в общем списке
-//       const index = documents.value.findIndex(d => d.id === documentId);
-//       if (index !== -1) {
-//         documents.value[index] = {
-//           ...documents.value[index],
-//           summary: data.summary,
-//           keyParagraphs: data.keyParagraphs,
-//           updatedAt: new Date().toISOString()
-//         };
-//       }
-
-//       // 5. Логирование успешного анализа
-//       console.log(`Документ ${documentId} успешно проанализирован`);
-//       return data;
-
-//     } catch (err) {
-//       // Улучшенная обработка ошибок
-//       const errorMessage = err.response?.data?.message 
-//         || err.message 
-//         || 'Неизвестная ошибка при анализе';
-      
-//       error.value = errorMessage;
-//       console.error('Ошибка анализа:', {
-//         documentId,
-//         error: err.response?.data || err.message,
-//         stack: err.stack
-//       });
-
-//       // Возвращаем структурированную ошибку
-//       throw {
-//         type: 'ANALYSIS_ERROR',
-//         message: errorMessage,
-//         documentId,
-//         originalError: err
-//       };
-//     } finally {
-//       isAnalyzing.value = false;
-//     }
-// }
-
 
   const resetCurrentDocument = () => {
     currentDocument.value = {
@@ -376,14 +351,20 @@ const analyzeDocument = async (documentId) => {
       agency: '',
       originalText: '',
       summary: '',
+      documentDate: '',
+      senderAgency: '',
       keyParagraphs: [],
       attachments: [],
-      comments: ''
+      comments: '',
+      complaints: [],
+      analysisStatus: 'pending',
+      lastAnalyzedAt: null
     }
   }
 
-  const setCurrentDocument = (doc) => {
-    currentDocument.value = { ...doc }
+  const viewDocument = async (id) => {
+    await fetchDocumentById(id)
+    router.push(`/documents/${id}`)
   }
 
   return {
@@ -397,24 +378,18 @@ const analyzeDocument = async (documentId) => {
     // Геттеры
     agenciesList,
     hasAttachments,
+    analyzedDocuments,
     
     // Действия
-    generateComplaint,
-    fetchComplaints,
-    uploadFiles,
-    addAttachment,
-    removeAttachment,
-    saveDocument,
     fetchDocuments,
     fetchDocumentById,
-    analyzeDocument,
-    resetCurrentDocument,
-    setCurrentDocument,
+    uploadFiles,
+    saveDocument,
     deleteDocument,
-
-    viewDocument: async (id) => {
-    await fetchDocumentById(id)
-    router.push(`/documents/${id}`)
-  }
+    analyzeDocument,
+    generateComplaint,
+    fetchComplaints,
+    resetCurrentDocument,
+    viewDocument
   }
 })

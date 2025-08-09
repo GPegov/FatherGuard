@@ -3,17 +3,14 @@ import { readFile } from "fs/promises";
 
 class AIService {
   constructor() {
-    // Настройки для локальной модели
     this.localModelUrl = process.env.LOCAL_MODEL_URL || "http://localhost:11434";
-    this.modelName = "deepseek-r1:14b";
+    this.modelName = "llama3:8b";
     this.defaultOptions = {
       temperature: 0.3,
-      max_tokens: 2000,
+      max_tokens: 3000,
       repeat_penalty: 1.2,
-      format: "json" // Запрашиваем ответ в JSON формате
+      format: "json"
     };
-    
-    // Кеш для результатов анализа
     this.analysisCache = new Map();
   }
 
@@ -35,7 +32,7 @@ class AIService {
           ...options
         },
         {
-          timeout: 120000 // 2 минуты на обработку
+          timeout: 120000
         }
       );
       
@@ -60,26 +57,34 @@ class AIService {
 
     const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
     const result = await this.queryLocalModel(prompt, {
-      temperature: strictMode ? 0.1 : 0.3 // Более строгие ответы в strictMode
+      temperature: strictMode ? 0.1 : 0.3
     });
 
-    this.analysisCache.set(cacheKey, result);
-    return result;
+    // Добавляем автоматическое извлечение даты и ведомства
+    const enhancedResult = {
+      ...result,
+      documentDate: this.extractDate(text) || "",
+      senderAgency: this.extractAgency(text) || ""
+    };
+
+    this.analysisCache.set(cacheKey, enhancedResult);
+    return enhancedResult;
   }
 
   /**
-   * Генерация жалобы с улучшенным промптом
+   * Генерация жалобы с улучшенным промптом (версия 2)
    */
-  async generateComplaint(documentText, agency, violations = []) {
-    const prompt = this.buildComplaintPrompt(documentText, agency, violations);
+  async generateComplaintV2(documentText, agency, relatedDocuments = []) {
+    const prompt = this.buildComplaintPromptV2(documentText, agency, relatedDocuments);
     const response = await this.queryLocalModel(prompt, {
-      temperature: 0.5, // Больше креативности для генерации текста
+      temperature: 0.5,
       max_tokens: 3000
     });
 
     return {
-      content: response.content,
-      violations: response.identifiedViolations || []
+      content: response.content || this.generateDefaultComplaint(documentText, agency),
+      violations: response.identifiedViolations || [],
+      analysis: response.legalAnalysis || ""
     };
   }
 
@@ -91,6 +96,7 @@ class AIService {
 1. Всегда возвращай валидный JSON
 2. Будь точным в цитатах
 3. Ссылайся на конкретные законы
+4. Извлекай даты и ведомства из текста
 
 ${text}`;
   }
@@ -98,50 +104,73 @@ ${text}`;
   buildAnalysisPrompt(text, instructions, strictMode) {
     return JSON.stringify({
       task: "ANALYZE_LEGAL_DOCUMENT",
-      text: text.substring(0, 10000), // Ограничение длины
+      text: text.substring(0, 10000),
       requirements: {
         summaryLength: "3-5 предложений",
         keyParagraphs: {
           count: 3,
           exactQuotes: true
         },
+        extractDates: true,
+        identifyAgencies: true,
         strictAnalysis: strictMode,
         additionalInstructions: instructions
       },
       lawsToCheck: [
         "Федеральный закон 'Об исполнительном производстве' №229-ФЗ",
         "Семейный кодекс РФ",
-        "КоАП РФ"
+        "КоАП РФ",
+        "ФЗ 'О судебных приставах'"
       ]
     });
   }
 
-  buildComplaintPrompt(text, agency, violations) {
+  buildComplaintPromptV2(text, agency, relatedDocuments) {
     return JSON.stringify({
-      task: "GENERATE_COMPLAINT",
+      task: "GENERATE_COMPLAINT_V2",
       agency,
-      violations,
       sourceText: text.substring(0, 5000),
+      relatedDocuments: relatedDocuments.map(doc => doc.substring(0, 2000)),
       requirements: {
         style: "Официальный",
         sections: [
           "Шапка (кому/от кого)",
           "Описание ситуации",
+          "Ссылки на связанные документы",
           "Нарушения",
           "Требования",
           "Приложения"
-        ]
+        ],
+        includeReferences: true,
+        citeLaws: true
       }
     });
   }
 
+  extractDate(text) {
+    // Простая логика извлечения даты (можно улучшить)
+    const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
+    const match = text.match(dateRegex);
+    return match ? match[0] : null;
+  }
+
+  extractAgency(text) {
+    // Базовое извлечение ведомств
+    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен", "МВД", "Росреестр"];
+    return agencies.find(agency => text.includes(agency)) || null;
+  }
+
+  generateDefaultComplaint(text, agency) {
+    return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${
+      text.substring(0, 500)
+    }\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+  }
+
   parseModelResponse(data) {
     try {
-      // Обработка stream и non-stream ответов
       const rawResponse = data.response || data;
       const parsed = typeof rawResponse === 'string' ? JSON.parse(rawResponse) : rawResponse;
       
-      // Валидация структуры ответа
       if (parsed.error) {
         throw new Error(parsed.error);
       }
@@ -162,7 +191,6 @@ ${text}`;
   }
 
   generateCacheKey(text, instructions = "") {
-    // Упрощенная хеш-функция для кеширования
     const str = text.substring(0, 200) + instructions;
     let hash = 0;
     for (let i = 0; i < str.length; i++) {
@@ -172,9 +200,5 @@ ${text}`;
     return hash.toString(36);
   }
 }
-
-
-
-
 
 export default new AIService();
