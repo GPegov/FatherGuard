@@ -1,0 +1,260 @@
+﻿LEGAL-ASSISTANT 
+├── backend/
+│   ├── blanks/
+│   ├── controllers/
+│   │   ├── aiController.js
+│   │   ├── analysisController.js
+│   │   ├── complaintController.js
+│   │   └── documentController.js
+│   ├── middleware/
+│   │   └── aiErrorHandler.js
+│   ├── routes/
+│   │   ├── aiRoutes.js
+│   │   ├── analysisRoutes.js
+│   │   ├── complaintRoutes.js
+│   │   └── documentRoutes.js
+│   ├── services/
+│   │   ├── aiService.js
+│   │   ├── fileservice.js
+│   │   ├── legal_references.json
+│   │   ├── nlpService.js
+│   │   └── pdfService.js
+│   └── (другие backend файлы)
+│
+└── frontend/
+    ├── public/
+    │   ├── assets/
+    │   └── index.html
+    │
+    ├── src/
+    │   ├── assets/
+    │   ├── components/
+    │   │   ├── common/
+    │   │   │   ├── FileUpload.vue
+    │   │   │   └── TextEditor.vue
+    │   │   └── ui/
+    │   │       └── NotificationToast.vue
+    │   │
+    │   ├── composables/
+    │   │   ├── useComplaintGenerator.js
+    │   │   └── useDocumentAnalysis.js
+    │   │
+    │   ├── router/
+    │   │   └── index.js
+    │   │
+    │   ├── stores/
+    │   │   ├── aStore.js
+    │   │   ├── complaintStore.js
+    │   │   └── documentStore.js
+    │   │
+    │   ├── views/
+    │   │   ├── ComplaintsList.vue
+    │   │   ├── DocumentDetail.vue
+    │   │   ├── DocumentReview.vue
+    │   │   ├── DocumentList.vue
+    │   │   └── HomeView.vue
+    │   │
+    │   ├── App.vue
+    │   └── main.js
+    │
+    ├── .vscode/
+    ├── node_modules/
+    ├── jsconfig.json
+    ├── package.json
+    ├── vite.config.js
+    └── (другие конфигурационные файлы)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LEGAL-ASSISTANT/
+├── backend/
+│   ├── controllers/
+│   │   ├── analysisController.js
+│   │   ├── complaintController.js
+│   │   └── documentController.js
+│   ├── models/
+│   │   ├── Complaint.js
+│   │   └── Document.js
+│   ├── routes/
+│   │   ├── analysisRoutes.js
+│   │   ├── complaintRoutes.js
+│   │   └── documentRoutes.js
+│   ├── services/
+│   │   ├── fileService.js
+│   │   ├── nlpService.js
+│   │   └── pdfService.js
+│   ├── storage/
+│   ├── uploads/
+│   ├── test/
+│   ├── app.mjs
+│   ├── db.json
+│   ├── package-lock.json
+│   └── package.json
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── assets/
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   │   ├── FileUpload.vue
+│   │   │   │   └── TextEditor.vue
+│   │   │   ├── layout/
+│   │   │   │   ├── Footer.vue
+│   │   │   │   └── Header.vue
+│   │   │   └── ui/
+│   │   │       └── NotificationToast.vue
+│   │   ├── composables/
+│   │   │   ├── useComplaintGenerator.js
+│   │   │   └── useDocumentAnalysis.js
+│   │   ├── router/
+│   │   │   └── index.js
+│   │   ├── stores/
+│   │   │   ├── complaintStore.js
+│   │   │   └── documentStore.js
+│   │   ├── views/
+│   │   │   ├── ComplaintsList.vue
+│   │   │   ├── DocumentDetail.vue
+│   │   │   ├── DocumentReview.vue
+│   │   │   ├── DocumentsList.vue
+│   │   │   └── HomeView.vue
+│   │   ├── App.vue
+│   │   └── main.js
+│   ├── .gitignore
+│   ├── index.html
+│   ├── jsonfig.json
+│   ├── package-lock.json
+│   ├── package.json
+│   └── README.md
+│
+├── .vscode/
+└── node_modules/
+Краткое описание структуры:
+Backend:
+
+Использует Node.js с Express (судя по структуре controllers/routes)
+
+Имеет отдельные контроллеры, модели и роуты для работы с жалобами и документами
+
+Сервисы для обработки файлов, NLP и PDF
+
+Frontend:
+
+Vue 3 приложение с Composition API (использование composables)
+
+Pinia для управления состоянием (stores)
+
+Vue Router для навигации
+
+Компоненты разделены по функциональности:
+
+common - общие компоненты (загрузка файлов, редактор текста)
+
+layout - компоненты макета
+
+ui - UI компоненты
+
+Общее:
+
+Проект использует современный стек JavaScript (Vue 3, Node.js)
+
+Имеет хорошую модульную структуру
+
+Разделение на backend и frontend четкое
+
+
+
+
+Это структура моего проекта на Vue3 с Composition API, Pinia и Vue Router.
+
+Теперь будем использовать эту схему проекта при разработке. Я буду объяснять тебе задачу, а ты будешь говорить мне, какие именно файлы с кодом тебе нужно предоставить для написания кода, чтобы новый код органично вписывался в проект и ничего не сломалось
+
+
+
+
+
+
+
+
+
+
+// Первоначальная структура
+
+legal-helper/
+├── backend/
+│   ├── node_modules/
+│   ├── controllers/
+│   │   ├── analysisController.js    # Контроллер для работы с нейросетью
+│   │   ├── documentController.js    # Контроллер для обработки документов
+│   │   └── complaintController.js   # Контроллер для генерации жалоб
+│   ├── models/
+│   │   ├── Document.js              # Модель для входящих документов
+│   │   └── Complaint.js             # Модель для жалоб
+│   ├── routes/
+│   │   ├── analysisRoutes.js        # Роуты для анализа
+│   │   ├── documentRoutes.js        # Роуты для документов
+│   │   └── complaintRoutes.js       # Роуты для жалоб
+│   ├── services/
+│   │   ├── pdfService.js           # Сервис для работы с PDF
+│   │   ├── nlpService.js           # Сервис для работы с нейросетью
+│   │   └── fileService.js          # Сервис для работы с файлами
+│   ├── storage/
+│   │   ├── incoming.json           # База данных входящих документов
+│   │   └── complaints.json         # База данных жалоб
+│   ├── app.js                      # Основной файл приложения
+│   └── package.json
+│
+├── frontend/
+│   ├── public/
+│   ├── src/
+│   │   ├── assets/
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   │   ├── FileUpload.vue   # Компонент загрузки файлов
+│   │   │   │   └── TextEditor.vue   # Компонент редактирования текста
+│   │   │   └── layout/
+│   │   │       ├── Header.vue
+│   │   │       └── Footer.vue
+│   │   ├── composables/
+│   │   │   ├── useDocumentAnalysis.js # Логика анализа документов
+│   │   │   └── useComplaintGenerator.js # Логика генерации жалоб
+│   │   ├── router/
+│   │   │   └── index.js            # Конфигурация роутера
+│   │   ├── stores/
+│   │   │   ├── documentStore.js    # Хранилище для документов
+│   │   │   └── complaintStore.js   # Хранилище для жалоб
+│   │   ├── views/
+│   │   │   ├── HomeView.vue        # Главная страница (1)
+│   │   │   ├── DocumentReview.vue  # Страница проверки (2)
+│   │   │   ├── DocumentsList.vue   # Список документов (3)
+│   │   │   └── ComplaintsList.vue  # Список жалоб (4)
+│   │   ├── App.vue
+│   │   └── main.js
+│   ├── package.json
+│   └── vite.config.js
+│
+├── models/                        # Локальная папка с моделью deepseek-r1:14b
+│   └── deepseek-r1-14b/
+│
+├── .gitignore
+└── README.md
