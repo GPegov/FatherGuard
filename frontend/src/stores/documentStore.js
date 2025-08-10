@@ -290,6 +290,9 @@ ${attachment.text.substring(0, 10000)}`,
     }
   };
 
+
+  
+
   const generateComplaint = async (documentId, agency) => {
     isAnalyzing.value = true;
     error.value = null;

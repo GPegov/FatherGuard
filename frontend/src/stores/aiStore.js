@@ -15,7 +15,7 @@ export const useAIStore = defineStore("ai", {
         parameters: {
           temperature: 0.3,
           top_p: 0.9,
-          num_ctx: 4096
+          num_ctx: 8192
         }
       },
       { 

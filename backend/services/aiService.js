@@ -58,8 +58,12 @@ class AIService {
     const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
     const result = await this.queryLocalModel(prompt, {
       temperature: strictMode ? 0.1 : 0.3
+      
     });
-
+    if (!result.summary) {
+      console.error("Некорректный формат ответа от модели:", result);
+      throw new Error("Отсутствует поле summary в ответе модели");
+}
     // Добавляем автоматическое извлечение даты и ведомства
     const enhancedResult = {
       ...result,
