@@ -1,6 +1,7 @@
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
 import "dotenv/config";
-import express from "express";
-import cors from "cors";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { Low } from "lowdb";
@@ -8,7 +9,9 @@ import { JSONFile } from "lowdb/node";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
-import aiRoutes from "./routes/aiRoutes.js";
+import aiRoutes from './routes/aiRoutes.js'
+
+const app = express();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -117,6 +120,10 @@ async function startServer() {
       }
     );
     app.use("/api/ai", aiRoutes);
+
+
+    
+
 
     // Запуск сервера
     const PORT = process.env.PORT || 3001;

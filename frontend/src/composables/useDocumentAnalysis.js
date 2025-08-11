@@ -1,27 +1,20 @@
-import { ref } from 'vue';
+import { useDocumentStore } from '@/stores/documentStore';
 import { useAIStore } from '@/stores/aiStore';
 
-export default function useDocumentAnalysis() {
+export const useDocumentAnalysis = () => {
+  const documentStore = useDocumentStore();
   const aiStore = useAIStore();
-  const isAnalyzing = ref(false);
-  const analysisError = ref(null);
 
-  const analyzeText = async (text) => {
-    isAnalyzing.value = true;
-    analysisError.value = null;
-    try {
-      return await aiStore.analyzeText(text);
-    } catch (error) {
-      analysisError.value = error.message;
-      throw error;
-    } finally {
-      isAnalyzing.value = false;
-    }
+  const analyzeCurrentDocument = async () => {
+    return await documentStore.analyzeDocument();
+  };
+
+  const analyzeTextWithLLM = async (text) => {
+    return await aiStore.analyzeDocumentText(text);
   };
 
   return {
-    isAnalyzing,
-    analysisError,
-    analyzeText
+    analyzeCurrentDocument,
+    analyzeTextWithLLM
   };
-}
+};

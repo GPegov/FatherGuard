@@ -116,7 +116,7 @@
                 v-model="document.keyParagraphs[index]"
                 required
                 class="form-textarea"
-                rows="2"
+                rows="3"
               ></textarea>
               <button
                 type="button"

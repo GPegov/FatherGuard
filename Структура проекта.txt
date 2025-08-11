@@ -1,4 +1,169 @@
-﻿LEGAL-ASSISTANT 
+﻿FATHERGUARD/
+├── frontend/                 # Frontend часть (Vue.js)
+│   ├── src/                  # Исходные файлы
+│   │   ├── api/              # API-запросы
+│   │   ├── assets/           # Статические ресурсы (изображения, стили)
+│   │   ├── components/       # Компоненты Vue
+│   │   │   ├── common/       # Общие компоненты
+│   │   │   ├── FileUpload.vue  # Компонент загрузки файлов
+│   │   │   ├── TextEditor.vue  # Текстовый редактор
+│   │   │   └── NotificationToast.vue  # Уведомления
+│   │   ├── composables/      # Композаблы Vue (хуки)
+│   │   │   ├── useComplaintGenerator.js  # Генератор жалоб
+│   │   │   └── useDocumentAnalysis.js   # Анализ документов
+│   │   ├── router/           # Маршрутизация
+│   │   │   └── index.js      # Конфигурация роутера
+│   │   ├── stores/           # Хранилища (Pinia)
+│   │   │   ├── aistore.js    # Хранилище для AI
+│   │   │   ├── complaintsStore.js  # Хранилище жалоб
+│   │   │   └── documentStore.js    # Хранилище документов
+│   │   ├── views/            # Страницы
+│   │   │   ├── ComplaintForm.vue   # Форма жалобы
+│   │   │   ├── ComplaintsList.vue  # Список жалоб
+│   │   │   ├── DocumentDetail.vue  # Детали документа
+│   │   │   └── ...                 # Остальные страницы
+│   │   ├── App.vue           # Корневой компонент
+│   │   └── main.js           # Точка входа
+│   ├── package.json          # Зависимости и скрипты
+│   └── ...                   # Остальные файлы (index.html и др.)
+│
+└── backend/                  # Backend часть (Node.js)
+    ├── controllers/          # Контроллеры
+    │   ├── aiController.js   # Логика AI
+    │   ├── complaintController.js  # Логика жалоб
+    │   └── ...               # Остальные контроллеры
+    ├── models/               # Модели (Mongoose/Schemas)
+    │   ├── Complaint.js      # Модель жалобы
+    │   └── Document.js       # Модель документа
+    ├── routes/               # Маршруты Express
+    │   ├── aIRoutes.js       # Роуты для AI
+    │   └── ...               # Остальные роуты
+    ├── services/             # Сервисы
+    │   ├── aiservice.js      # Сервис AI
+    │   ├── nlpService.js     # NLP-обработка
+    │   └── ...               # Остальные сервисы
+    ├── uploads/              # Загруженные файлы
+    ├── env/                  # Файлы окружения (тесты)
+    ├── app.mjs               # Точка входа
+    └── ...                   # Остальные файлы (package.json и др.)
+
+
+
+
+
+
+
+
+LEGAL-ASSISTANT/
+├── backend/
+│   ├── blanks/
+│   ├── controllers/
+│   │   ├── aiController.js
+│   │   ├── analysisController.js
+│   │   ├── complaintController.js
+│   │   ├── documentController.js
+│   ├── middleware/
+│   │   └── aErrorHandler.js
+│   ├── models/
+│   │   ├── Complaint.js
+│   │   ├── Document.js
+│   ├── node_modules/
+│   ├── routes/
+│   │   ├── aiRoutes.js
+│   │   ├── analysisRoutes.js
+│   │   ├── complaintRoutes.js
+│   │   ├── documentRoutes.js
+│   ├── services/
+│   │   ├── AiService.js
+│   │   ├── DocumentService.js
+│   │   ├── FileServices.js
+│   │   ├── legal_references.json
+│   │   ├── modelHealthCheck.js
+│   │   ├── nlpService.js
+│   │   ├── pdfService.js
+│   ├── test/
+│   ├── uploads/
+│   ├── .env
+│   ├── ai-bailiff-test.js
+│   ├── ai-test-cases.js
+│   ├── app.mjs
+│   ├── db.json
+│   ├── package-lock.json
+│   ├── package.json
+│   └── test-aig
+├── frontend/
+│   ├── .vscode/
+│   ├── node_modules/
+│   ├── public/
+│   │   ├── assets/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── api/
+│   │   │   ├── ai.js
+│   │   │   └── documents.js
+│   │   ├── assets/
+│   │   ├── components/
+│   │   │   ├── common/
+│   │   │   ├── icons/
+│   │   │   ├── layout/
+│   │   │   ├── ui/
+│   │   │   └── NotificationToast.vue
+│   │   ├── composables/
+│   │   │   ├── useComplaintGener...
+│   │   │   └── useDocument...
+│   │   ├── router/
+│   │   │   └── index.js
+│   │   ├── stores/
+│   │   │   ├── useAiStore.js
+│   │   │   ├── useComplaint...
+│   │   │   └── useDocument...
+│   │   ├── views/
+│   │   │   ├── ComplaintsList.vue
+│   │   │   ├── DocumentDetail.vue
+│   │   │   ├── DocumentReview.vue
+│   │   │   ├── DocumentList.vue
+│   │   │   └── HomeView.vue
+│   │   ├── App.vue
+│   │   ├── main.js
+│   ├── jsconfig.json
+│   ├── package-lock.json
+│   ├── package.json
+│   ├── test-complaint.ps1
+│   └── vite.config.js
+├── .gitignore
+├── package-lock.json
+└── package.json
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+LEGAL-ASSISTANT 
 ├── backend/
 │   ├── blanks/
 │   ├── controllers/

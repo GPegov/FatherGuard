@@ -96,7 +96,7 @@ const submitData = async () => {
       router.push({ 
         name: 'review', 
         params: { id: savedDoc.id },
-        query: { new: 'true' } // Можно использовать для специальной обработки нового документа
+        query: { new: 'true' }  
       });
     } else {
       throw new Error('Документ не был сохранен: отсутствует ID');

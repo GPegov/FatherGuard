@@ -43,19 +43,18 @@ const complaintStore = useComplaintStore()
 // Загружаем данные при первом открытии соответствующих страниц
 watch(
   () => documentStore.documents,
-  (newVal, oldVal) => {
-    if (newVal.length === 0 && oldVal === undefined) {
+  (newVal) => {
+    if (newVal.length === 0) { 
       documentStore.fetchDocuments()
     }
   },
   { immediate: true }
 )
-
 watch(
-  () => complaintStore.complaints,
-  (newVal, oldVal) => {
-    if (newVal.length === 0 && oldVal === undefined) {
-      complaintStore.fetchComplaints()
+  () => documentStore.documents,
+  (newVal) => {
+    if (newVal.length === 0) { 
+      documentStore.fetchComplaints()
     }
   },
   { immediate: true }

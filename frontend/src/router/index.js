@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import HomeView from "@/views/HomeView.vue"; // Импорт напрямую для главной страницы
 
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
@@ -31,7 +32,23 @@ const router = createRouter({
       component: () => import("@/views/DocumentDetail.vue"),
       props: true,
     },
+    {
+      path: '/documents/:id/complaint',
+      name: 'ComplaintForm',
+      component: () => import('@/views/ComplaintForm.vue'),
+      props: true
+    }
+
   ],
 });
 
 export default router;
+
+
+
+
+
+
+
+
+

@@ -15,17 +15,10 @@ export const useAIStore = defineStore("ai", {
         parameters: {
           temperature: 0.3,
           top_p: 0.9,
-          num_ctx: 8192
+          
         }
       },
-      { 
-        name: "deepseek-r1:14b", 
-        description: "Базовая модель" 
-      },
-      { 
-        name: "hf.co/mradermacher/Medra4b-i1-GGUF:Q4_K_M",
-        description: "Резервная модель" 
-      },
+      
     ],
     agencies: ["ФССП", "Прокуратура", "Суд", "Омбудсмен"],
   }),
@@ -46,50 +39,7 @@ export const useAIStore = defineStore("ai", {
         .join(" ")
         .trim();
     },
-
-    /**
-     * Улучшенный формат промпта для Medra4b
-     */
-    _formatMedraPrompt(text, taskType = "default") {
-      const prompts = {
-        summary: `[INST] <<SYS>>
-Ты - юридический ассистент. Сгенерируй краткую суть документа по правилам:
-1. Только констатация сути предоставленного текста.
-2. Максимально кратко (2-3 предложения)
-4. Никаких пояснений.
-<</SYS>>
-
-Текст:
-${text.substring(0, 5000)}
-
-Краткая суть: [/INST]`,
-
-        paragraphs: `[INST] <<SYS>>
-Ты — юридический эксперт. Выдели 3-5 самых важных УНИКАЛЬНЫХ цитат из документа по правилам:
-1. Только разные по смыслу предложения
-2. НЕ повторяй одинаковые формулировки
-3. Каждая цитата должна раскрывать новую мысль
-4. Если предложения повторяются — выбери только один вариант
-5. Формат: "Точная цитата в кавычках"
-<</SYS>>
-
-Текст:
-${text.substring(0, 5000)}
-
-Цитаты: [/INST]`,
-
-        default: `[INST] <<SYS>>
-Ты - юридический ассистент. Сгенерируй краткую суть документа по правилам:
-1. Только констатация сути предоставленного текста.
-2. Максимально кратко (2-3 предложения)
-4. Никаких пояснений.
-<</SYS>>
-
-${text} [/INST]`,
-      };
-
-      return prompts[taskType] || prompts.default;
-    },
+    
 
     /**
      * Формат промптов для Llama3
@@ -118,6 +68,8 @@ ${text.substring(0, 7000)}
 3. Каждая с новой строки
 4. Выделяй полные предложения (не обрезай)
 5. Приоритет: цитаты с датами, номерами, ведомствами
+6. Отвечай только на русском языке!
+7. Без вступительных фраз!
 
 Текст:
 ${text.substring(0, 7000)}
@@ -154,7 +106,7 @@ ${text.substring(0, 7000)}
         };
         return systemMessages[taskType] || text;
       }
-      return this._formatMedraPrompt(text, taskType);
+      
     },
 
     /**
@@ -176,7 +128,7 @@ ${text.substring(0, 7000)}
     /**
      * Универсальный метод запроса к AI
      */
-    async _makeAIRequest(prompt, model = null, customOptions = {}, taskType = null) {
+    async _makeAIRequest(prompt, model = 'llama3:8b', customOptions = {}, taskType = null) {
       const currentModel = model || this.activeModel;
       const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
       
@@ -187,7 +139,7 @@ ${text.substring(0, 7000)}
         options: {
           temperature: customOptions.temperature ?? modelConfig.temperature ?? 0.3,
           top_p: customOptions.top_p ?? modelConfig.top_p ?? 0.9,
-          num_ctx: customOptions.num_ctx ?? modelConfig.num_ctx ?? 4096
+          num_ctx: customOptions.num_ctx ?? modelConfig.num_ctx ?? 8192
         }
       };
 
@@ -215,13 +167,8 @@ ${text.substring(0, 7000)}
           error: error.message
         });
 
-        // Fallback на другую модель
-        if (currentModel !== 'llama2') {
-          console.warn("Пробуем использовать резервную модель");
-          return this._makeAIRequest(prompt, 'llama2', customOptions, taskType);
-        }
-
-        throw new Error(`Ошибка AI: ${error.message}`);
+        
+      
       } finally {
         this.isLoading = false;
       }
@@ -254,8 +201,8 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          null,
-          { temperature: 0.1 },
+          'llama3:8b',
+          { temperature: 0.3 },
           'paragraphs'
         );
 
