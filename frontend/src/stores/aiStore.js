@@ -7,19 +7,8 @@ export const useAIStore = defineStore("ai", {
     error: null,
     apiStatus: "unknown", // 'ready', 'error', 'offline'
     apiUrl: "http://localhost:11434/api/generate",
-    activeModel: "llama3:8b",
-    availableModels: [
-      {
-        name: "llama3:8b",
-        description: "Оптимизированная модель для анализа документов",
-        parameters: {
-          temperature: 0.3,
-          top_p: 0.9,
-          
-        }
-      },
-      
-    ],
+    activeModel: "llama3.1:latest",
+    
     agencies: ["ФССП", "Прокуратура", "Суд", "Омбудсмен"],
   }),
 
@@ -42,10 +31,10 @@ export const useAIStore = defineStore("ai", {
     
 
     /**
-     * Формат промптов для Llama3
+     * Формат промптов
      */
     _formatPrompt(text, model, taskType = 'default') {
-      if (model.includes('llama3')) {
+      
         const systemMessages = {
           summary: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 Ты — юридический ассистент. Сгенерируй краткую суть документа по правилам:
@@ -105,7 +94,7 @@ ${text.substring(0, 7000)}
 Выявленные нарушения:`
         };
         return systemMessages[taskType] || text;
-      }
+      
       
     },
 
@@ -128,7 +117,7 @@ ${text.substring(0, 7000)}
     /**
      * Универсальный метод запроса к AI
      */
-    async _makeAIRequest(prompt, model = 'llama3:8b', customOptions = {}, taskType = null) {
+    async _makeAIRequest(prompt, model = state.activeModel, customOptions = {}, taskType = null) {
       const currentModel = model || this.activeModel;
       const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
       
@@ -181,7 +170,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          null,
+          state.activeModel,
           { temperature: 0.3 },
           'summary'
         );
@@ -201,7 +190,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          'llama3:8b',
+          state.activeModel,
           { temperature: 0.3 },
           'paragraphs'
         );
@@ -227,7 +216,7 @@ ${text.substring(0, 7000)}
       try {
         return await this._makeAIRequest(
           text,
-          null,
+          state.activeModel,
           { temperature: 0.5 },
           'violations'
         );
@@ -244,7 +233,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          null,
+          state.activeModel,
           { temperature: 0.2 },
           'documentAnalysis'
         );
@@ -306,7 +295,7 @@ ${text.substring(0, 7000)}
         return await this._makeAIRequest(
           prompt,
           null,
-          { temperature: 0.7 }
+          { temperature: 0.5 }
         );
       } catch (error) {
         console.error("Ошибка генерации жалобы:", error);
@@ -338,14 +327,14 @@ ${text.substring(0, 7000)}
   getters: {
     isServerOnline: (state) => state.apiStatus === "ready",
     activeModelName: (state) => {
-      const model = state.availableModels.find(
-        (m) => m.name === state.activeModel
-      );
+      const model = state.activeModel
+      
       return model ? model.description : "Неизвестная модель";
     },
   },
 });
 
+export default useAIStore
 
 
 

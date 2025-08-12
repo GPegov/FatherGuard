@@ -24,7 +24,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node app.mjs",
-    "dev": "nodemon app.mjs"
+    "dev": "nodemon app.mjs",
+    "check-env": "echo \"Проверка переменных:\nOLLAMA_URL: $OLLAMA_URL\nVITE_LOCAL_MODEL_URL: $VITE_LOCAL_MODEL_URL\nMODEL_NAME: $MODEL_NAME\""
   },
   "keywords": [],
   "author": "",

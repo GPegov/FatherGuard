@@ -17,26 +17,13 @@
           <h2>Основная информация</h2>
           <div class="form-group">
             <label for="date">Дата поступления:</label>
-            <input
-              type="date"
-              id="date"
-              v-model="document.date"
-              required
-              class="form-input"
-            />
+            <input type="date" id="date" v-model="document.date" required class="form-input" />
           </div>
 
           <div class="form-group">
             <label for="agency">Ведомство, допустившее нарушение:</label>
-            <input
-              type="text"
-              id="agency"
-              v-model="document.agency"
-              list="agencies"
-              required
-              class="form-input"
-              placeholder="Выберите ведомство"
-            />
+            <input type="text" id="agency" v-model="document.agency" list="agencies" required class="form-input"
+              placeholder="Выберите ведомство" />
             <datalist id="agencies">
               <option v-for="agency in agenciesList" :key="agency">{{ agency }}</option>
             </datalist>
@@ -44,43 +31,34 @@
 
           <div class="form-group">
             <label for="originalText">Текст документа:</label>
-            <textarea
-              id="originalText"
-              v-model="document.originalText"
-              required
-              class="form-textarea"
-              rows="8"
-              placeholder="Введите текст документа"
-            ></textarea>
+            <textarea id="originalText" v-model="document.originalText" required class="form-textarea" rows="8"
+              placeholder="Введите текст документа"></textarea>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="agencyTarget">Ведомство для жалобы:</label>
+          <input type="text" id="agencyTarget" v-model="document.agencyTarget" list="agencies" required
+            class="form-input" placeholder="Выберите ведомство" />
         </div>
 
         <!-- Анализ документа -->
         <div class="form-section" v-if="document.analysisStatus !== 'pending'">
           <h2>Анализ документа</h2>
-          
+
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Краткая суть:</label>
             <div class="summary-container">
-              <textarea
-                v-model="document.summary"
-                required
-                class="form-textarea"
-                rows="3"
-                placeholder="Анализ выполняется..."
-              ></textarea>
-              <button
-                type="button"
-                @click="regenerateSummary"
-                class="refresh-btn"
-                :disabled="aiStore.isLoading"
-                title="Перегенерировать краткую суть"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                  <path d="M3 3v5h5"/>
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                  <path d="M16 16h5v5"/>
+              <textarea v-model="document.summary" required class="form-textarea" rows="3"
+                placeholder="Анализ выполняется..."></textarea>
+              <button type="button" @click="regenerateSummary" class="refresh-btn" :disabled="aiStore.isLoading"
+                title="Перегенерировать краткую суть">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
                 </svg>
               </button>
             </div>
@@ -88,51 +66,24 @@
 
           <div class="form-group">
             <label>Дата отправления документа:</label>
-            <input 
-              v-model="document.documentDate" 
-              type="date" 
-              class="form-input"
-            />
+            <input v-model="document.documentDate" type="date" class="form-input" />
           </div>
 
           <div class="form-group">
             <label>Ведомство-отправитель:</label>
-            <input 
-              v-model="document.senderAgency" 
-              class="form-input"
-              list="agencies"
-            />
+            <input v-model="document.senderAgency" class="form-input" list="agencies" />
           </div>
 
           <!-- Ключевые параграфы -->
           <div class="form-group" v-if="document.keyParagraphs?.length">
             <label>Существенные параграфы:</label>
-            <div
-              v-for="(paragraph, index) in document.keyParagraphs"
-              :key="index"
-              class="paragraph-item"
-            >
-              <textarea
-                v-model="document.keyParagraphs[index]"
-                required
-                class="form-textarea"
-                rows="3"
-              ></textarea>
-              <button
-                type="button"
-                @click="removeParagraph(index)"
-                class="remove-btn"
-                title="Удалить параграф"
-              >
+            <div v-for="(paragraph, index) in document.keyParagraphs" :key="index" class="paragraph-item">
+              <textarea v-model="document.keyParagraphs[index]" required class="form-textarea" rows="3"></textarea>
+              <button type="button" @click="removeParagraph(index)" class="remove-btn" title="Удалить параграф">
                 ×
               </button>
             </div>
-            <button
-              type="button"
-              @click="addParagraph"
-              class="add-btn"
-              title="Добавить параграф"
-            >
+            <button type="button" @click="addParagraph" class="add-btn" title="Добавить параграф">
               + Добавить параграф
             </button>
           </div>
@@ -141,16 +92,23 @@
         <!-- Вложения -->
         <div class="form-section" v-if="document.attachments?.length">
           <h2>Вложенные документы</h2>
-          <div 
-            v-for="(attachment, idx) in document.attachments" 
-            :key="attachment.id || idx"
-            class="attachment-analysis"
-          >
+          <div v-for="(attachment, idx) in document.attachments" :key="attachment.id || idx"
+            class="attachment-analysis">
             <div class="attachment-header">
               <h3>{{ attachment.name }}</h3>
               <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
+              <button @click="regenerateAttachmentAnalysis(attachment.id)" class="refresh-btn" :disabled="isAnalyzing"
+                title="Переанализировать документ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
+                </svg>
+              </button>
             </div>
-            
+
             <div v-if="attachment.analysis" class="attachment-details">
               <div class="detail-row">
                 <span class="detail-label">Тип документа:</span>
@@ -158,58 +116,56 @@
               </div>
               <div class="detail-row">
                 <span class="detail-label">Дата отправления:</span>
-                <span>{{ attachment.analysis.sentDate || 'Не указана' }}</span>
+                <input type="date" v-model="attachment.documentDate" class="form-input small">
               </div>
               <div class="detail-row">
-                <span class="detail-label">Ведомство:</span>
-                <span>{{ attachment.analysis.senderAgency || 'Не указано' }}</span>
+                <span class="detail-label">Ведомство-отправитель:</span>
+                <input v-model="attachment.senderAgency" class="form-input small" list="agencies">
               </div>
-              <div class="detail-row">
+              <div class="detail-row full-width">
                 <span class="detail-label">Краткая суть:</span>
-                <p>{{ attachment.analysis.summary || 'Не сгенерировано' }}</p>
+                <textarea v-model="attachment.documentSummary" class="form-textarea" rows="3"></textarea>
               </div>
-              
-              <div v-if="attachment.analysis.keyParagraphs?.length" class="key-paragraphs">
+              <div class="detail-row full-width">
+                <span class="detail-label">Полный текст:</span>
+                <textarea v-model="attachment.fullText" class="form-textarea" rows="6" readonly></textarea>
+              </div>
+
+              <div class="key-paragraphs">
                 <h4>Ключевые параграфы:</h4>
-                <ul>
-                  <li v-for="(para, pIdx) in attachment.analysis.keyParagraphs" :key="pIdx">
-                    "{{ para }}"
-                  </li>
-                </ul>
+                <div v-for="(paragraph, index) in attachment.keyParagraphs" :key="index" class="paragraph-item">
+                  <textarea v-model="attachment.keyParagraphs[index]" class="form-textarea" rows="2"></textarea>
+                  <button type="button" @click="removeAttachmentParagraph(attachment.id, index)" class="remove-btn"
+                    title="Удалить параграф">
+                    ×
+                  </button>
+                </div>
+                <button type="button" @click="addAttachmentParagraph(attachment.id)" class="add-btn"
+                  title="Добавить параграф">
+                  + Добавить параграф
+                </button>
               </div>
             </div>
             <div v-else class="no-analysis">
               <p>Анализ не выполнен</p>
-              <button 
-                @click="analyzeAttachment(attachment)"
-                class="analyze-btn"
-                :disabled="isAnalyzing"
-              >
+              <button @click="analyzeAttachment(attachment)" class="analyze-btn" :disabled="isAnalyzing">
                 Анализировать
               </button>
             </div>
           </div>
         </div>
 
-      
+
 
         <!-- Кнопки действий -->
         <div class="form-actions">
-          <button
-            type="button"
-            @click="analyzeDocument"
-            class="analyze-btn"
-            :disabled="isAnalyzing || !document.originalText"
-          >
+          <button type="button" @click="analyzeDocument" class="analyze-btn"
+            :disabled="isAnalyzing || !document.originalText">
             <span v-if="isAnalyzing" class="button-loader"></span>
             {{ isAnalyzing ? 'Анализ...' : 'Анализировать документ' }}
           </button>
-          
-          <button
-            type="submit"
-            class="save-btn"
-            :disabled="isSaving"
-          >
+
+          <button type="submit" class="save-btn" :disabled="isSaving">
             {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
           </button>
         </div>
@@ -218,7 +174,7 @@
       <!-- Блок статуса -->
       <div class="status-section">
         <div class="status-indicator" :class="document.analysisStatus">
-          Статус анализа: 
+          Статус анализа:
           <span>{{ getStatusText(document.analysisStatus) }}</span>
         </div>
         <div v-if="document.lastAnalyzedAt" class="last-analyzed">
@@ -262,15 +218,15 @@ const agenciesList = computed(() => documentStore.agenciesList)
 onMounted(async () => {
   try {
     await aiStore.checkServerStatus()
-    
+
     if (!document.value.id && !document.value.originalText) {
       router.push('/')
       return
     }
-    
+
     if (document.value.id) {
       await documentStore.fetchDocumentById(document.value.id)
-      document.value = { 
+      document.value = {
         ...documentStore.currentDocument,
         attachments: documentStore.currentDocument.attachments?.map(att => ({
           ...att,
@@ -285,6 +241,60 @@ onMounted(async () => {
   }
 })
 
+const addAttachmentParagraph = (attachmentId) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment) {
+    if (!attachment.keyParagraphs) {
+      attachment.keyParagraphs = [];
+    }
+    attachment.keyParagraphs.push('');
+  }
+};
+
+const removeAttachmentParagraph = (attachmentId, index) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment && attachment.keyParagraphs) {
+    attachment.keyParagraphs.splice(index, 1);
+  }
+};
+
+// Обновленный метод анализа вложения
+const analyzeAttachment = async (attachment) => {
+  if (!attachment.text) return;
+  
+  isAnalyzing.value = true;
+  try {
+    const analysis = await documentStore.analyzeAttachment(attachment);
+    const index = document.value.attachments.findIndex(a => a.id === attachment.id);
+    if (index !== -1) {
+      document.value.attachments[index] = {
+        ...document.value.attachments[index],
+        ...analysis
+      };
+    }
+  } catch (err) {
+    error.value = 'Ошибка анализа вложения: ' + err.message;
+  } finally {
+    isAnalyzing.value = false;
+  }
+};
+
+// Метод для перегенерации анализа
+const regenerateAttachmentAnalysis = async (attachmentId) => {
+  isAnalyzing.value = true;
+  try {
+    const updatedAttachment = await documentStore.regenerateAttachmentAnalysis(attachmentId);
+    const index = document.value.attachments.findIndex(a => a.id === attachmentId);
+    if (index !== -1) {
+      document.value.attachments[index] = updatedAttachment;
+    }
+  } catch (err) {
+    error.value = 'Ошибка перегенерации анализа: ' + err.message;
+  } finally {
+    isAnalyzing.value = false;
+  }
+}
+
 const addParagraph = () => {
   document.value.keyParagraphs.push('')
 }
@@ -296,10 +306,10 @@ const removeParagraph = (index) => {
 const analyzeDocument = async () => {
   isAnalyzing.value = true
   error.value = null
-  
+
   try {
     const analysis = await documentStore.analyzeDocument()
-    
+
     document.value = {
       ...document.value,
       summary: analysis.summary,
@@ -316,25 +326,6 @@ const analyzeDocument = async () => {
   }
 }
 
-const analyzeAttachment = async (attachment) => {
-  if (!attachment.text) return
-  
-  isAnalyzing.value = true
-  try {
-    const analysis = await aiStore.analyzeAttachment(attachment.text)
-    attachment.analysis = analysis
-    
-    // Находим и обновляем вложение в основном документе
-    const index = document.value.attachments.findIndex(a => a.id === attachment.id)
-    if (index !== -1) {
-      document.value.attachments[index].analysis = analysis
-    }
-  } catch (err) {
-    error.value = 'Ошибка анализа вложения: ' + err.message
-  } finally {
-    isAnalyzing.value = false
-  }
-}
 
 const regenerateSummary = async () => {
   isAnalyzing.value = true
@@ -350,7 +341,7 @@ const regenerateSummary = async () => {
 const handleSubmit = async () => {
   isSaving.value = true
   error.value = null
-  
+
   try {
     documentStore.currentDocument = document.value
     await documentStore.saveDocument()
@@ -392,6 +383,36 @@ const getStatusText = (status) => {
 </script>
 
 <style scoped>
+.form-input.small {
+  padding: 6px 8px;
+  font-size: 0.9em;
+}
+
+.detail-row {
+  margin-bottom: 15px;
+}
+
+.detail-row.full-width {
+  grid-column: 1 / -1;
+}
+
+.detail-label {
+  display: block;
+  margin-bottom: 5px;
+  font-weight: 500;
+  color: #555;
+}
+
+.attachment-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+  margin-top: 15px;
+  padding: 15px;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
 .document-review {
   max-width: 1000px;
   margin: 0 auto;
@@ -470,7 +491,8 @@ const getStatusText = (status) => {
   color: #555;
 }
 
-.form-input, .form-textarea {
+.form-input,
+.form-textarea {
   width: 100%;
   padding: 10px;
   border: 1px solid #ddd;
@@ -479,7 +501,8 @@ const getStatusText = (status) => {
   transition: border-color 0.3s;
 }
 
-.form-input:focus, .form-textarea:focus {
+.form-input:focus,
+.form-textarea:focus {
   border-color: #42b983;
   outline: none;
 }
@@ -628,7 +651,8 @@ const getStatusText = (status) => {
   gap: 15px;
 }
 
-.analyze-btn, .save-btn {
+.analyze-btn,
+.save-btn {
   border: none;
   border-radius: 4px;
   padding: 12px 20px;
@@ -732,6 +756,8 @@ const getStatusText = (status) => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

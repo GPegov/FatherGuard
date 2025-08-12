@@ -13,6 +13,7 @@ app.use(pinia)
 
 
 app.use(router)
-
+console.log('API Base:', import.meta.env.VITE_API_BASE)
+console.log('Model URL:', import.meta.env.VITE_LOCAL_MODEL_URL)
 
 app.mount('#app')

@@ -1,4 +1,3 @@
-
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
@@ -11,8 +10,14 @@ export const useDocumentStore = defineStore("document", () => {
   const aiStore = useAIStore();
   const API_BASE = "http://localhost:3001";
 
+  // Состояние хранилища
 
-  // const createEmptyDocument = () => ({
+  const documents = ref([]);
+  const isLoading = ref(false);
+  const error = ref(null);
+  const isAnalyzing = ref(false);
+
+  // const currentDocument = ref({
   //   id: null,
   //   date: new Date().toISOString().split("T")[0],
   //   agency: "",
@@ -23,39 +28,29 @@ export const useDocumentStore = defineStore("document", () => {
   //   keyParagraphs: [],
   //   attachments: [],
   //   complaints: [],
-  //   analysisStatus: "pending",
+  //   complaintAgency: "",
+  //   analysisStatus: "pending", // 'pending' | 'processing' | 'completed' | 'failed'
   //   lastAnalyzedAt: null,
   // });
 
-
-
- 
-  // const currentDocument = ref(createEmptyDocument());
-
-  // Состояние хранилища
-
-  const documents = ref([]);
-  const isLoading = ref(false);
-  const error = ref(null);
-  const isAnalyzing = ref(false);
-
   const currentDocument = ref({
-    id: null,
-    date: new Date().toISOString().split("T")[0],
-    agency: "",
-    originalText: "",
-    summary: "",
+    id: uuidv4(),
+    date: new Date().toISOString(), // Дата поступления (п.1)
+    originalText: "", // Дословный текст (п.2)
+    agencyTarget: "", // Ведомство (п.3)
+    summary: "", // Краткая суть (п.4)
+    keyParagraphs: [], // Существенные параграфы (п.5)
+    // Расшифровка документа (п.6)
     documentDate: "",
     senderAgency: "",
-    keyParagraphs: [],
+    documentSummary: "",
+    fullText: "",
     attachments: [],
     complaints: [],
-    complaintAgency: "",
-    analysisStatus: "pending", // 'pending' | 'processing' | 'completed' | 'failed'
+    analysisStatus: "pending",
     lastAnalyzedAt: null,
+    violations: [],
   });
-
-  
 
   // Геттеры
   const agenciesList = computed(() => {
@@ -143,7 +138,7 @@ export const useDocumentStore = defineStore("document", () => {
     return handleApiCall(async () => {
       await axios.delete(`${API_BASE}/api/documents/${id}`);
       documents.value = documents.value.filter((doc) => doc.id !== id);
-      
+
       if (currentDocument.value.id === id) {
         resetCurrentDocument();
       }
@@ -155,6 +150,7 @@ export const useDocumentStore = defineStore("document", () => {
     error.value = null;
 
     try {
+      
       currentDocument.value.analysisStatus = "processing";
       await saveDocument();
 
@@ -185,30 +181,42 @@ export const useDocumentStore = defineStore("document", () => {
   const normalizeDocumentData = (data) => ({
     id: data.id || null,
     date: data.date || new Date().toISOString().split("T")[0],
-    agency: data.agency || "",
-    originalText: data.originalText || "",
-    summary: data.summary || "",
+    agency: data.agency || "", // старое поле (оставляем для обратной совместимости)
+    agencyTarget: data.agencyTarget || "", // новое поле (п.3)
+    originalText: data.originalText || "", // п.2
+    summary: data.summary || "", // п.4
+    keyParagraphs: data.keyParagraphs || [], // п.5
+    // Поля для расшифровки документа (п.6)
     documentDate: data.documentDate || "",
     senderAgency: data.senderAgency || "",
-    keyParagraphs: data.keyParagraphs || [],
-    attachments: data.attachments?.map(att => ({
-      id: att.id || uuidv4(),
-      name: att.name,
-      type: att.type,
-      size: att.size,
-      path: att.path,
-      text: att.text || "",
-      analysis: att.analysis || null,
-    })) || [],
+    documentSummary: data.documentSummary || data.summary || "", // п.6в (используем summary если нет отдельного поля)
+    fullText: data.fullText || data.originalText || "", // п.6г
+    attachments:
+      data.attachments?.map((att) => ({
+        id: att.id || uuidv4(),
+        name: att.name,
+        type: att.type,
+        size: att.size,
+        path: att.path,
+        text: att.text || "",
+        analysis: att.analysis || null,
+        // Добавляем поля для анализа вложений (п.6 для вложений)
+        documentDate: att.documentDate || "",
+        senderAgency: att.senderAgency || "",
+        documentSummary: att.documentSummary || "",
+        fullText: att.fullText || att.text || "",
+        keyParagraphs: att.keyParagraphs || [],
+      })) || [],
     complaints: data.complaints || [],
     analysisStatus: data.analysisStatus || "pending",
     lastAnalyzedAt: data.lastAnalyzedAt || null,
+    violations: data.violations || [],
   });
 
   const prepareDocumentForSave = (doc) => ({
     ...doc,
-    keyParagraphs: doc.keyParagraphs.filter(p => p.trim()),
-    attachments: doc.attachments.map(att => ({
+    keyParagraphs: doc.keyParagraphs.filter((p) => p.trim()),
+    attachments: doc.attachments.map((att) => ({
       id: att.id || uuidv4(),
       name: att.name,
       type: att.type,
@@ -220,7 +228,7 @@ export const useDocumentStore = defineStore("document", () => {
   });
 
   const updateDocumentsList = (savedDocument) => {
-    const index = documents.value.findIndex(d => d.id === savedDocument.id);
+    const index = documents.value.findIndex((d) => d.id === savedDocument.id);
     if (index !== -1) {
       documents.value[index] = savedDocument;
     } else {
@@ -243,11 +251,13 @@ export const useDocumentStore = defineStore("document", () => {
 
   const analyzeDocumentContent = async () => {
     const docText = currentDocument.value.originalText;
-    const [summary, paragraphs, violations] = await Promise.all([
-      aiStore.generateSummary(docText),
-      aiStore.extractKeyParagraphs(docText),
-      aiStore.detectViolations(docText),
-    ]);
+    const [summary, paragraphs, violations, documentSummary] =
+      await Promise.all([
+        aiStore.generateSummary(docText),
+        aiStore.extractKeyParagraphs(docText),
+        aiStore.detectViolations(docText),
+        aiStore.generateDocumentSummary(docText),
+      ]);
 
     return {
       summary,
@@ -255,20 +265,55 @@ export const useDocumentStore = defineStore("document", () => {
       violations,
       documentDate: extractDate(docText),
       senderAgency: extractAgency(docText),
+      documentSummary,
+      fullText: docText,
+      agencyTarget: determineTargetAgency(docText),
     };
   };
 
-  const analyzeAttachments = async () => {
-    if (!currentDocument.value.attachments?.length) return [];
+  const determineTargetAgency = (text) => {
+    const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
+    if (!violations) return "";
 
-    return Promise.all(
+    if (text.includes("ФССП") || text.includes("судебн")) return "ФССП";
+    if (text.includes("прокурор")) return "Прокуратура";
+    if (text.includes("суд")) return "Суд";
+    if (text.includes("омбудсмен")) return "Омбудсмен";
+
+    return "ФССП"; // По умолчанию
+  };
+
+  const analyzeAttachments = async () => {
+  if (!currentDocument.value.attachments?.length) return [];
+
+  isAnalyzing.value = true;
+  try {
+    const updatedAttachments = await Promise.all(
       currentDocument.value.attachments.map(async (att) => {
         if (!att.text) return att;
+        
         const analysis = await aiStore.analyzeAttachment(att.text);
-        return { ...att, analysis };
+        return {
+          ...att,
+          analysis,
+          documentDate: extractDate(att.text),
+          senderAgency: extractAgency(att.text),
+          documentSummary: analysis.summary || "",
+          fullText: att.text,
+          keyParagraphs: analysis.paragraphs || []
+        };
       })
     );
-  };
+
+    currentDocument.value.attachments = updatedAttachments;
+    return updatedAttachments;
+  } catch (err) {
+    error.value = 'Ошибка анализа вложений: ' + err.message;
+    throw err;
+  } finally {
+    isAnalyzing.value = false;
+  }
+};
 
   const extractDate = (text) => {
     const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
@@ -278,7 +323,7 @@ export const useDocumentStore = defineStore("document", () => {
 
   const extractAgency = (text) => {
     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    return agencies.find(agency => text.includes(agency)) || "";
+    return agencies.find((agency) => text.includes(agency)) || "";
   };
 
   const resetCurrentDocument = () => {
@@ -289,6 +334,78 @@ export const useDocumentStore = defineStore("document", () => {
     await fetchDocumentById(id);
     router.push(`/documents/${id}`);
   };
+
+  const regenerateAttachmentAnalysis = async (attachmentId) => {
+    const attachment = currentDocument.value.attachments.find(
+      (a) => a.id === attachmentId
+    );
+    if (!attachment) return;
+
+    try {
+      const analysis = await aiStore.analyzeAttachment(attachment.text);
+      const updatedAttachment = {
+        ...attachment,
+        analysis,
+        documentDate: extractDate(attachment.text),
+        senderAgency: extractAgency(attachment.text),
+        documentSummary: analysis.summary || "",
+        fullText: attachment.text,
+        keyParagraphs: analysis.paragraphs || [],
+      };
+
+      const index = currentDocument.value.attachments.findIndex(
+        (a) => a.id === attachmentId
+      );
+      currentDocument.value.attachments[index] = updatedAttachment;
+      await saveDocument();
+
+      return updatedAttachment;
+    } catch (err) {
+      error.value = "Ошибка перегенерации анализа вложения: " + err.message;
+      throw err;
+    }
+  };
+
+  const generateComplaint = async (documentId, agency) => {
+    return handleApiCall(async () => {
+      const doc = documents.value.find((d) => d.id === documentId);
+      if (!doc) throw new Error("Документ не найден");
+
+      const relatedDocs = documents.value.filter(
+        (d) => d.date <= doc.date && d.id !== documentId
+      );
+
+      const { data } = await axios.post(`${API_BASE}/api/complaints`, {
+        documentId,
+        agency,
+        relatedDocuments: relatedDocs.map((d) => d.id),
+      });
+
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = [
+          ...(currentDocument.value.complaints || []),
+          data,
+        ];
+        await saveDocument();
+      }
+
+      return data;
+    });
+  };
+
+  const fetchComplaints = async (documentId) => {
+      return handleApiCall(async () => {
+        const { data } = await axios.get(
+          `${API_BASE}/api/documents/${documentId}/complaints`
+        );
+
+        if (currentDocument.value.id === documentId) {
+          currentDocument.value.complaints = data;
+        }
+
+        return data;
+      });
+    }
 
   return {
     currentDocument,
@@ -305,53 +422,13 @@ export const useDocumentStore = defineStore("document", () => {
     saveDocument,
     deleteDocument,
     analyzeDocument,
-    generateComplaint: async (documentId, agency) => {
-      return handleApiCall(async () => {
-        const doc = documents.value.find(d => d.id === documentId);
-        if (!doc) throw new Error("Документ не найден");
-
-        const relatedDocs = documents.value.filter(
-          d => d.date <= doc.date && d.id !== documentId
-        );
-
-        const { data } = await axios.post(
-          `${API_BASE}/api/complaints`,
-          { documentId, agency, relatedDocuments: relatedDocs.map(d => d.id) }
-        );
-
-        if (currentDocument.value.id === documentId) {
-          currentDocument.value.complaints = [
-            ...(currentDocument.value.complaints || []),
-            data
-          ];
-          await saveDocument();
-        }
-
-        return data;
-      });
-    },
-    fetchComplaints: async (documentId) => {
-      return handleApiCall(async () => {
-        const { data } = await axios.get(
-          `${API_BASE}/api/documents/${documentId}/complaints`
-        );
-
-        if (currentDocument.value.id === documentId) {
-          currentDocument.value.complaints = data;
-        }
-
-        return data;
-      });
-    },
+    regenerateAttachmentAnalysis,
+    generateComplaint,
+    fetchComplaints,
     resetCurrentDocument,
     viewDocument,
   };
 });
-
-
-
-
-
 
 // import { defineStore } from "pinia";
 // import { ref, computed } from "vue";
@@ -644,9 +721,6 @@ export const useDocumentStore = defineStore("document", () => {
 //       isAnalyzing.value = false;
 //     }
 //   };
-
-
-  
 
 //   const generateComplaint = async (documentId, agency) => {
 //     isAnalyzing.value = true;
