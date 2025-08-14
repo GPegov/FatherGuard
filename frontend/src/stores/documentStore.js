@@ -17,21 +17,6 @@ export const useDocumentStore = defineStore("document", () => {
   const error = ref(null);
   const isAnalyzing = ref(false);
 
-  // const currentDocument = ref({
-  //   id: null,
-  //   date: new Date().toISOString().split("T")[0],
-  //   agency: "",
-  //   originalText: "",
-  //   summary: "",
-  //   documentDate: "",
-  //   senderAgency: "",
-  //   keyParagraphs: [],
-  //   attachments: [],
-  //   complaints: [],
-  //   complaintAgency: "",
-  //   analysisStatus: "pending", // 'pending' | 'processing' | 'completed' | 'failed'
-  //   lastAnalyzedAt: null,
-  // });
 
   const currentDocument = ref({
     id: uuidv4(),
@@ -427,8 +412,8 @@ export const useDocumentStore = defineStore("document", () => {
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,
-  };
-});
+  }
+})
 
 // import { defineStore } from "pinia";
 // import { ref, computed } from "vue";

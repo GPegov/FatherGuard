@@ -117,8 +117,8 @@ ${text.substring(0, 7000)}
     /**
      * Универсальный метод запроса к AI
      */
-    async _makeAIRequest(prompt, model = state.activeModel, customOptions = {}, taskType = null) {
-      const currentModel = model || this.activeModel;
+    async _makeAIRequest(prompt, model = this.activeModel, customOptions = {}, taskType = null) {
+      const currentModel = model;
       const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
       
       const payload = {
@@ -170,7 +170,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          state.activeModel,
+          this.activeModel,
           { temperature: 0.3 },
           'summary'
         );
@@ -190,7 +190,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          state.activeModel,
+          this.activeModel,
           { temperature: 0.3 },
           'paragraphs'
         );
@@ -216,7 +216,7 @@ ${text.substring(0, 7000)}
       try {
         return await this._makeAIRequest(
           text,
-          state.activeModel,
+          this.activeModel,
           { temperature: 0.5 },
           'violations'
         );
@@ -233,7 +233,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          state.activeModel,
+          this.activeModel,
           { temperature: 0.2 },
           'documentAnalysis'
         );
@@ -294,7 +294,7 @@ ${text.substring(0, 7000)}
 
         return await this._makeAIRequest(
           prompt,
-          null,
+          this.activeModel,
           { temperature: 0.5 }
         );
       } catch (error) {

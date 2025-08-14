@@ -1,3 +1,5 @@
+﻿Привет! Сделай подробное описание проекта, сформируй чёткую структуру взаимозависимостей компонентов, переменных и функций для её дальнейшего предоставления в контекст моделей.  Сделай всё в таком формате, чтобы затем локальным LLM было удобно работать с этой информацией и они ознакамливались с проектом в кратчайшее время. Чтобы в своей работе они ориентировались на эту структуру и, к примеру, не меняли имена важных функций без весомой причины, что часто приводит к неработоспособности всего приложения. Вот вводные данные по проекту: <<Привет! Я пишу код проекта на Vue3. Имеющийся функционал не урезай! Осторожно убирай только дублирующие функции. Выстраивай чёткую логику приложения. Я работаю с Vue 3, Vite, Pinia и Vue Router. Мы с тобой создаём приложение на Vue3 Composition API c бекендом на Node.js v24.5.0. Python я использовать не умею. Помоги мне в дальнейшей разработке. В логике мы широко используем Pinia и Vue Router. Вся логика и функционал должны быть в Pinia Store, а в компонентах только отображение! ЭТО ОЧЕНЬ ВАЖНО! Моё железо: Xeon E5 2640v4, 64Gb ddr4 Quad channel Ram. Я использую Windows 10. Я также локально скачал модель llama3.1:latest для использования её функционала в приложении. Отвечай мне на русском. Если тебе нужно ознакомится с другими файлами из моего проекта - попроси и я их пришлю. У приложения есть функция загрузки PDF-файлов и распознавания в них текста. Далее распознанный текст передаётся для анализа в локальную LLM и в нём выделяется краткая суть и существенные параграфы. Всей этой информацией пополняется файл db.json 
+Вот его структура: 1) дата поступления 2) дословный текст, предоставленный пользователем 3) ведомство на которое будет формироваться жалоба 4) краткая суть текста пользователя(не дословно) 5) дословно скопированные существенные параграфы (дословно - это очень важно для последующего составления жалоб) 6) расшифровка предоставленных им документов: а) Дата отправления документа б) Ведомство, отправившее документ в) краткая суть документа г) Полный текст документа д) Дословно скопированные существенные параграфы из расшифровки документа (дословно - это очень важно для последующего составления жалоб). После загрузки текста пользователя, вложенных документов и нажатия кнопки "Продолжить" на главной странице, открывается страница предпросмотра документа перед его сохранением с возможностью ручного редактирования (DocumentReview.vue). Также ниже следует добавить возможные недостающие поля из новой структуры базы данных db.json, чтобы вся информация из текущей карточки отображалась в этом компоненте. Третья страница - отображение списком всех актов записей из файла db.json в виде поля даты формирования, ведомства, на которое будет сформирована жалоба и краткой сути текста пользователя. В правой части каждой записи есть кнопка "Сформировать жалобу". После нажатия кнопки "Сформировать жалобу" локальная LLM анализирует всю информацию текущей записи базы данных, а также информацию остальных актов записей в db.json, внесённых туда ранее данной записи на предмет наличия сведений, существенных для составления жалобы на основе этого входящего документа,  и предлагает на выбор ведомства, в которые пользователь имеет право направить жалобу на ведомство, допустившее нарушение: ФССП, Прокуратура', Суд (административное исковое заявление, Уполномоченный по правам человека (омбудсмен). После выбора ведомства для направления жалобы, локальная LLM формирует жалобу и сохраняет её в файл db.json по аналогии с методом сохранения входящих документов, только в сформированных жалобах добавляется поле, в ответ на какой из входящих документ сформирована эта жалоба. Четвёртая страница - список сформированных жалоб, по аналогии с третьей страницей, но без кнопки "анализировать" в пределах каждой записи. Напротив каждой сформированной жалобы должна быть кнопка "Экспорт" с возможностью сохранения выбранной жалобы в формате .txt или .doc. Механика удаления входящих документов и сформированных жалоб уже сформирована - её менять не нужно, без моей прямой просьбы.>  Вот код компонентов проекта:
 Это код файла FatherGuard\frontend\src\components\common\FileUpload.vue:
 <template>
   <div class="file-upload">
@@ -108,74 +110,6 @@ const formatFileSize = (bytes) => {
 };
 </script>
 
-<style scoped>
-.file-upload {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.upload-button {
-  display: inline-block;
-  padding: 10px 20px;
-  background-color: #42b983;
-  color: white;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-  text-align: center;
-}
-
-.upload-button:hover {
-  background-color: #369f6b;
-}
-
-.file-list {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.file-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px;
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-.file-name {
-  flex-grow: 1;
-  margin-right: 10px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-size {
-  font-size: 0.8em;
-  color: #666;
-  margin-right: 10px;
-}
-
-.remove-btn {
-  background: none;
-  border: none;
-  color: #ff4444;
-  cursor: pointer;
-  font-size: 1.2em;
-  padding: 0 5px;
-}
-
-.error-message {
-  color: #ff4444;
-  font-size: 0.9em;
-  margin-top: 5px;
-}
-</style>
-
 Это код файла FatherGuard\frontend\src\components\ui\NotificationToast.vue:
 <template>
   <transition name="fade">
@@ -212,86 +146,7 @@ onMounted(() => {
 })
 </script>
 
-<style scoped>
-.notification-center {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 2;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-
-.notification-content {
-  padding: 16px 32px;
-  border-radius: 8px;
-  background-color: #42b983;
-  color: white;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  font-size: 1.1em;
-  max-width: 80%;
-  text-align: center;
-}
-
-/* Варианты цветов */
-.notification-content.success {
-  background-color: #42b983;
-}
-
-.notification-content.error {
-  background-color: #ff4444;
-}
-
-.notification-content.warning {
-  background-color: #ffbb33;
-}
-
-/* Анимации */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* Дополнительная анимация масштаба */
-.fade-enter-active .notification-content {
-  animation: scale-in 0.3s ease;
-}
-
-.fade-leave-active .notification-content {
-  animation: scale-out 0.3s ease;
-}
-
-@keyframes scale-in {
-  from {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
-}
-
-@keyframes scale-out {
-  from {
-    transform: scale(1);
-    opacity: 1;
-  }
-  to {
-    transform: scale(0.9);
-    opacity: 0;
-  }
-}
-</style>
-
-Это код файла useComplaintGenerator.js:
+Это код файла FatherGuard\frontend\src\composables\useComplaintGenerator.js:
 import { ref } from 'vue';
 import { useAIStore } from '@/stores/aiStore';
 
@@ -311,16 +166,16 @@ export default function useComplaintGenerator() {
     } finally {
       isGenerating.value = false;
     }
-  };
+  }
 
   return {
     isGenerating,
     generationError,
     generateComplaint
-  };
+  }
 }
 
-Это код файла useDocumentAnalysis.js:
+Это код файла FatherGuard\frontend\src\composables\useDocumentAnalysis.js:
 import { useDocumentStore } from '@/stores/documentStore';
 import { useAIStore } from '@/stores/aiStore';
 
@@ -330,17 +185,17 @@ export const useDocumentAnalysis = () => {
 
   const analyzeCurrentDocument = async () => {
     return await documentStore.analyzeDocument();
-  };
+  }
 
   const analyzeTextWithLLM = async (text) => {
     return await aiStore.analyzeDocumentText(text);
-  };
+  }
 
   return {
     analyzeCurrentDocument,
     analyzeTextWithLLM
-  };
-};
+  }
+}
 
 Это код файла FatherGuard\frontend\src\router\index.js:
 import { createRouter, createWebHistory } from "vue-router";
@@ -389,7 +244,8 @@ const router = createRouter({
 
 export default router;
 
-Это код файла aiStore.js:
+
+Это код файла FatherGuard\frontend\src\stores\aiStore.js:
 import { defineStore } from "pinia";
 import axios from "axios";
 
@@ -399,19 +255,8 @@ export const useAIStore = defineStore("ai", {
     error: null,
     apiStatus: "unknown", // 'ready', 'error', 'offline'
     apiUrl: "http://localhost:11434/api/generate",
-    activeModel: "llama3:8b",
-    availableModels: [
-      {
-        name: "llama3:8b",
-        description: "Оптимизированная модель для анализа документов",
-        parameters: {
-          temperature: 0.3,
-          top_p: 0.9,
-          
-        }
-      },
-      
-    ],
+    activeModel: "llama3.1:latest",
+    
     agencies: ["ФССП", "Прокуратура", "Суд", "Омбудсмен"],
   }),
 
@@ -434,10 +279,10 @@ export const useAIStore = defineStore("ai", {
     
 
     /**
-     * Формат промптов для Llama3
+     * Формат промптов
      */
     _formatPrompt(text, model, taskType = 'default') {
-      if (model.includes('llama3')) {
+      
         const systemMessages = {
           summary: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
 Ты — юридический ассистент. Сгенерируй краткую суть документа по правилам:
@@ -497,7 +342,7 @@ ${text.substring(0, 7000)}
 Выявленные нарушения:`
         };
         return systemMessages[taskType] || text;
-      }
+      
       
     },
 
@@ -520,8 +365,8 @@ ${text.substring(0, 7000)}
     /**
      * Универсальный метод запроса к AI
      */
-    async _makeAIRequest(prompt, model = 'llama3:8b', customOptions = {}, taskType = null) {
-      const currentModel = model || this.activeModel;
+    async _makeAIRequest(prompt, model = this.activeModel, customOptions = {}, taskType = null) {
+      const currentModel = model;
       const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
       
       const payload = {
@@ -573,7 +418,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          null,
+          this.activeModel,
           { temperature: 0.3 },
           'summary'
         );
@@ -593,7 +438,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          'llama3:8b',
+          this.activeModel,
           { temperature: 0.3 },
           'paragraphs'
         );
@@ -619,7 +464,7 @@ ${text.substring(0, 7000)}
       try {
         return await this._makeAIRequest(
           text,
-          null,
+          this.activeModel,
           { temperature: 0.5 },
           'violations'
         );
@@ -636,7 +481,7 @@ ${text.substring(0, 7000)}
       try {
         const response = await this._makeAIRequest(
           text,
-          null,
+          this.activeModel,
           { temperature: 0.2 },
           'documentAnalysis'
         );
@@ -697,8 +542,8 @@ ${text.substring(0, 7000)}
 
         return await this._makeAIRequest(
           prompt,
-          null,
-          { temperature: 0.7 }
+          this.activeModel,
+          { temperature: 0.5 }
         );
       } catch (error) {
         console.error("Ошибка генерации жалобы:", error);
@@ -730,27 +575,29 @@ ${text.substring(0, 7000)}
   getters: {
     isServerOnline: (state) => state.apiStatus === "ready",
     activeModelName: (state) => {
-      const model = state.availableModels.find(
-        (m) => m.name === state.activeModel
-      );
+      const model = state.activeModel
+      
       return model ? model.description : "Неизвестная модель";
     },
   },
 });
 
-Это код файла complaintStore.js:
-import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
-import { v4 as uuidv4 } from 'uuid';
-import { saveAs } from 'file-saver';
-import { useDocumentStore } from './documentStore';
-import aiService from '../../../backend/services/aiService';
-import { Packer } from 'docx';
-import { Document, Paragraph, TextRun } from 'docx';
+export default useAIStore
 
-export const useComplaintStore = defineStore('complaint', () => {
+
+Это код файла FatherGuard\frontend\src\stores\complaintStore.js:
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import { v4 as uuidv4 } from "uuid";
+import { saveAs } from "file-saver";
+import { useDocumentStore } from "./documentStore";
+import aiService from "../../../backend/services/aiService";
+import { Packer } from "docx";
+import { Document, Paragraph, TextRun } from "docx";
+
+export const useComplaintStore = defineStore("complaint", () => {
   const documentStore = useDocumentStore();
-  
+
   // Состояние
   const complaints = ref([]);
   const isLoading = ref(false);
@@ -761,14 +608,14 @@ export const useComplaintStore = defineStore('complaint', () => {
 
   // Геттеры
   const agenciesOptions = computed(() => [
-    'Федеральная служба судебных приставов (ФССП)',
-    'Прокуратура',
-    'Суд (административное исковое заявление)',
-    'Уполномоченный по правам человека (омбудсмен)'
+    "Федеральная служба судебных приставов (ФССП)",
+    "Прокуратура",
+    "Суд (административное исковое заявление)",
+    "Уполномоченный по правам человека (омбудсмен)",
   ]);
 
   const getComplaintsByDocument = computed(() => (documentId) => {
-    return complaints.value.filter(c => c.documentId === documentId);
+    return complaints.value.filter((c) => c.documentId === documentId);
   });
 
   // Действия
@@ -777,7 +624,7 @@ export const useComplaintStore = defineStore('complaint', () => {
     try {
       // В реальном приложении здесь будет запрос к API
       // Для примера используем локальные данные
-      complaints.value = JSON.parse(localStorage.getItem('complaints') || '[]');
+      complaints.value = JSON.parse(localStorage.getItem("complaints") || "[]");
     } catch (err) {
       error.value = err.message;
       throw err;
@@ -789,21 +636,21 @@ export const useComplaintStore = defineStore('complaint', () => {
   const generateComplaint = async (payload) => {
     isGenerating.value = true;
     error.value = null;
-    
+
     try {
       const { documentId, agency, instructions } = payload;
-      
+
       // Получаем документ и связанные документы
       const doc = await documentStore.fetchDocumentById(documentId);
-      const relatedDocs = documentStore.documents.filter(d => 
-        d.date <= doc.date && d.id !== documentId
+      const relatedDocs = documentStore.documents.filter(
+        (d) => d.date <= doc.date && d.id !== documentId
       );
 
       // Генерируем жалобу через AI сервис
       const result = await aiService.generateComplaint(
         doc.originalText,
         agency,
-        relatedDocs.map(d => d.originalText),
+        relatedDocs.map((d) => d.originalText),
         instructions
       );
 
@@ -812,21 +659,28 @@ export const useComplaintStore = defineStore('complaint', () => {
         id: uuidv4(),
         documentId,
         agency,
-        content: result.content,
-        violations: result.violations,
-        relatedDocuments: relatedDocs.map(d => d.id),
-        status: 'draft',
+        summary: complaintContent.summary, // Краткая суть (п.4)
+        verbatimSections: complaintContent.verbatimSections, // Дословные параграфы (п.5)
+        relatedDocuments: relatedDocs.map((d) => ({
+          id: d.id,
+          date: d.date, // Дата отправления (п.6а)
+          agency: d.senderAgency, // Ведомство-отправитель (п.6б)
+          summary: d.documentSummary, // Краткая суть документа (п.6в)
+          text: d.fullText, // Полный текст (п.6г)
+          verbatimSections: d.verbatimSections, // Дословные параграфы (п.6д)
+        })),
+        status: "draft",
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
       };
 
       // Сохраняем в хранилище
       complaints.value.unshift(newComplaint);
       generatedComplaint.value = newComplaint;
-      
+
       // Сохраняем в локальное хранилище (в реальном приложении - API запрос)
-      localStorage.setItem('complaints', JSON.stringify(complaints.value));
-      
+      localStorage.setItem("complaints", JSON.stringify(complaints.value));
+
       return newComplaint;
     } catch (err) {
       error.value = err.message;
@@ -839,23 +693,25 @@ export const useComplaintStore = defineStore('complaint', () => {
   const saveComplaint = async (complaintData) => {
     isLoading.value = true;
     try {
-      const index = complaints.value.findIndex(c => c.id === complaintData.id);
+      const index = complaints.value.findIndex(
+        (c) => c.id === complaintData.id
+      );
       if (index !== -1) {
         complaints.value[index] = {
           ...complaints.value[index],
           ...complaintData,
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         };
       } else {
         complaints.value.unshift({
           ...complaintData,
           id: uuidv4(),
           createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
+          updatedAt: new Date().toISOString(),
         });
       }
-      
-      localStorage.setItem('complaints', JSON.stringify(complaints.value));
+
+      localStorage.setItem("complaints", JSON.stringify(complaints.value));
       return complaints.value[index !== -1 ? index : 0];
     } catch (err) {
       error.value = err.message;
@@ -865,45 +721,53 @@ export const useComplaintStore = defineStore('complaint', () => {
     }
   };
 
-  const exportComplaint = async (complaintId, format = 'txt') => {
+  const exportComplaint = async (complaintId, format = "txt") => {
     isExporting.value = true;
     try {
-      const complaint = complaints.value.find(c => c.id === complaintId);
-      if (!complaint) throw new Error('Жалоба не найдена');
+      const complaint = complaints.value.find((c) => c.id === complaintId);
+      if (!complaint) throw new Error("Жалоба не найдена");
 
-      if (format === 'txt') {
-        const blob = new Blob([complaint.content], { type: 'text/plain' });
-        saveAs(blob, `Жалоба_${complaint.agency}_${formatDate(complaint.createdAt)}.txt`);
+      if (format === "txt") {
+        const blob = new Blob([complaint.content], { type: "text/plain" });
+        saveAs(
+          blob,
+          `Жалоба_${complaint.agency}_${formatDate(complaint.createdAt)}.txt`
+        );
         return blob;
-      } 
-      
-      if (format === 'doc') {
+      }
+
+      if (format === "doc") {
         const doc = new Document({
-          sections: [{
-            properties: {},
-            children: [
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: complaint.content,
-                    size: 24,
-                  })
-                ]
-              })
-            ]
-          }]
+          sections: [
+            {
+              properties: {},
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: complaint.content,
+                      size: 24,
+                    }),
+                  ],
+                }),
+              ],
+            },
+          ],
         });
 
         const buffer = await Packer.toBuffer(doc);
         const blob = new Blob([buffer], {
-          type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         });
-        
-        saveAs(blob, `Жалоба_${complaint.agency}_${formatDate(complaint.createdAt)}.docx`);
+
+        saveAs(
+          blob,
+          `Жалоба_${complaint.agency}_${formatDate(complaint.createdAt)}.docx`
+        );
         return blob;
       }
 
-      throw new Error('Неподдерживаемый формат экспорта');
+      throw new Error("Неподдерживаемый формат экспорта");
     } catch (err) {
       error.value = err.message;
       throw err;
@@ -915,8 +779,8 @@ export const useComplaintStore = defineStore('complaint', () => {
   const deleteComplaint = async (id) => {
     isLoading.value = true;
     try {
-      complaints.value = complaints.value.filter(c => c.id !== id);
-      localStorage.setItem('complaints', JSON.stringify(complaints.value));
+      complaints.value = complaints.value.filter((c) => c.id !== id);
+      localStorage.setItem("complaints", JSON.stringify(complaints.value));
       return true;
     } catch (err) {
       error.value = err.message;
@@ -928,11 +792,11 @@ export const useComplaintStore = defineStore('complaint', () => {
 
   const updateComplaintStatus = async (id, status) => {
     try {
-      const index = complaints.value.findIndex(c => c.id === id);
+      const index = complaints.value.findIndex((c) => c.id === id);
       if (index !== -1) {
         complaints.value[index].status = status;
         complaints.value[index].updatedAt = new Date().toISOString();
-        localStorage.setItem('complaints', JSON.stringify(complaints.value));
+        localStorage.setItem("complaints", JSON.stringify(complaints.value));
       }
       return complaints.value[index];
     } catch (err) {
@@ -943,7 +807,7 @@ export const useComplaintStore = defineStore('complaint', () => {
 
   // Вспомогательные функции
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('ru-RU');
+    return new Date(dateString).toLocaleDateString("ru-RU");
   };
 
   return {
@@ -954,23 +818,22 @@ export const useComplaintStore = defineStore('complaint', () => {
     isGenerating,
     isExporting,
     generatedComplaint,
-    
+
     // Геттеры
     agenciesOptions,
     getComplaintsByDocument,
-    
+
     // Действия
     fetchComplaints,
     generateComplaint,
     saveComplaint,
     exportComplaint,
     deleteComplaint,
-    updateComplaintStatus
-  };
-});
+    updateComplaintStatus,
+  }
+})
 
-Это код файла documentStore.js:
-
+Это код файла FatherGuard\frontend\src\stores\documentStore.js:
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
@@ -983,9 +846,6 @@ export const useDocumentStore = defineStore("document", () => {
   const aiStore = useAIStore();
   const API_BASE = "http://localhost:3001";
 
-
-
-
   // Состояние хранилища
 
   const documents = ref([]);
@@ -993,23 +853,25 @@ export const useDocumentStore = defineStore("document", () => {
   const error = ref(null);
   const isAnalyzing = ref(false);
 
+
   const currentDocument = ref({
-    id: null,
-    date: new Date().toISOString().split("T")[0],
-    agency: "",
-    originalText: "",
-    summary: "",
+    id: uuidv4(),
+    date: new Date().toISOString(), // Дата поступления (п.1)
+    originalText: "", // Дословный текст (п.2)
+    agencyTarget: "", // Ведомство (п.3)
+    summary: "", // Краткая суть (п.4)
+    keyParagraphs: [], // Существенные параграфы (п.5)
+    // Расшифровка документа (п.6)
     documentDate: "",
     senderAgency: "",
-    keyParagraphs: [],
+    documentSummary: "",
+    fullText: "",
     attachments: [],
     complaints: [],
-    complaintAgency: "",
-    analysisStatus: "pending", // 'pending' | 'processing' | 'completed' | 'failed'
+    analysisStatus: "pending",
     lastAnalyzedAt: null,
+    violations: [],
   });
-
-  
 
   // Геттеры
   const agenciesList = computed(() => {
@@ -1097,7 +959,7 @@ export const useDocumentStore = defineStore("document", () => {
     return handleApiCall(async () => {
       await axios.delete(`${API_BASE}/api/documents/${id}`);
       documents.value = documents.value.filter((doc) => doc.id !== id);
-      
+
       if (currentDocument.value.id === id) {
         resetCurrentDocument();
       }
@@ -1109,6 +971,7 @@ export const useDocumentStore = defineStore("document", () => {
     error.value = null;
 
     try {
+      
       currentDocument.value.analysisStatus = "processing";
       await saveDocument();
 
@@ -1139,30 +1002,42 @@ export const useDocumentStore = defineStore("document", () => {
   const normalizeDocumentData = (data) => ({
     id: data.id || null,
     date: data.date || new Date().toISOString().split("T")[0],
-    agency: data.agency || "",
-    originalText: data.originalText || "",
-    summary: data.summary || "",
+    agency: data.agency || "", // старое поле (оставляем для обратной совместимости)
+    agencyTarget: data.agencyTarget || "", // новое поле (п.3)
+    originalText: data.originalText || "", // п.2
+    summary: data.summary || "", // п.4
+    keyParagraphs: data.keyParagraphs || [], // п.5
+    // Поля для расшифровки документа (п.6)
     documentDate: data.documentDate || "",
     senderAgency: data.senderAgency || "",
-    keyParagraphs: data.keyParagraphs || [],
-    attachments: data.attachments?.map(att => ({
-      id: att.id || uuidv4(),
-      name: att.name,
-      type: att.type,
-      size: att.size,
-      path: att.path,
-      text: att.text || "",
-      analysis: att.analysis || null,
-    })) || [],
+    documentSummary: data.documentSummary || data.summary || "", // п.6в (используем summary если нет отдельного поля)
+    fullText: data.fullText || data.originalText || "", // п.6г
+    attachments:
+      data.attachments?.map((att) => ({
+        id: att.id || uuidv4(),
+        name: att.name,
+        type: att.type,
+        size: att.size,
+        path: att.path,
+        text: att.text || "",
+        analysis: att.analysis || null,
+        // Добавляем поля для анализа вложений (п.6 для вложений)
+        documentDate: att.documentDate || "",
+        senderAgency: att.senderAgency || "",
+        documentSummary: att.documentSummary || "",
+        fullText: att.fullText || att.text || "",
+        keyParagraphs: att.keyParagraphs || [],
+      })) || [],
     complaints: data.complaints || [],
     analysisStatus: data.analysisStatus || "pending",
     lastAnalyzedAt: data.lastAnalyzedAt || null,
+    violations: data.violations || [],
   });
 
   const prepareDocumentForSave = (doc) => ({
     ...doc,
-    keyParagraphs: doc.keyParagraphs.filter(p => p.trim()),
-    attachments: doc.attachments.map(att => ({
+    keyParagraphs: doc.keyParagraphs.filter((p) => p.trim()),
+    attachments: doc.attachments.map((att) => ({
       id: att.id || uuidv4(),
       name: att.name,
       type: att.type,
@@ -1174,7 +1049,7 @@ export const useDocumentStore = defineStore("document", () => {
   });
 
   const updateDocumentsList = (savedDocument) => {
-    const index = documents.value.findIndex(d => d.id === savedDocument.id);
+    const index = documents.value.findIndex((d) => d.id === savedDocument.id);
     if (index !== -1) {
       documents.value[index] = savedDocument;
     } else {
@@ -1197,11 +1072,13 @@ export const useDocumentStore = defineStore("document", () => {
 
   const analyzeDocumentContent = async () => {
     const docText = currentDocument.value.originalText;
-    const [summary, paragraphs, violations] = await Promise.all([
-      aiStore.generateSummary(docText),
-      aiStore.extractKeyParagraphs(docText),
-      aiStore.detectViolations(docText),
-    ]);
+    const [summary, paragraphs, violations, documentSummary] =
+      await Promise.all([
+        aiStore.generateSummary(docText),
+        aiStore.extractKeyParagraphs(docText),
+        aiStore.detectViolations(docText),
+        aiStore.generateDocumentSummary(docText),
+      ]);
 
     return {
       summary,
@@ -1209,20 +1086,55 @@ export const useDocumentStore = defineStore("document", () => {
       violations,
       documentDate: extractDate(docText),
       senderAgency: extractAgency(docText),
+      documentSummary,
+      fullText: docText,
+      agencyTarget: determineTargetAgency(docText),
     };
   };
 
-  const analyzeAttachments = async () => {
-    if (!currentDocument.value.attachments?.length) return [];
+  const determineTargetAgency = (text) => {
+    const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
+    if (!violations) return "";
 
-    return Promise.all(
+    if (text.includes("ФССП") || text.includes("судебн")) return "ФССП";
+    if (text.includes("прокурор")) return "Прокуратура";
+    if (text.includes("суд")) return "Суд";
+    if (text.includes("омбудсмен")) return "Омбудсмен";
+
+    return "ФССП"; // По умолчанию
+  };
+
+  const analyzeAttachments = async () => {
+  if (!currentDocument.value.attachments?.length) return [];
+
+  isAnalyzing.value = true;
+  try {
+    const updatedAttachments = await Promise.all(
       currentDocument.value.attachments.map(async (att) => {
         if (!att.text) return att;
+        
         const analysis = await aiStore.analyzeAttachment(att.text);
-        return { ...att, analysis };
+        return {
+          ...att,
+          analysis,
+          documentDate: extractDate(att.text),
+          senderAgency: extractAgency(att.text),
+          documentSummary: analysis.summary || "",
+          fullText: att.text,
+          keyParagraphs: analysis.paragraphs || []
+        };
       })
     );
-  };
+
+    currentDocument.value.attachments = updatedAttachments;
+    return updatedAttachments;
+  } catch (err) {
+    error.value = 'Ошибка анализа вложений: ' + err.message;
+    throw err;
+  } finally {
+    isAnalyzing.value = false;
+  }
+};
 
   const extractDate = (text) => {
     const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
@@ -1232,7 +1144,7 @@ export const useDocumentStore = defineStore("document", () => {
 
   const extractAgency = (text) => {
     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    return agencies.find(agency => text.includes(agency)) || "";
+    return agencies.find((agency) => text.includes(agency)) || "";
   };
 
   const resetCurrentDocument = () => {
@@ -1243,6 +1155,78 @@ export const useDocumentStore = defineStore("document", () => {
     await fetchDocumentById(id);
     router.push(`/documents/${id}`);
   };
+
+  const regenerateAttachmentAnalysis = async (attachmentId) => {
+    const attachment = currentDocument.value.attachments.find(
+      (a) => a.id === attachmentId
+    );
+    if (!attachment) return;
+
+    try {
+      const analysis = await aiStore.analyzeAttachment(attachment.text);
+      const updatedAttachment = {
+        ...attachment,
+        analysis,
+        documentDate: extractDate(attachment.text),
+        senderAgency: extractAgency(attachment.text),
+        documentSummary: analysis.summary || "",
+        fullText: attachment.text,
+        keyParagraphs: analysis.paragraphs || [],
+      };
+
+      const index = currentDocument.value.attachments.findIndex(
+        (a) => a.id === attachmentId
+      );
+      currentDocument.value.attachments[index] = updatedAttachment;
+      await saveDocument();
+
+      return updatedAttachment;
+    } catch (err) {
+      error.value = "Ошибка перегенерации анализа вложения: " + err.message;
+      throw err;
+    }
+  };
+
+  const generateComplaint = async (documentId, agency) => {
+    return handleApiCall(async () => {
+      const doc = documents.value.find((d) => d.id === documentId);
+      if (!doc) throw new Error("Документ не найден");
+
+      const relatedDocs = documents.value.filter(
+        (d) => d.date <= doc.date && d.id !== documentId
+      );
+
+      const { data } = await axios.post(`${API_BASE}/api/complaints`, {
+        documentId,
+        agency,
+        relatedDocuments: relatedDocs.map((d) => d.id),
+      });
+
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = [
+          ...(currentDocument.value.complaints || []),
+          data,
+        ];
+        await saveDocument();
+      }
+
+      return data;
+    });
+  };
+
+  const fetchComplaints = async (documentId) => {
+      return handleApiCall(async () => {
+        const { data } = await axios.get(
+          `${API_BASE}/api/documents/${documentId}/complaints`
+        );
+
+        if (currentDocument.value.id === documentId) {
+          currentDocument.value.complaints = data;
+        }
+
+        return data;
+      });
+    }
 
   return {
     currentDocument,
@@ -1259,50 +1243,15 @@ export const useDocumentStore = defineStore("document", () => {
     saveDocument,
     deleteDocument,
     analyzeDocument,
-    generateComplaint: async (documentId, agency) => {
-      return handleApiCall(async () => {
-        const doc = documents.value.find(d => d.id === documentId);
-        if (!doc) throw new Error("Документ не найден");
-
-        const relatedDocs = documents.value.filter(
-          d => d.date <= doc.date && d.id !== documentId
-        );
-
-        const { data } = await axios.post(
-          `${API_BASE}/api/complaints`,
-          { documentId, agency, relatedDocuments: relatedDocs.map(d => d.id) }
-        );
-
-        if (currentDocument.value.id === documentId) {
-          currentDocument.value.complaints = [
-            ...(currentDocument.value.complaints || []),
-            data
-          ];
-          await saveDocument();
-        }
-
-        return data;
-      });
-    },
-    fetchComplaints: async (documentId) => {
-      return handleApiCall(async () => {
-        const { data } = await axios.get(
-          `${API_BASE}/api/documents/${documentId}/complaints`
-        );
-
-        if (currentDocument.value.id === documentId) {
-          currentDocument.value.complaints = data;
-        }
-
-        return data;
-      });
-    },
+    regenerateAttachmentAnalysis,
+    generateComplaint,
+    fetchComplaints,
     resetCurrentDocument,
     viewDocument,
-  };
-});
+  }
+})
 
-Это код файла ComplaintForm.vue: 
+Это код файла FatherGuard\frontend\src\views\ComplaintForm.vue: 
 <!-- src/components/complaints/ComplaintForm.vue -->
 <template>
   <div class="complaint-form">
@@ -1496,236 +1445,7 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
-.complaint-form {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.header {
-  display: flex;
-  align-items: center;
-  margin-bottom: 30px;
-  gap: 15px;
-}
-
-.back-button {
-  background: none;
-  border: none;
-  color: #42b983;
-  cursor: pointer;
-  font-size: 1em;
-  padding: 5px 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.back-button:hover {
-  text-decoration: underline;
-}
-
-.loading, .error {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-  font-size: 1.2em;
-}
-
-.error {
-  color: #ff4444;
-}
-
-.complaint-form-content {
-  background: white;
-  border-radius: 8px;
-  padding: 25px;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.document-preview h2,
-.agency-selection h2,
-.instructions-section h2 {
-  margin-top: 0;
-  margin-bottom: 20px;
-  color: #2c3e50;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-}
-
-.document-info {
-  background-color: #f8f9fa;
-  padding: 20px;
-  border-radius: 6px;
-  margin-bottom: 25px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid #eee;
-}
-
-.label {
-  font-weight: bold;
-  color: #555;
-}
-
-.value {
-  color: #333;
-  text-align: right;
-  flex: 1;
-  margin-left: 15px;
-}
-
-.agency-select {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 16px;
-  margin-bottom: 25px;
-}
-
-.instructions-input {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-family: inherit;
-  resize: vertical;
-  margin-bottom: 25px;
-  font-size: 14px;
-}
-
-.actions {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 30px;
-  flex-wrap: wrap;
-}
-
-.generate-btn, .cancel-btn {
-  padding: 12px 25px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.3s;
-}
-
-.generate-btn {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.generate-btn:hover:not(:disabled) {
-  background-color: #45a049;
-}
-
-.generate-btn:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
-}
-
-.cancel-btn {
-  background-color: #f44336;
-  color: white;
-}
-
-.cancel-btn:hover {
-  background-color: #da190b;
-}
-
-.complaint-result {
-  margin-top: 30px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  padding: 20px;
-  background-color: #fff;
-}
-
-.complaint-result h2 {
-  margin-top: 0;
-  color: #2c3e50;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 10px;
-}
-
-.complaint-content {
-  background-color: #f9f9f9;
-  padding: 15px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  max-height: 300px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  font-family: monospace;
-  font-size: 14px;
-}
-
-.result-actions {
-  display: flex;
-  gap: 15px;
-  flex-wrap: wrap;
-}
-
-.copy-btn, .save-btn {
-  padding: 10px 20px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.3s;
-}
-
-.copy-btn {
-  background-color: #2196F3;
-  color: white;
-}
-
-.copy-btn:hover {
-  background-color: #1976D2;
-}
-
-.save-btn {
-  background-color: #FF9800;
-  color: white;
-}
-
-.save-btn:hover {
-  background-color: #F57C00;
-}
-
-@media (max-width: 768px) {
-  .complaint-form {
-    padding: 10px;
-  }
-  
-  .actions {
-    flex-direction: column;
-  }
-  
-  .result-actions {
-    flex-direction: column;
-  }
-  
-  .info-row {
-    flex-direction: column;
-    gap: 5px;
-  }
-  
-  .value {
-    text-align: left;
-  }
-}
-</style>
-
-Это код файла ComplaintsList.vue:
+Это код файла FatherGuard\frontend\src\views\ComplaintsList.vue:
 <template>
   <div class="complaints-list">
     <div class="header">
@@ -1922,170 +1642,7 @@ onMounted(async () => {
 })
 </script>
 
-<style scoped>
-.complaints-list {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-}
-
-h1 {
-  color: #2c3e50;
-}
-
-.back-btn {
-  color: #42b983;
-  text-decoration: none;
-  font-weight: bold;
-}
-
-.loading, .empty {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-}
-
-.create-link {
-  color: #42b983;
-  text-decoration: none;
-  font-weight: bold;
-}
-
-.complaints {
-  list-style: none;
-  padding: 0;
-  display: grid;
-  gap: 15px;
-}
-
-.complaint-card {
-  background: white;
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.complaint-card h3 {
-  margin-top: 0;
-  color: #35495e;
-}
-
-.date {
-  color: #666;
-  font-size: 0.9em;
-}
-
-.preview {
-  color: #333;
-  margin: 10px 0;
-}
-
-.actions {
-  display: flex;
-  gap: 10px;
-  margin-top: 15px;
-}
-
-.export-btn {
-  background: #f5f5f5;
-  border: 1px solid #ddd;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.3s;
-}
-
-.export-btn:hover {
-  background: #42b983;
-  color: white;
-  border-color: #42b983;
-}
-
-.delete-btn {
-  background: #ff4444;
-  color: white;
-  border: none;
-  padding: 5px 10px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.delete-btn:hover {
-  background: #cc0000;
-}
-
-/* Модальное окно */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 25px;
-  border-radius: 8px;
-  max-width: 400px;
-  width: 90%;
-}
-
-.modal-content h3 {
-  margin-top: 0;
-  color: #2c3e50;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.confirm-btn {
-  background: #ff4444;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.cancel-btn {
-  background: #f0f0f0;
-  padding: 8px 16px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-/* Debug styles */
-.debug-info {
-  background: #f8f8f8;
-  padding: 15px;
-  margin-bottom: 20px;
-  border-radius: 4px;
-  font-family: monospace;
-  font-size: 0.8em;
-  overflow-x: auto;
-}
-</style>
-
-Это код файла DocumentDetail.vue:
+Это код файла FatherGuard\frontend\src\views\DocumentDetail.vue:
 <!-- src/views/DocumentDetail.vue -->
 <template>
   <div class="document-detail">
@@ -2227,499 +1784,7 @@ const createComplaint = () => {
 }
 </script>
 
-<style scoped>
-.document-detail {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.back-button {
-  background: none;
-  border: none;
-  color: #42b983;
-  cursor: pointer;
-  font-size: 1em;
-  margin-bottom: 20px;
-  padding: 5px 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.back-button:hover {
-  text-decoration: underline;
-}
-
-.loading-state,
-.error-state,
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-  font-size: 1.2em;
-}
-
-.error-state {
-  color: #ff4444;
-}
-
-.document-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
-}
-
-.document-header h1 {
-  margin: 0;
-  font-size: 1.8em;
-  color: #2c3e50;
-}
-
-.document-date {
-  color: #666;
-  font-size: 0.9em;
-}
-
-.document-meta {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 25px;
-  flex-wrap: wrap;
-}
-
-.meta-field {
-  display: flex;
-  gap: 5px;
-}
-
-.meta-label {
-  font-weight: bold;
-  color: #555;
-}
-
-.meta-value {
-  color: #333;
-}
-
-.complaint-action {
-  margin-bottom: 20px;
-}
-
-.create-complaint-btn {
-  background-color: #4CAF50;
-  color: white;
-  border: none;
-  padding: 12px 20px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.3s;
-}
-
-.create-complaint-btn:hover {
-  background-color: #45a049;
-}
-
-.document-section {
-  margin-bottom: 30px;
-}
-
-.document-section h2 {
-  font-size: 1.3em;
-  color: #2c3e50;
-  margin-bottom: 10px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 5px;
-}
-
-.original-text {
-  white-space: pre-wrap;
-  background: #f9f9f9;
-  padding: 15px;
-  border-radius: 4px;
-  line-height: 1.6;
-  font-family: inherit;
-}
-
-.summary-text {
-  line-height: 1.6;
-  padding-left: 10px;
-}
-
-.paragraphs-list {
-  padding-left: 20px;
-}
-
-.paragraphs-list li {
-  margin-bottom: 8px;
-  line-height: 1.5;
-}
-
-.attachments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.attachment-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 15px;
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-.attachment-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.attachment-name {
-  font-weight: 500;
-}
-
-.attachment-size {
-  font-size: 0.8em;
-  color: #666;
-}
-
-.download-button {
-  background: #42b983;
-  color: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  text-decoration: none;
-  font-size: 0.9em;
-}
-
-.download-button:hover {
-  background: #369f6b;
-}
-
-.comments-text {
-  padding: 10px;
-  background: #f0f8ff;
-  border-radius: 4px;
-  line-height: 1.6;
-}
-</style>
-
-
-
-
-
-
-
-
-
-<!-- <template>
-  <div class="document-detail">
-    <button @click="goBack" class="back-button">← Назад к списку</button>
-    
-    <div v-if="loading" class="loading-state">
-      <p>Загрузка документа...</p>
-    </div>
-
-    <div v-else-if="error" class="error-state">
-      <p>Ошибка загрузки: {{ error }}</p>
-    </div>
-
-    <div v-else-if="!document" class="empty-state">
-      <p>Документ не найден</p>
-    </div>
-
-    <div v-else class="document-content">
-      <div class="document-header">
-        <h1>Документ #{{ document.id }}</h1>
-        <span class="document-date">{{ formatDate(document.date) }}</span>
-      </div>
-
-      <div class="document-meta">
-        <div v-if="document.agency" class="meta-field">
-          <span class="meta-label">Ведомство:</span>
-          <span class="meta-value">{{ document.agency }}</span>
-        </div>
-        
-        <div class="meta-field">
-          <span class="meta-label">Дата создания:</span>
-          <span class="meta-value">{{ formatDateTime(document.createdAt) }}</span>
-        </div>
-      </div>
-
-      <div class="document-section">
-        <h2>Исходный текст</h2>
-        <pre class="original-text">{{ document.originalText }}</pre>
-      </div>
-
-      <div v-if="document.summary" class="document-section">
-        <h2>Краткое содержание</h2>
-        <p class="summary-text">{{ document.summary }}</p>
-      </div>
-
-      <div v-if="document.keyParagraphs?.length" class="document-section">
-        <h2>Ключевые параграфы</h2>
-        <ul class="paragraphs-list">
-          <li v-for="(para, index) in document.keyParagraphs" :key="index">
-            {{ para }}
-          </li>
-        </ul>
-      </div>
-
-      <div v-if="document.attachments?.length" class="document-section">
-        <h2>Прикрепленные файлы</h2>
-        <div class="attachments-list">
-          <div v-for="file in document.attachments" :key="file.id" class="attachment-item">
-            <div class="attachment-info">
-              <span class="attachment-name">{{ file.name }}</span>
-              <span class="attachment-size">{{ formatFileSize(file.size) }}</span>
-            </div>
-            <a 
-              :href="getFileUrl(file.path)" 
-              target="_blank"
-              class="download-button"
-            >
-              Скачать
-            </a>
-          </div>
-        </div>
-      </div>
-
-      <div v-if="document.comments" class="document-section">
-        <h2>Комментарии</h2>
-        <p class="comments-text">{{ document.comments }}</p>
-      </div>
-    </div>
-  </div>
-</template>
-
-<script setup>
-import { ref, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useDocumentStore } from '@/stores/documentStore'
-
-const route = useRoute()
-const router = useRouter()
-const documentStore = useDocumentStore()
-
-const document = ref(null)
-const loading = ref(true)
-const error = ref(null)
-
-onMounted(async () => {
-  try {
-    loading.value = true
-    error.value = null
-    await documentStore.fetchDocumentById(route.params.id)
-    document.value = { ...documentStore.currentDocument }
-  } catch (err) {
-    error.value = err.message || 'Не удалось загрузить документ'
-    console.error('Ошибка загрузки документа:', err)
-  } finally {
-    loading.value = false
-  }
-})
-
-const formatDate = (dateString) => {
-  return dateString ? new Date(dateString).toLocaleDateString('ru-RU') : 'Дата не указана'
-}
-
-const formatDateTime = (dateString) => {
-  if (!dateString) return 'Дата не указана'
-  const options = {
-    day: 'numeric',
-    month: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }
-  return new Date(dateString).toLocaleString('ru-RU', options)
-}
-
-const formatFileSize = (bytes) => {
-  if (!bytes) return '0 KB'
-  return `${(bytes / 1024).toFixed(2)} KB`
-}
-
-const getFileUrl = (path) => {
-  return path.startsWith('http') ? path : `http://localhost:3001${path}`
-}
-
-const goBack = () => {
-  router.push('/documents')
-}
-</script>
-
-<style scoped>
-.document-detail {
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-}
-
-.back-button {
-  background: none;
-  border: none;
-  color: #42b983;
-  cursor: pointer;
-  font-size: 1em;
-  margin-bottom: 20px;
-  padding: 5px 0;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.back-button:hover {
-  text-decoration: underline;
-}
-
-.loading-state,
-.error-state,
-.empty-state {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-  font-size: 1.2em;
-}
-
-.error-state {
-  color: #ff4444;
-}
-
-.document-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 20px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid #eee;
-}
-
-.document-header h1 {
-  margin: 0;
-  font-size: 1.8em;
-  color: #2c3e50;
-}
-
-.document-date {
-  color: #666;
-  font-size: 0.9em;
-}
-
-.document-meta {
-  display: flex;
-  gap: 20px;
-  margin-bottom: 25px;
-  flex-wrap: wrap;
-}
-
-.meta-field {
-  display: flex;
-  gap: 5px;
-}
-
-.meta-label {
-  font-weight: bold;
-  color: #555;
-}
-
-.meta-value {
-  color: #333;
-}
-
-.document-section {
-  margin-bottom: 30px;
-}
-
-.document-section h2 {
-  font-size: 1.3em;
-  color: #2c3e50;
-  margin-bottom: 10px;
-  border-bottom: 1px solid #eee;
-  padding-bottom: 5px;
-}
-
-.original-text {
-  white-space: pre-wrap;
-  background: #f9f9f9;
-  padding: 15px;
-  border-radius: 4px;
-  line-height: 1.6;
-  font-family: inherit;
-}
-
-.summary-text {
-  line-height: 1.6;
-  padding-left: 10px;
-}
-
-.paragraphs-list {
-  padding-left: 20px;
-}
-
-.paragraphs-list li {
-  margin-bottom: 8px;
-  line-height: 1.5;
-}
-
-.attachments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.attachment-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 15px;
-  background: #f5f5f5;
-  border-radius: 4px;
-}
-
-.attachment-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.attachment-name {
-  font-weight: 500;
-}
-
-.attachment-size {
-  font-size: 0.8em;
-  color: #666;
-}
-
-.download-button {
-  background: #42b983;
-  color: white;
-  padding: 5px 10px;
-  border-radius: 4px;
-  text-decoration: none;
-  font-size: 0.9em;
-}
-
-.download-button:hover {
-  background: #369f6b;
-}
-
-.comments-text {
-  padding: 10px;
-  background: #f0f8ff;
-  border-radius: 4px;
-  line-height: 1.6;
-}
-</style> -->
-
-Это код файла DocumentReview.vue:
+Это код файла FatherGuard\frontend\src\views\DocumentReview.vue:
 <template>
   <div class="document-review">
     <div class="header">
@@ -2739,26 +1804,13 @@ const goBack = () => {
           <h2>Основная информация</h2>
           <div class="form-group">
             <label for="date">Дата поступления:</label>
-            <input
-              type="date"
-              id="date"
-              v-model="document.date"
-              required
-              class="form-input"
-            />
+            <input type="date" id="date" v-model="document.date" required class="form-input" />
           </div>
 
           <div class="form-group">
             <label for="agency">Ведомство, допустившее нарушение:</label>
-            <input
-              type="text"
-              id="agency"
-              v-model="document.agency"
-              list="agencies"
-              required
-              class="form-input"
-              placeholder="Выберите ведомство"
-            />
+            <input type="text" id="agency" v-model="document.agency" list="agencies" required class="form-input"
+              placeholder="Выберите ведомство" />
             <datalist id="agencies">
               <option v-for="agency in agenciesList" :key="agency">{{ agency }}</option>
             </datalist>
@@ -2766,43 +1818,34 @@ const goBack = () => {
 
           <div class="form-group">
             <label for="originalText">Текст документа:</label>
-            <textarea
-              id="originalText"
-              v-model="document.originalText"
-              required
-              class="form-textarea"
-              rows="8"
-              placeholder="Введите текст документа"
-            ></textarea>
+            <textarea id="originalText" v-model="document.originalText" required class="form-textarea" rows="8"
+              placeholder="Введите текст документа"></textarea>
           </div>
+        </div>
+
+        <div class="form-group">
+          <label for="agencyTarget">Ведомство для жалобы:</label>
+          <input type="text" id="agencyTarget" v-model="document.agencyTarget" list="agencies" required
+            class="form-input" placeholder="Выберите ведомство" />
         </div>
 
         <!-- Анализ документа -->
         <div class="form-section" v-if="document.analysisStatus !== 'pending'">
           <h2>Анализ документа</h2>
-          
+
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Краткая суть:</label>
             <div class="summary-container">
-              <textarea
-                v-model="document.summary"
-                required
-                class="form-textarea"
-                rows="3"
-                placeholder="Анализ выполняется..."
-              ></textarea>
-              <button
-                type="button"
-                @click="regenerateSummary"
-                class="refresh-btn"
-                :disabled="aiStore.isLoading"
-                title="Перегенерировать краткую суть"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-                  <path d="M3 3v5h5"/>
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-                  <path d="M16 16h5v5"/>
+              <textarea v-model="document.summary" required class="form-textarea" rows="3"
+                placeholder="Анализ выполняется..."></textarea>
+              <button type="button" @click="regenerateSummary" class="refresh-btn" :disabled="aiStore.isLoading"
+                title="Перегенерировать краткую суть">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
                 </svg>
               </button>
             </div>
@@ -2810,51 +1853,24 @@ const goBack = () => {
 
           <div class="form-group">
             <label>Дата отправления документа:</label>
-            <input 
-              v-model="document.documentDate" 
-              type="date" 
-              class="form-input"
-            />
+            <input v-model="document.documentDate" type="date" class="form-input" />
           </div>
 
           <div class="form-group">
             <label>Ведомство-отправитель:</label>
-            <input 
-              v-model="document.senderAgency" 
-              class="form-input"
-              list="agencies"
-            />
+            <input v-model="document.senderAgency" class="form-input" list="agencies" />
           </div>
 
           <!-- Ключевые параграфы -->
           <div class="form-group" v-if="document.keyParagraphs?.length">
             <label>Существенные параграфы:</label>
-            <div
-              v-for="(paragraph, index) in document.keyParagraphs"
-              :key="index"
-              class="paragraph-item"
-            >
-              <textarea
-                v-model="document.keyParagraphs[index]"
-                required
-                class="form-textarea"
-                rows="3"
-              ></textarea>
-              <button
-                type="button"
-                @click="removeParagraph(index)"
-                class="remove-btn"
-                title="Удалить параграф"
-              >
+            <div v-for="(paragraph, index) in document.keyParagraphs" :key="index" class="paragraph-item">
+              <textarea v-model="document.keyParagraphs[index]" required class="form-textarea" rows="3"></textarea>
+              <button type="button" @click="removeParagraph(index)" class="remove-btn" title="Удалить параграф">
                 ×
               </button>
             </div>
-            <button
-              type="button"
-              @click="addParagraph"
-              class="add-btn"
-              title="Добавить параграф"
-            >
+            <button type="button" @click="addParagraph" class="add-btn" title="Добавить параграф">
               + Добавить параграф
             </button>
           </div>
@@ -2863,16 +1879,23 @@ const goBack = () => {
         <!-- Вложения -->
         <div class="form-section" v-if="document.attachments?.length">
           <h2>Вложенные документы</h2>
-          <div 
-            v-for="(attachment, idx) in document.attachments" 
-            :key="attachment.id || idx"
-            class="attachment-analysis"
-          >
+          <div v-for="(attachment, idx) in document.attachments" :key="attachment.id || idx"
+            class="attachment-analysis">
             <div class="attachment-header">
               <h3>{{ attachment.name }}</h3>
               <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
+              <button @click="regenerateAttachmentAnalysis(attachment.id)" class="refresh-btn" :disabled="isAnalyzing"
+                title="Переанализировать документ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
+                </svg>
+              </button>
             </div>
-            
+
             <div v-if="attachment.analysis" class="attachment-details">
               <div class="detail-row">
                 <span class="detail-label">Тип документа:</span>
@@ -2880,58 +1903,56 @@ const goBack = () => {
               </div>
               <div class="detail-row">
                 <span class="detail-label">Дата отправления:</span>
-                <span>{{ attachment.analysis.sentDate || 'Не указана' }}</span>
+                <input type="date" v-model="attachment.documentDate" class="form-input small">
               </div>
               <div class="detail-row">
-                <span class="detail-label">Ведомство:</span>
-                <span>{{ attachment.analysis.senderAgency || 'Не указано' }}</span>
+                <span class="detail-label">Ведомство-отправитель:</span>
+                <input v-model="attachment.senderAgency" class="form-input small" list="agencies">
               </div>
-              <div class="detail-row">
+              <div class="detail-row full-width">
                 <span class="detail-label">Краткая суть:</span>
-                <p>{{ attachment.analysis.summary || 'Не сгенерировано' }}</p>
+                <textarea v-model="attachment.documentSummary" class="form-textarea" rows="3"></textarea>
               </div>
-              
-              <div v-if="attachment.analysis.keyParagraphs?.length" class="key-paragraphs">
+              <div class="detail-row full-width">
+                <span class="detail-label">Полный текст:</span>
+                <textarea v-model="attachment.fullText" class="form-textarea" rows="6" readonly></textarea>
+              </div>
+
+              <div class="key-paragraphs">
                 <h4>Ключевые параграфы:</h4>
-                <ul>
-                  <li v-for="(para, pIdx) in attachment.analysis.keyParagraphs" :key="pIdx">
-                    "{{ para }}"
-                  </li>
-                </ul>
+                <div v-for="(paragraph, index) in attachment.keyParagraphs" :key="index" class="paragraph-item">
+                  <textarea v-model="attachment.keyParagraphs[index]" class="form-textarea" rows="2"></textarea>
+                  <button type="button" @click="removeAttachmentParagraph(attachment.id, index)" class="remove-btn"
+                    title="Удалить параграф">
+                    ×
+                  </button>
+                </div>
+                <button type="button" @click="addAttachmentParagraph(attachment.id)" class="add-btn"
+                  title="Добавить параграф">
+                  + Добавить параграф
+                </button>
               </div>
             </div>
             <div v-else class="no-analysis">
               <p>Анализ не выполнен</p>
-              <button 
-                @click="analyzeAttachment(attachment)"
-                class="analyze-btn"
-                :disabled="isAnalyzing"
-              >
+              <button @click="analyzeAttachment(attachment)" class="analyze-btn" :disabled="isAnalyzing">
                 Анализировать
               </button>
             </div>
           </div>
         </div>
 
-      
+
 
         <!-- Кнопки действий -->
         <div class="form-actions">
-          <button
-            type="button"
-            @click="analyzeDocument"
-            class="analyze-btn"
-            :disabled="isAnalyzing || !document.originalText"
-          >
+          <button type="button" @click="analyzeDocument" class="analyze-btn"
+            :disabled="isAnalyzing || !document.originalText">
             <span v-if="isAnalyzing" class="button-loader"></span>
             {{ isAnalyzing ? 'Анализ...' : 'Анализировать документ' }}
           </button>
-          
-          <button
-            type="submit"
-            class="save-btn"
-            :disabled="isSaving"
-          >
+
+          <button type="submit" class="save-btn" :disabled="isSaving">
             {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
           </button>
         </div>
@@ -2940,7 +1961,7 @@ const goBack = () => {
       <!-- Блок статуса -->
       <div class="status-section">
         <div class="status-indicator" :class="document.analysisStatus">
-          Статус анализа: 
+          Статус анализа:
           <span>{{ getStatusText(document.analysisStatus) }}</span>
         </div>
         <div v-if="document.lastAnalyzedAt" class="last-analyzed">
@@ -2984,15 +2005,15 @@ const agenciesList = computed(() => documentStore.agenciesList)
 onMounted(async () => {
   try {
     await aiStore.checkServerStatus()
-    
+
     if (!document.value.id && !document.value.originalText) {
       router.push('/')
       return
     }
-    
+
     if (document.value.id) {
       await documentStore.fetchDocumentById(document.value.id)
-      document.value = { 
+      document.value = {
         ...documentStore.currentDocument,
         attachments: documentStore.currentDocument.attachments?.map(att => ({
           ...att,
@@ -3007,6 +2028,60 @@ onMounted(async () => {
   }
 })
 
+const addAttachmentParagraph = (attachmentId) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment) {
+    if (!attachment.keyParagraphs) {
+      attachment.keyParagraphs = [];
+    }
+    attachment.keyParagraphs.push('');
+  }
+};
+
+const removeAttachmentParagraph = (attachmentId, index) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment && attachment.keyParagraphs) {
+    attachment.keyParagraphs.splice(index, 1);
+  }
+};
+
+// Обновленный метод анализа вложения
+const analyzeAttachment = async (attachment) => {
+  if (!attachment.text) return;
+  
+  isAnalyzing.value = true;
+  try {
+    const analysis = await documentStore.analyzeAttachment(attachment);
+    const index = document.value.attachments.findIndex(a => a.id === attachment.id);
+    if (index !== -1) {
+      document.value.attachments[index] = {
+        ...document.value.attachments[index],
+        ...analysis
+      };
+    }
+  } catch (err) {
+    error.value = 'Ошибка анализа вложения: ' + err.message;
+  } finally {
+    isAnalyzing.value = false;
+  }
+};
+
+// Метод для перегенерации анализа
+const regenerateAttachmentAnalysis = async (attachmentId) => {
+  isAnalyzing.value = true;
+  try {
+    const updatedAttachment = await documentStore.regenerateAttachmentAnalysis(attachmentId);
+    const index = document.value.attachments.findIndex(a => a.id === attachmentId);
+    if (index !== -1) {
+      document.value.attachments[index] = updatedAttachment;
+    }
+  } catch (err) {
+    error.value = 'Ошибка перегенерации анализа: ' + err.message;
+  } finally {
+    isAnalyzing.value = false;
+  }
+}
+
 const addParagraph = () => {
   document.value.keyParagraphs.push('')
 }
@@ -3018,10 +2093,10 @@ const removeParagraph = (index) => {
 const analyzeDocument = async () => {
   isAnalyzing.value = true
   error.value = null
-  
+
   try {
     const analysis = await documentStore.analyzeDocument()
-    
+
     document.value = {
       ...document.value,
       summary: analysis.summary,
@@ -3038,25 +2113,6 @@ const analyzeDocument = async () => {
   }
 }
 
-const analyzeAttachment = async (attachment) => {
-  if (!attachment.text) return
-  
-  isAnalyzing.value = true
-  try {
-    const analysis = await aiStore.analyzeAttachment(attachment.text)
-    attachment.analysis = analysis
-    
-    // Находим и обновляем вложение в основном документе
-    const index = document.value.attachments.findIndex(a => a.id === attachment.id)
-    if (index !== -1) {
-      document.value.attachments[index].analysis = analysis
-    }
-  } catch (err) {
-    error.value = 'Ошибка анализа вложения: ' + err.message
-  } finally {
-    isAnalyzing.value = false
-  }
-}
 
 const regenerateSummary = async () => {
   isAnalyzing.value = true
@@ -3072,7 +2128,7 @@ const regenerateSummary = async () => {
 const handleSubmit = async () => {
   isSaving.value = true
   error.value = null
-  
+
   try {
     documentStore.currentDocument = document.value
     await documentStore.saveDocument()
@@ -3113,352 +2169,7 @@ const getStatusText = (status) => {
 }
 </script>
 
-<style scoped>
-.document-review {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 20px;
-}
-
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-}
-
-.back-button {
-  background: none;
-  border: none;
-  color: #42b983;
-  cursor: pointer;
-  font-size: 1em;
-  padding: 8px 12px;
-  border-radius: 4px;
-  transition: background-color 0.2s;
-}
-
-.back-button:hover {
-  background-color: #f0f0f0;
-}
-
-.loading-state {
-  text-align: center;
-  padding: 40px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 15px;
-}
-
-.spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid rgba(0, 0, 0, 0.1);
-  border-radius: 50%;
-  border-top-color: #42b983;
-  animation: spin 1s ease-in-out infinite;
-}
-
-.review-container {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-}
-
-.form-section {
-  background: #fff;
-  padding: 25px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.form-section h2 {
-  margin-top: 0;
-  color: #2c3e50;
-  padding-bottom: 10px;
-  border-bottom: 1px solid #eee;
-  margin-bottom: 20px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #555;
-}
-
-.form-input, .form-textarea {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1em;
-  transition: border-color 0.3s;
-}
-
-.form-input:focus, .form-textarea:focus {
-  border-color: #42b983;
-  outline: none;
-}
-
-.form-textarea {
-  resize: vertical;
-  min-height: 80px;
-}
-
-.summary-container {
-  position: relative;
-}
-
-.refresh-btn {
-  position: absolute;
-  right: 10px;
-  top: 10px;
-  background: #f5f5f5;
-  border: none;
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s;
-}
-
-.refresh-btn:hover {
-  background: #e0e0e0;
-}
-
-.paragraph-item {
-  margin-bottom: 10px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-
-.remove-btn {
-  background: #ff6b6b;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 0;
-  width: 24px;
-  height: 24px;
-  cursor: pointer;
-  font-size: 1em;
-  transition: background 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.remove-btn:hover {
-  background: #ff4444;
-}
-
-.add-btn {
-  background: #4ecdc4;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 12px;
-  cursor: pointer;
-  font-size: 0.9em;
-  transition: background 0.2s;
-}
-
-.add-btn:hover {
-  background: #3dbeb5;
-}
-
-.attachment-analysis {
-  background: #f8f8f8;
-  padding: 15px;
-  border-radius: 4px;
-  margin-bottom: 15px;
-}
-
-.attachment-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.attachment-header h3 {
-  margin: 0;
-  color: #2c3e50;
-}
-
-.file-size {
-  color: #666;
-  font-size: 0.9em;
-}
-
-.attachment-details {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 15px;
-  margin-top: 15px;
-}
-
-.detail-row {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.detail-label {
-  font-weight: bold;
-  color: #555;
-}
-
-.key-paragraphs {
-  grid-column: 1 / -1;
-  margin-top: 10px;
-}
-
-.key-paragraphs h4 {
-  margin-bottom: 5px;
-  color: #2c3e50;
-}
-
-.key-paragraphs ul {
-  padding-left: 20px;
-}
-
-.key-paragraphs li {
-  margin-bottom: 5px;
-  font-style: italic;
-}
-
-.no-analysis {
-  text-align: center;
-  padding: 20px;
-  color: #666;
-}
-
-.form-actions {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 30px;
-  gap: 15px;
-}
-
-.analyze-btn, .save-btn {
-  border: none;
-  border-radius: 4px;
-  padding: 12px 20px;
-  cursor: pointer;
-  font-size: 1em;
-  flex: 1;
-  transition: opacity 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.analyze-btn {
-  background: #42b983;
-  color: white;
-}
-
-.analyze-btn:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-.save-btn {
-  background: #2c3e50;
-  color: white;
-}
-
-.save-btn:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-.button-loader {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-radius: 50%;
-  border-top-color: white;
-  animation: spin 1s ease-in-out infinite;
-}
-
-.status-section {
-  background: #fff;
-  padding: 15px;
-  border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-.status-indicator {
-  font-weight: 500;
-}
-
-.status-indicator.pending {
-  color: #666;
-}
-
-.status-indicator.processing {
-  color: #ffbb33;
-}
-
-.status-indicator.completed {
-  color: #42b983;
-}
-
-.status-indicator.failed {
-  color: #ff4444;
-}
-
-.last-analyzed {
-  font-size: 0.9em;
-  color: #666;
-  margin-top: 5px;
-}
-
-.error-message {
-  background: #ffebee;
-  color: #c62828;
-  padding: 15px;
-  border-radius: 4px;
-  margin-top: 20px;
-  border-left: 4px solid #c62828;
-}
-
-.error-content {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.error-icon {
-  font-weight: bold;
-}
-
-.close-error {
-  background: none;
-  border: none;
-  cursor: pointer;
-  margin-left: auto;
-  font-size: 1.2em;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-</style>
-
-Это код файла DocumentsList.vue:
+Это код файла FatherGuard\frontend\src\views\DocumentsList.vue:
 <template>
   <div class="documents-list">
     <div class="header">
@@ -3695,261 +2406,8 @@ const generateComplaint = async () => {
 }
 </script>
 
-<style scoped>
-.documents-list {
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 20px;
-}
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 30px;
-}
-
-h1 {
-  font-size: 1.5em;
-  color: #2c3e50;
-}
-
-.new-doc-btn {
-  background: #42b983;
-  color: white;
-  padding: 10px 15px;
-  border-radius: 4px;
-  text-decoration: none;
-  font-size: 0.9em;
-}
-
-.filters {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-}
-
-.search-input {
-  flex: 1;
-  min-width: 200px;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.agency-select {
-  min-width: 200px;
-  padding: 8px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.filter-btn {
-  background: #f0f0f0;
-  border: 1px solid #ddd;
-  padding: 8px 15px;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.documents {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-
-.document-item {
-  background: white;
-  border: 1px solid #eee;
-  border-radius: 6px;
-  padding: 15px;
-  margin-bottom: 15px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  transition: box-shadow 0.2s;
-  cursor: pointer;
-}
-
-.document-item:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.document-main {
-  flex: 1;
-}
-
-.document-meta {
-  display: flex;
-  gap: 15px;
-  margin-bottom: 8px;
-  font-size: 0.9em;
-  color: #666;
-}
-
-.document-date {
-  font-weight: bold;
-}
-
-.document-agency {
-  background: #f0f0f0;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.document-summary {
-  margin: 0;
-  line-height: 1.5;
-}
-
-.analyze-btn {
-  background: #2196f3;
-  color: white;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin-left: 15px;
-  white-space: nowrap;
-}
-
-.analyze-btn:disabled {
-  background: #cccccc;
-  cursor: not-allowed;
-}
-
-.loading,
-.empty {
-  text-align: center;
-  padding: 40px;
-  color: #666;
-}
-
-.complaint-dialog {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.dialog-content {
-  background: white;
-  padding: 25px;
-  border-radius: 8px;
-  width: 90%;
-  max-width: 500px;
-}
-
-.dialog-content h3 {
-  margin-top: 0;
-  margin-bottom: 20px;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.action-btn {
-  padding: 8px 15px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.action-btn.primary {
-  background: #42b983;
-  color: white;
-  border: none;
-}
-
-
-/* Удаление и модальное окно */
-
-.document-actions {
-  display: flex;
-  gap: 10px;
-  margin-left: 15px;
-}
-
-.delete-btn {
-  background: #ff4444;
-  color: white;
-  border: none;
-  padding: 8px 15px;
-  border-radius: 4px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background-color 0.3s;
-}
-
-.delete-btn:hover {
-  background: #cc0000;
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
-}
-
-.modal-content {
-  background: white;
-  padding: 25px;
-  border-radius: 8px;
-  max-width: 400px;
-  width: 90%;
-}
-
-.modal-content h3 {
-  margin-top: 0;
-  color: #2c3e50;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 20px;
-}
-
-.confirm-btn {
-  background: #ff4444;
-  color: white;
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.cancel-btn {
-  background: #f0f0f0;
-  padding: 8px 16px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-
-</style>
-
-Это код файла HomeView.vue: 
+Это код файла FatherGuard\frontend\src\views\HomeView.vue: 
 <template>
   <div class="home-view">
     <h1>Изложите суть Вашей ситуации:</h1>
@@ -4067,98 +2525,7 @@ const submitData = async () => {
 };
 </script>
 
-<style scoped>
-.home-view {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family: 'Arial', sans-serif;
-}
-
-h1 {
-  font-size: 1.5em;
-  margin-bottom: 20px;
-  color: #2c3e50;
-  text-align: center;
-}
-
-.text-input {
-  width: 100%;
-  min-height: 150px;
-  padding: 15px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  font-size: 1em;
-  line-height: 1.5;
-  resize: vertical;
-  transition: border-color 0.3s;
-}
-
-.text-input:focus {
-  border-color: #42b983;
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(66, 185, 131, 0.2);
-}
-
-.upload-section {
-  margin: 30px 0;
-  padding: 20px;
-  background-color: #f9f9f9;
-  border-radius: 8px;
-  border: 1px dashed #ddd;
-}
-
-.upload-section p {
-  margin-bottom: 15px;
-  color: #555;
-  text-align: center;
-  font-weight: 500;
-}
-
-.files-preview {
-  margin-top: 10px;
-  padding: 10px;
-  background-color: #f0f0f0;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-.submit-btn {
-  display: block;
-  width: 100%;
-  padding: 15px;
-  background-color: #42b983;
-  color: white;
-  border: none;
-  border-radius: 8px;
-  font-size: 1.1em;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.3s;
-  margin-top: 30px;
-}
-.submit-btn:hover {
-  background-color: #369f6b;
-  transform: translateY(-2px);
-}
-.submit-btn:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
-  transform: none;
-}
-.error-message {
-  margin-top: 20px;
-  padding: 15px;
-  background-color: #ffebee;
-  color: #d32f2f;
-  border-radius: 8px;
-  text-align: center;
-  border-left: 4px solid #d32f2f;
-}
-</style>
-
-Это код файла App.vue:
+Это код файла FatherGuard\frontend\src\App.vue:
 <template>
   <div class="app">
     <header class="app-header">
@@ -4222,152 +2589,7 @@ watch(
 )
 </script>
 
-<style>
-/* Базовые сбросы */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --primary-color: #42b983;
-  --secondary-color: #35495e;
-  --light-gray: #f5f5f5;
-  --dark-gray: #333;
-  --border-color: #e0e0e0;
-}
-
-body {
-  font-family: 'Arial', sans-serif;
-  line-height: 1.6;
-  color: var(--dark-gray);
-  background-color: var(--light-gray);
-}
-
-/* Основная структура */
-.app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-}
-
-.app-main {
-  flex: 1;
-  padding: 20px;
-  max-width: 1200px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-/* Шапка */
-.app-header {
-  background-color: white;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.nav-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1rem 2rem;
-  max-width: 1200px;
-  margin: 0 auto;
-}
-.nav-logo {
-  display: flex;
-  align-items: center;
-  text-decoration: none;
-  color: var(--secondary-color);
-  font-weight: bold;
-  font-size: 1.2rem;
-  gap: 10px;
-}
-
-.logo-icon {
-  color: var(--primary-color);
-}
-
-.logo-text {
-  font-family: 'Verdana', sans-serif;
-}
-
-.nav-links {
-  display: flex;
-  gap: 20px;
-}
-
-.nav-link {
-  text-decoration: none;
-  color: var(--secondary-color);
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: all 0.3s ease;
-}
-
-.nav-link:hover {
-  color: var(--primary-color);
-  background-color: rgba(66, 185, 131, 0.1);
-}
-
-.nav-link.active {
-  color: var(--primary-color);
-  font-weight: bold;
-  border-bottom: 2px solid var(--primary-color);
-}
-
-/* Подвал */
-.app-footer {
-  background-color: var(--secondary-color);
-  color: white;
-  padding: 1.5rem;
-  text-align: center;
-  margin-top: auto;
-}
-
-.footer-content {
-  max-width: 1200px;
-  margin: 0 auto;
-}
-
-.footer-model-info {
-  font-size: 0.8rem;
-  opacity: 0.8;
-  margin-top: 0.5rem;
-}
-
-/* Анимации */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-/* Адаптивность */
-@media (max-width: 768px) {
-  .nav-container {
-    flex-direction: column;
-    padding: 1rem;
-    gap: 1rem;
-  }
-
-  .nav-links {
-    width: 100%;
-    justify-content: space-around;
-  }
-
-  .app-main {
-    padding: 15px;
-  }
-}
-</style>
-Это код файла main.js:
+Это код файла FatherGuard\frontend\src\main.js:
 import './assets/main.css'
 
 import { createApp } from 'vue'
@@ -4383,9 +2605,11 @@ app.use(pinia)
 
 
 app.use(router)
-
+console.log('API Base:', import.meta.env.VITE_API_BASE)
+console.log('Model URL:', import.meta.env.VITE_LOCAL_MODEL_URL)
 
 app.mount('#app')
+
 Это код файла FatherGuard\frontend\package.json:
 {
   "name": "legal-assistant",
@@ -4415,6 +2639,8 @@ app.mount('#app')
     "vite-plugin-vue-devtools": "^8.0.0"
   }
 }
+
+
 Это код файла FatherGuard\frontend\index.html:
 <!DOCTYPE html>
 <html lang="">
@@ -4430,31 +2656,54 @@ app.mount('#app')
   </body>
 </html>
 
-Это код файла vite.config.js:
-import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig } from 'vite'
+Это код файла FatherGuard\frontend\vite.config.js:
+import { fileURLToPath, URL } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vueDevTools from 'vite-plugin-vue-devtools'
 
-// https://vite.dev/config/
-export default defineConfig({
-  server: {
-    host: '0.0.0.0',
-    optimizeDeps: {
-    include: ['uuid'],
-  },
-  },
-  plugins: [
-    vue(),
-    vueDevTools(),
-  ],
-  resolve: {
-    alias: {
-      '@': fileURLToPath(new URL('./src', import.meta.url))
+export default defineConfig(({ mode }) => {
+  // Загружаем env переменные
+  const env = loadEnv(mode, process.cwd(), ['VITE_'])
+
+  return {
+    server: {
+      host: '0.0.0.0',
+      port: parseInt(env.VITE_PORT || 5173), // Используем порт из env
+      proxy: {
+        '/ollama': {
+          target: env.VITE_LOCAL_MODEL_URL,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/ollama/, '')
+        },
+        '/api': {
+          target: env.VITE_API_BASE,
+          changeOrigin: true
+        }
+      }
     },
+    plugins: [
+      vue(),
+      vueDevTools(),
+    ],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    define: {
+      'process.env': {},
+      '__APP_ENV__': JSON.stringify(env)
+    },
+    optimizeDeps: {
+      include: ['uuid']
+    }
   }
 })
+
+Далее файлы Бэкенда:
+
 Это код файла FatherGuard\backend\controllers\aiController.js:
 import aiService from '../services/aiService.js';
 
@@ -4475,6 +2724,7 @@ const generateComplaint = async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 };
+
 export default { analyzeText, generateComplaint };
 
 Это код файла FatherGuard\backend\controllers\analysisController.js:
@@ -4509,6 +2759,7 @@ export default {
     }
   }
 };
+
 Это код файла FatherGuard\backend\controllers\documentController.js:
 import Document from '../models/Document.js';
 import aiService from '../services/aiService.js';
@@ -4572,8 +2823,10 @@ export default (err, req, res, next) => {
   }
   next(err);
 };
+
 Это код файла FatherGuard\backend\models\Complaint.js:
 //Кода нет
+
 Это код файла FatherGuard\backend\models\Document.js:
 export default class Document {
   constructor(data) {
@@ -4607,6 +2860,7 @@ export default class Document {
       }
     }));
   }
+
   validate() {
     if (!this.originalText && this.attachments.length === 0) {
       throw new Error('Документ должен содержать текст или вложения');
@@ -4617,6 +2871,7 @@ export default class Document {
     }
   }
 }
+
 Это код файла FatherGuard\backend\routes\aiRoutes.js:
 import express from 'express';
 const router = express.Router();
@@ -4700,6 +2955,7 @@ export default function complaintRoutes({ db }) {
       res.status(500).json({ message: err.message });
     }
   });
+
   // Экспорт жалобы
   router.get('/:id/export', async (req, res) => {
     try {
@@ -4730,6 +2986,7 @@ export default function complaintRoutes({ db }) {
             ]
           }]
         });
+
         const buffer = await Packer.toBuffer(doc);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.docx`);
@@ -4771,6 +3028,7 @@ export default function complaintRoutes({ db }) {
       if (db.data.complaints.length === initialLength) {
         return res.status(404).json({ message: 'Complaint not found' });
       }
+      
       // Удаление ссылки из документа
       for (const doc of db.data.documents) {
         if (doc.complaints) {
@@ -4816,8 +3074,10 @@ export default function complaintRoutes({ db }) {
       return `Жалоба в ${agency}\n\nТекст документа: ${doc.originalText.substring(0, 500)}...`;
     }
   }
+
   return router;
 }
+
 Это код файла FatherGuard\backend\routes\documentRoutes.js:
 import { Router } from 'express';
 import express from 'express';
@@ -4845,6 +3105,7 @@ export default function documentRoutes({ db, upload }) {
       }
     }
   }));
+
   // Вспомогательные функции
   const normalizeDocument = (data) => {
     return {
@@ -4878,6 +3139,7 @@ export default function documentRoutes({ db, upload }) {
       throw new Error('Документ должен содержать текст или вложения');
     }
   };
+
   // Загрузка документа (текст + файлы)
   router.post('/upload', upload.array('files'), async (req, res) => {
     try {
@@ -4906,11 +3168,13 @@ export default function documentRoutes({ db, upload }) {
       });
     }
   });
+
   // Обработка загруженных файлов
   const processUploadedFiles = async (files, userText, userComments) => {
     if (!files || files.length === 0) {
       throw new Error('Нет файлов для загрузки');
     }
+
     const filesData = [];
     
     for (const file of files) {
@@ -4943,6 +3207,7 @@ export default function documentRoutes({ db, upload }) {
     return filesData;
   };
 
+  // Извлечение текста из файла
   const extractFileContent = async (file) => {
     if (file.mimetype === 'application/pdf') {
       const dataBuffer = await fs.readFile(file.path);
@@ -4953,6 +3218,7 @@ export default function documentRoutes({ db, upload }) {
     }
     throw new Error('Неподдерживаемый тип файла');
   };
+
   // Создание документа
   router.post('/', async (req, res) => {
     try {
@@ -4996,6 +3262,7 @@ export default function documentRoutes({ db, upload }) {
       res.status(500).json({ message: err.message });
     }
   });
+
   // Анализ документа
   router.post('/:id/analyze', async (req, res) => {
     try {
@@ -5046,6 +3313,7 @@ export default function documentRoutes({ db, upload }) {
       });
     }
   });
+
   // Анализ содержимого документа
   const analyzeDocumentContent = async (doc, instructions, strictMode) => {
     return await aiService.analyzeLegalText(
@@ -5069,6 +3337,8 @@ export default function documentRoutes({ db, upload }) {
       }
     }
   };
+
+  // Обновление данных анализа
   const updateDocumentAnalysis = (doc, analysis) => {
     doc.summary = analysis.summary;
     doc.documentDate = analysis.documentDate || "";
@@ -5079,6 +3349,7 @@ export default function documentRoutes({ db, upload }) {
     doc.updatedAt = new Date().toISOString();
   };
 
+  // Удаление документа
   router.delete('/:id', async (req, res) => {
     try {
       await db.read();
@@ -5096,6 +3367,7 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
+  // Жалобы для документа
   router.post('/:id/complaints', async (req, res) => {
     try {
       const { agency } = req.body;
@@ -5119,6 +3391,7 @@ export default function documentRoutes({ db, upload }) {
       });
     }
   });
+
   // Генерация жалобы
   const generateComplaint = async (doc, agency, relatedDocs) => {
     const complaint = await aiService.generateComplaintV2(
@@ -5139,11 +3412,13 @@ export default function documentRoutes({ db, upload }) {
     };
   };
 
+  // Сохранение жалобы
   const saveComplaint = (doc, complaint) => {
     if (!db.data.complaints) {
       db.data.complaints = [];
     }
     db.data.complaints.push(complaint);
+
     if (!doc.complaints) {
       doc.complaints = [];
     }
@@ -5182,19 +3457,24 @@ export default function documentRoutes({ db, upload }) {
 
   return router;
 }
+
+
 Это код файла FatherGuard\backend\services\aiService.js:
-import axios from 'axios';
-import { readFile } from 'fs/promises';
+import axios from "axios";
+import useAIStore from '@/stores/aiStore'
+import pinia from 'pinia'
+
+app.use(pinia)
 
 class AIService {
   constructor() {
-    this.localModelUrl = process.env.LOCAL_MODEL_URL || "http://localhost:11434";
-    this.modelName = "llama3:8b";
+    this.aiStore = useAIStore();
+    this.localModelUrl = import.meta.env.VITE_LOCAL_MODEL_URL;
     this.defaultOptions = {
       temperature: 0.3,
-      max_tokens: 4000,
+      max_tokens: 6000,
       repeat_penalty: 1.2,
-      format: "json"
+      format: "json",
     };
     this.analysisCache = new Map();
     this.maxRetries = 2;
@@ -5207,7 +3487,7 @@ class AIService {
     const options = {
       ...this.defaultOptions,
       ...customOptions,
-      prompt: this.preparePrompt(prompt, customOptions.taskType)
+      prompt: this.preparePrompt(prompt, customOptions.taskType),
     };
 
     let retries = 0;
@@ -5216,33 +3496,40 @@ class AIService {
     while (retries <= this.maxRetries) {
       try {
         const response = await axios.post(
-          `${this.localModelUrl}/api/generate`,
+          this.aiStore.apiUrl,
           {
-            model: this.modelName,
-            ...options
+            model: this.aiStore.activeModel, // Используем активную модель из хранилища
+            prompt,
+            stream: false,
+            format: "json",
+            ...options,
           },
           {
-            timeout: 500000
+            timeout: 500000,
           }
         );
-        
+
         return this.parseModelResponse(response.data);
       } catch (error) {
         lastError = error;
         console.error(`Attempt ${retries + 1} failed:`, error.message);
-        
+
         if (retries < this.maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, 1000 * (retries + 1)));
+          await new Promise((resolve) =>
+            setTimeout(resolve, 1000 * (retries + 1))
+          );
           retries++;
           continue;
         }
-        
+
         throw this.normalizeError(error);
       }
     }
   }
 
-  
+  /**
+   * Анализ юридического текста с улучшенной обработкой
+   */
   async analyzeLegalText(text, instructions = "", strictMode = false) {
     const cacheKey = this.generateCacheKey(text, instructions);
     if (this.analysisCache.has(cacheKey)) {
@@ -5251,7 +3538,7 @@ class AIService {
 
     const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
     const result = await this.queryLocalModel(prompt, {
-      temperature: strictMode ? 0.1 : 0.3
+      temperature: strictMode ? 0.1 : 0.3,
     });
 
     if (!result.summary) {
@@ -5263,23 +3550,30 @@ class AIService {
     this.analysisCache.set(cacheKey, enhancedResult);
     return enhancedResult;
   }
+
   /**
    * Генерация жалобы (версия 2)
    */
   async generateComplaintV2(documentText, agency, relatedDocuments = []) {
-    const prompt = this.buildComplaintPromptV2(documentText, agency, relatedDocuments);
+    const prompt = this.buildComplaintPromptV2(
+      documentText,
+      agency,
+      relatedDocuments
+    );
     const response = await this.queryLocalModel(prompt, {
       temperature: 0.5,
-      max_tokens: 7000
+      max_tokens: 7000,
     });
 
     return {
-      content: response.content || this.generateDefaultComplaint(documentText, agency),
+      content:
+        response.content || this.generateDefaultComplaint(documentText, agency),
       violations: response.identifiedViolations || [],
       analysis: response.legalAnalysis || "",
-      relatedDocuments: response.relatedDocuments || []
+      relatedDocuments: response.relatedDocuments || [],
     };
   }
+
   /**
    * Анализ вложенного документа
    */
@@ -5287,11 +3581,14 @@ class AIService {
     const prompt = this.buildAttachmentPrompt(text);
     const response = await this.queryLocalModel(prompt, {
       temperature: 0.2,
-      format: "json"
+      format: "json",
     });
 
     return this.parseAttachmentAnalysis(response);
   }
+
+  // ========== Вспомогательные методы ==========
+
   preparePrompt(text, taskType = "default") {
     const prompts = {
       summary: `[SYSTEM] Ты - юридический ассистент. Сгенерируй краткую суть документа:
@@ -5310,6 +3607,7 @@ class AIService {
 - Доказательство: [цитата]
 [TEXT]: ${text.substring(0, 7000)}
 [VIOLATIONS]:`,
+
       attachment: `[SYSTEM] Проанализируй вложение. Верни JSON:
 {
   "documentType": "тип",
@@ -5323,11 +3621,12 @@ class AIService {
 
       default: `[SYSTEM] Проанализируй текст как юридический документ
 [TEXT]: ${text.substring(0, 7000)}
-[RESULT]:`
+[RESULT]:`,
     };
 
     return prompts[taskType] || prompts.default;
   }
+
   buildAnalysisPrompt(text, instructions, strictMode) {
     return JSON.stringify({
       task: "ANALYZE_LEGAL_DOCUMENT",
@@ -5336,27 +3635,27 @@ class AIService {
         summaryLength: "3-5 предложений",
         keyParagraphs: {
           count: 3,
-          exactQuotes: true
+          exactQuotes: true,
         },
         extractDates: true,
         identifyAgencies: true,
         strictAnalysis: strictMode,
-        additionalInstructions: instructions
+        additionalInstructions: instructions,
       },
       lawsToCheck: [
         "Федеральный закон 'Об исполнительном производстве' №229-ФЗ",
         "Семейный кодекс РФ",
         "КоАП РФ",
-        "ФЗ 'Об исполнительном производстве'"
-      ]
+      ],
     });
   }
+
   buildComplaintPromptV2(text, agency, relatedDocuments) {
     return JSON.stringify({
       task: "GENERATE_COMPLAINT_V2",
       agency,
       sourceText: text.substring(0, 5000),
-      relatedDocuments: relatedDocuments.map(doc => doc.substring(0, 2000)),
+      relatedDocuments: relatedDocuments.map((doc) => doc.substring(0, 2000)),
       requirements: {
         style: "Официальный",
         sections: [
@@ -5365,13 +3664,14 @@ class AIService {
           "Ссылки на документы",
           "Нарушения",
           "Требования",
-          "Приложения"
+          "Приложения",
         ],
         includeReferences: true,
-        citeLaws: true
-      }
+        citeLaws: true,
+      },
     });
   }
+
   buildAttachmentPrompt(text) {
     return this.preparePrompt(text, "attachment");
   }
@@ -5381,18 +3681,20 @@ class AIService {
       ...result,
       documentDate: this.extractDate(text) || result.documentDate || "",
       senderAgency: this.extractAgency(text) || result.senderAgency || "",
-      keyParagraphs: result.keyParagraphs || []
+      keyParagraphs: result.keyParagraphs || [],
     };
   }
+
   parseAttachmentAnalysis(response) {
     try {
-      const parsed = typeof response === 'string' ? JSON.parse(response) : response;
+      const parsed =
+        typeof response === "string" ? JSON.parse(response) : response;
       return {
         documentType: parsed.documentType || "Неизвестный тип",
         sentDate: parsed.sentDate || "",
         senderAgency: parsed.senderAgency || "",
         summary: parsed.summary || "Не удалось сгенерировать краткую суть",
-        keyParagraphs: parsed.keyParagraphs || []
+        keyParagraphs: parsed.keyParagraphs || [],
       };
     } catch (e) {
       console.error("Ошибка парсинга анализа вложения:", e);
@@ -5401,15 +3703,16 @@ class AIService {
         sentDate: "",
         senderAgency: "",
         summary: "Ошибка анализа вложения",
-        keyParagraphs: []
+        keyParagraphs: [],
       };
     }
   }
+
   parseModelResponse(data) {
     try {
       const rawResponse = data.response || data;
-      
-      if (typeof rawResponse === 'string') {
+
+      if (typeof rawResponse === "string") {
         // Пытаемся извлечь JSON из строки если есть
         const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -5417,13 +3720,14 @@ class AIService {
         }
         return { response: rawResponse };
       }
-      
+
       return rawResponse;
     } catch (e) {
       console.error("Ошибка парсинга ответа модели:", e);
       throw new Error("Неверный формат ответа от модели");
     }
   }
+
   normalizeError(error) {
     const serverError = error.response?.data?.error;
     if (serverError) {
@@ -5431,6 +3735,7 @@ class AIService {
     }
     return error;
   }
+
   generateCacheKey(text, instructions = "") {
     const str = text.substring(0, 200) + instructions;
     let hash = 0;
@@ -5448,22 +3753,34 @@ class AIService {
   }
 
   extractAgency(text) {
-    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен", "МВД", "Росреестр"];
-    return agencies.find(agency => text.includes(agency)) || null;
+    const agencies = [
+      "ФССП",
+      "Прокуратура",
+      "Суд",
+      "Омбудсмен",
+      "МВД",
+      "Росреестр",
+    ];
+    return agencies.find((agency) => text.includes(agency)) || null;
   }
 
   generateDefaultComplaint(text, agency) {
-    return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${
-      text.substring(0, 500)
-    }\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+    return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${text.substring(
+      0,
+      500
+    )}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
   }
 }
+
 export default new AIService();
+
+
 Это код файла FatherGuard\backend\services\documentService.js:
 //Кода нет
 
 Это код файла FatherGuard\backend\services\FileService.js:
 //Кода нет
+
 Это код файла FatherGuard\backend\services\legal_references.json:
 {}
 Это код файла FatherGuard\backend\services\modelHealthCheck.js:
@@ -5480,6 +3797,7 @@ export async function checkModelAvailability() {
     return false;
   }
 }
+
 Это код файла FatherGuard\backend\services\nlpService.js:
 //Кода нет
 
@@ -5501,10 +3819,14 @@ export default {
     }
   }
 }
+
 Это код файла FatherGuard\backend\.env:
 OLLAMA_URL=http://localhost:11434
-MODEL_NAME=quen3:30b
+VITE_LOCAL_MODEL_URL=http://localhost:11434
+VITE_API_BASE=http://localhost:3001
+MODEL_NAME=llama3.1:latest
 PORT=3001
+
 Это код файла FatherGuard\backend\app.mjs:
 import express from 'express';
 import cors from 'cors';
@@ -5518,7 +3840,9 @@ import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import aiRoutes from './routes/aiRoutes.js'
+
 const app = express();
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 1. Инициализация файла базы данных
@@ -5555,6 +3879,7 @@ async function initDB() {
     throw err;
   }
 }
+
 // 3. Инициализация приложения
 async function startServer() {
   try {
@@ -5611,6 +3936,7 @@ async function startServer() {
       }
       next();
     });
+
     app.locals.db = db; // Делаем db доступной в роутах
 
     // Подключение роутов (убедитесь, что они экспортируют router)
@@ -5637,6 +3963,8 @@ async function startServer() {
 }
 
 startServer();
+
+
 Это код файла FatherGuard\backend\db.json:
 {
   "documents": [
@@ -5658,87 +3986,20 @@ startServer();
       "createdAt": "2025-08-11T17:23:04.265Z",
       "updatedAt": "2025-08-11T17:26:56.038Z",
       "violations": "- Закон: Федеральный закон \"О судебной власти и статусе судей\"\n- Статья: 17\n- Описание: Неисполнение судебного решения или не рассмотрение жалобы в установленные сроки\n- Доказательство: \"но ответа не получил\" (не было предоставлено ответа на жалобу Заводским РОСП в установленный срок)\n\n- Закон: Федеральный закон \"О судебной власти и статусе судей\"\n- Статья: 17\n- Описание: Неисполнение судебного решения или не рассмотрение жалобы в установленные сроки\n- Доказательство: \"11.04.2023г., я обратился в ГУФССП по Саратовской Области по факту не рассмотрения моей жалобы Заводским РОСП, и в ответ на это обращение...\" (не было рассмотрено обращение в установленный срок)\n\n- Закон: Федеральный закон \"Об исполнительном производстве\"\n- Статья: 11\n- Описание: Неправильное уведомление лица об исполнении судебного решения или исполнительного производства\n- Доказательство: \"Сообщаем, что на исполнении находится сводное исполнительное производство...\" (не было указано, какие конкретно действия планируются по исполнению судебного решения или исполнительного производства)"
+    },
+    
     }
   ],
   "complaints": []
 }
+
 Это код файла FatherGuard\backend\package.json:
-{
-  "dependencies": {
-    "axios": "^1.6.2",
-    "body-parser": "^2.2.0",
-    "cors": "^2.8.5",
-    "express": "^5.1.0",
-    "fs-extra": "^11.3.0",
-    "multer": "^2.0.1",
-    "natural": "^8.1.0",
-    "pdf-lib": "^1.17.1",
-    "lowdb": "^6.0.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.10"
-  },
-  "name": "backend",
-  "version": "1.0.0",
-  "type": "module",
-  
-  "description": "",
-  "main": "app.mjs",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.mjs",
-    "dev": "nodemon app.mjs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
-  
-}
+//Могу предоставить при необходимости
 
 Это код файла FatherGuard\package.json:
-{
-  "dependencies": {
-    "axios": "^1.6.2",
-    "body-parser": "^2.2.0",
-    "cors": "^2.8.5",
-    "docx": "^9.5.1",
-    "express": "^5.1.0",
-    "fs-extra": "^11.3.0",
-    "lowdb": "^6.0.0",
-    "multer": "^2.0.1",
-    "natural": "^8.1.0",
-    "pdf-lib": "^1.17.1",
-    "pdf-parse": "^1.1.1",
-    "uuid": "^8.3.2"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.10"
-  },
-  "name": "backend",
-  "version": "1.0.0",
-  "type": "module",
-  "description": "",
-  "main": "app.mjs",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node app.mjs",
-    "dev": "nodemon app.mjs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
-}
+//Могу предоставить при необходимости
 
 
-
-
-
-
-
-
-
-
- 
 
 
 
