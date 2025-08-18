@@ -8,15 +8,15 @@ export const useAIStore = defineStore("ai", {
     error: null,
     apiStatus: "unknown",
     apiUrl: "http://localhost:11434/api/generate",
-    model: "llama3.1:latest",
+    model: "llama3.1/18/8192",
     availableModels: [
       {
-        name: "llama3.1:latest",
-        description: "Llama 3.1 (latest)",
+        name: "llama3.1/18/8192",
+        description: "using 18 treads with 8192 num_ctx",
         parameters: {
           temperature: 0.3,
           top_p: 0.9,
-          num_ctx: 16384,
+          // num_ctx: 16384,
         },
       },
     ],
@@ -50,7 +50,11 @@ export const useAIStore = defineStore("ai", {
         const summary = await aiService.queryLocalModel(text, {
           taskType: "summary",
         });
-        return summary?.response || "Не удалось сгенерировать краткую суть";
+        
+        
+
+        console.log("Сгенерированная краткая суть:", summary);
+        return summary || "Не удалось сгенерировать краткую суть";
       } catch (error) {
         console.error("Ошибка генерации сводки:", error);
         this.error = error.message;
@@ -67,7 +71,7 @@ export const useAIStore = defineStore("ai", {
       try {
         const aiService = this._initAIService();
         const response = await aiService.analyzeLegalText(text);
-        return response.keyParagraphs || [];
+        return response.paragraphs || [];
       } catch (error) {
         console.error("Ошибка extractKeyParagraphs:", error);
         this.error = error.message;
@@ -105,7 +109,7 @@ export const useAIStore = defineStore("ai", {
         const aiService = this._initAIService();
         const response = await aiService.queryLocalModel(text, {
           taskType: "attachment",
-          temperature: 0.2,
+          temperature: 0.3,
           format: "json",
         });
         return aiService.parseAttachmentAnalysis(response);
@@ -143,6 +147,7 @@ export const useAIStore = defineStore("ai", {
           violations: violations || "Ошибка анализа нарушений",
           status: "complete",
         };
+        
       } catch (error) {
         console.error("Ошибка анализа документа:", error);
         this.error = error.message;

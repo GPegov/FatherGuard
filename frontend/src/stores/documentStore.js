@@ -242,12 +242,15 @@ const analyzeDocumentContent = async () => {
   try {
     const docText = currentDocument.value.originalText;
     const analysis = await aiStore.analyzeDocument(docText);
+
+    // Выводим полный ответ модели в консоль
+    console.log("Полный ответ модели:", analysis);
     
     // Гарантируем, что keyParagraphs будет массивом
     return {
       summary: analysis.summary || "Не удалось сгенерировать краткую суть",
-      keyParagraphs: Array.isArray(analysis.keyParagraphs) ? 
-        analysis.keyParagraphs : 
+      keyParagraphs: Array.isArray(analysis.paragraphs) ? 
+        analysis.paragraphs : 
         [],
       violations: Array.isArray(analysis.violations) ?
         analysis.violations :

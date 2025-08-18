@@ -2,8 +2,8 @@ import axios from "axios";
 
 class AIService {
   constructor(apiUrl, activeModel) {
-    this.apiUrl = 'http://localhost:11434/api/generate';
-    this.activeModel = 'llama3.1:latest'; 
+    this.apiUrl = "http://localhost:11434/api/generate";
+    this.activeModel = "llama3.1/18/8192";
     this.defaultOptions = {
       temperature: 0.3,
       max_tokens: 16384,
@@ -23,7 +23,7 @@ class AIService {
 
   async queryLocalModel(prompt, customOptions = {}) {
     const options = {
-      method: 'POST',
+      method: "POST",
       ...this.defaultOptions,
       ...customOptions,
       prompt: this.preparePrompt(prompt, customOptions.taskType),
@@ -52,7 +52,7 @@ class AIService {
   async analyzeLegalText(text, instructions = "", strictMode = false) {
     console.log("Отправляемый текст:", text.substring(0, 200) + "...");
     const cacheKey = this.generateCacheKey(text, instructions);
-    
+
     if (this.analysisCache.has(cacheKey)) {
       return this.analysisCache.get(cacheKey);
     }
@@ -60,25 +60,25 @@ class AIService {
     const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
     const result = await this.queryLocalModel(prompt, {
       temperature: 0.3,
-      format: "json"
+      format: "json",
     });
 
     const parsedResult = this.safeParseResponse(result);
-    
+
     if (!parsedResult) {
       throw new Error("Не удалось разобрать ответ модели");
     }
 
     const enhancedResult = {
       summary: parsedResult.summary || "Не удалось сгенерировать краткую суть",
-      keyParagraphs: Array.isArray(parsedResult.keyParagraphs) ? 
-        parsedResult.keyParagraphs.filter(p => p && p.length > 10) : 
-        [],
-      violations: Array.isArray(parsedResult.violations) ?
-        parsedResult.violations :
-        [],
+      keyParagraphs: Array.isArray(parsedResult.keyParagraphs)
+        ? parsedResult.keyParagraphs.filter((p) => p && p.length > 10)
+        : [],
+      violations: Array.isArray(parsedResult.violations)
+        ? parsedResult.violations
+        : [],
       documentDate: parsedResult.documentDate || this.extractDate(text),
-      senderAgency: parsedResult.senderAgency || this.extractAgency(text)
+      senderAgency: parsedResult.senderAgency || this.extractAgency(text),
     };
 
     this.analysisCache.set(cacheKey, enhancedResult);
@@ -87,7 +87,7 @@ class AIService {
 
   safeParseResponse(response) {
     try {
-      if (typeof response === 'string') {
+      if (typeof response === "string") {
         // Попытка найти JSON в строке
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
@@ -99,16 +99,27 @@ class AIService {
     }
   }
 
-  async generateComplaintV2(documentText, agency, relatedDocuments = [], instructions = "") {
-    const prompt = this.buildComplaintPromptV2(documentText, agency, relatedDocuments, instructions);
+  async generateComplaintV2(
+    documentText,
+    agency,
+    relatedDocuments = [],
+    instructions = ""
+  ) {
+    const prompt = this.buildComplaintPromptV2(
+      documentText,
+      agency,
+      relatedDocuments,
+      instructions
+    );
     const response = await this.queryLocalModel(prompt, {
       temperature: 0.5,
-      max_tokens: 7000
+      max_tokens: 7000,
     });
 
     return {
-      content: response.content || this.generateDefaultComplaint(documentText, agency),
-      violations: response.violations || []
+      content:
+        response.content || this.generateDefaultComplaint(documentText, agency),
+      violations: response.violations || [],
     };
   }
 
@@ -123,10 +134,10 @@ class AIService {
   }
 
   preparePrompt(text, taskType = "default") {
-    const baseSystemPrompt = `[SYSTEM] Ты - юридический ассистент. Проанализируй текст как юридический документ.
-Требования:
-1. Только факты
-2. Укажи ведомство и дату если есть
+    const baseSystemPrompt = `
+    [SYSTEM] Ты - юридический ассистент. 
+    Проанализируй текст как юридический документ.
+     
 `;
 
     const taskSpecificPrompts = {
@@ -137,6 +148,11 @@ class AIService {
   'Краткая суть текста:' - сразу сгенерированная краткая суть!
 [TEXT]: ${text.substring(0, 12000)}
 [SUMMARY]:`,
+      paragraphs: `${baseSystemPrompt}
+      Выбери из текста несколько самых важных предложений и передай их 
+      в своём ответе полностью, дословно, без редактирования.   
+[TEXT]: ${text.substring(0, 12000)}
+[keySentences]:`,
 
       violations: `${baseSystemPrompt}
 Найди нарушения в тексте. Формат:
@@ -161,7 +177,7 @@ class AIService {
 
       default: `${baseSystemPrompt}
 [TEXT]: ${text.substring(0, 9000)}
-[RESULT]:`
+[RESULT]:`,
     };
 
     return taskSpecificPrompts[taskType] || taskSpecificPrompts.default;
@@ -174,8 +190,6 @@ class AIService {
       requirements: {
         summaryLength: "3-5 предложений",
         keyParagraphs: {
-          count: 3,
-          exactQuotes: true,
         },
         extractDates: true,
         identifyAgencies: true,
@@ -195,7 +209,7 @@ class AIService {
       task: "GENERATE_COMPLAINT_V2",
       agency,
       sourceText: text.substring(0, 5000),
-      relatedDocuments: relatedDocuments.map(doc => doc.substring(0, 2000)),
+      relatedDocuments: relatedDocuments.map((doc) => doc.substring(0, 2000)),
       requirements: {
         style: "Официальный",
         sections: [
@@ -208,7 +222,7 @@ class AIService {
         ],
         includeReferences: true,
         citeLaws: true,
-        additionalInstructions: instructions
+        additionalInstructions: instructions,
       },
     });
   }
@@ -257,7 +271,7 @@ class AIService {
 
   extractAgency(text) {
     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    return agencies.find(agency => text.includes(agency)) || "";
+    return agencies.find((agency) => text.includes(agency)) || "";
   }
 
   generateDefaultComplaint(text, agency) {

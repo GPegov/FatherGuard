@@ -364,7 +364,7 @@ import axios from "axios";
 class AIService {
   constructor(apiUrl, activeModel) {
     this.apiUrl = 'http://localhost:11434/api/generate';
-    this.activeModel = 'llama3.1:latest'; 
+    this.activeModel = 'llama3.1/18/8192'; 
     this.defaultOptions = {
       temperature: 0.3,
       max_tokens: 16384,
@@ -492,9 +492,10 @@ class AIService {
 
     const taskSpecificPrompts = {
       summary: `${baseSystemPrompt}
-Сгенерируй краткую суть документа (3-5 предложений): 
-1. Повествование от имени клиента в первом лице
-2. Без вступительных фраз - сразу краткая суть текста!
+Сгенерируй краткую суть документа объемом от трёх до пяти предложений: 
+1. Повествование о клиенте в следующем стиле: 'Вы оспорили... Вы подали прошение...'
+2. Без вступительных фраз вроде 'Документ:' или 
+  'Краткая суть текста:' - сразу сгенерированная краткая суть!
 [TEXT]: ${text.substring(0, 12000)}
 [SUMMARY]:`,
 
@@ -3745,15 +3746,15 @@ export const useAIStore = defineStore("ai", {
     error: null,
     apiStatus: "unknown",
     apiUrl: "http://localhost:11434/api/generate",
-    model: "llama3.1:latest",
+    model: "llama3.1/18/8192",
     availableModels: [
       {
-        name: "llama3.1:latest",
-        description: "Llama 3.1 (latest)",
+        name: "llama3.1/18/8192",
+        description: "using 18 treads with 8192 num_ctx",
         parameters: {
           temperature: 0.3,
           top_p: 0.9,
-          num_ctx: 16384,
+          // num_ctx: 16384,
         },
       },
     ],

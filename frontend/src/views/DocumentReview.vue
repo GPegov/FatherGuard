@@ -43,7 +43,7 @@
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Краткая суть:</label>
             <div class="summary-container">
-              <textarea v-model="document.summary" required class="form-textarea" rows="3"
+              <textarea v-model="document.summary" required class="form-textarea" rows="5"
                 placeholder="Анализ выполняется..."></textarea>
               <button type="button" @click="regenerateSummary" class="refresh-btn" :disabled="aiStore.isLoading"
                 title="Перегенерировать краткую суть">
