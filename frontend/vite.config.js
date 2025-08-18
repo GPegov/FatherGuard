@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => {
       port: parseInt(env.VITE_PORT || 5173), // Используем порт из env
       proxy: {
         '/ollama': {
-          target: env.VITE_LOCAL_MODEL_URL,
+          target: 'http://localhost:11434',
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/ollama/, '')
         },

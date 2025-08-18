@@ -36,12 +36,6 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label for="agencyTarget">Ведомство для жалобы:</label>
-          <input type="text" id="agencyTarget" v-model="document.agencyTarget" list="agencies" required
-            class="form-input" placeholder="Выберите ведомство" />
-        </div>
-
         <!-- Анализ документа -->
         <div class="form-section" v-if="document.analysisStatus !== 'pending'">
           <h2>Анализ документа</h2>
@@ -75,7 +69,7 @@
           </div>
 
           <!-- Ключевые параграфы -->
-          <div class="form-group" v-if="document.keyParagraphs?.length">
+          <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Существенные параграфы:</label>
             <div v-for="(paragraph, index) in document.keyParagraphs" :key="index" class="paragraph-item">
               <textarea v-model="document.keyParagraphs[index]" required class="form-textarea" rows="3"></textarea>
@@ -313,7 +307,7 @@ const analyzeDocument = async () => {
     document.value = {
       ...document.value,
       summary: analysis.summary,
-      keyParagraphs: analysis.paragraphs,
+      keyParagraphs: analysis.keyParagraphs,
       documentDate: analysis.documentDate || '',
       senderAgency: analysis.senderAgency || '',
       analysisStatus: 'completed',

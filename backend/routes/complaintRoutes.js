@@ -6,6 +6,52 @@ import { Document, Paragraph, TextRun, Packer } from 'docx';
 export default function complaintRoutes({ db }) {
   const router = Router();
 
+    const helpers = {
+  async generateComplaintContent(doc, agency, relatedDocs, instructions) {
+    try {
+      // Используем AI сервис через dependency injection
+      const aiService = req.app.get('aiService'); // Предполагаем, что сервис добавлен в app
+      
+      const complaint = await aiService.generateComplaintV2(
+        doc.originalText,
+        agency,
+        relatedDocs.map(d => d.originalText),
+        instructions
+      );
+      
+      return complaint.content || this.generateFallbackComplaint(doc, agency);
+    } catch (err) {
+      console.error('Ошибка генерации жалобы через AI:', err);
+      return this.generateFallbackComplaint(doc, agency);
+    }
+  },
+
+  generateFallbackComplaint(doc, agency) {
+    return `Жалоба в ${agency}\n\n` +
+      `Документ: ${doc.summary || "Без описания"}\n` +
+      `Дата: ${doc.documentDate || "Не указана"}\n\n` +
+      `Текст: ${doc.originalText.substring(0, 500)}...`;
+  }
+};
+
+  // Генерация жалобы (обновляем вызов)
+  router.post('/generate', async (req, res) => {
+    try {
+      // ... существующий код
+      const complaintContent = await helpers.generateComplaintContent(
+        doc,
+        agency,
+        relatedDocs,
+        instructions
+      );
+      // ... остальной код
+    } catch (err) {
+      // ... обработка ошибок
+    }
+  });
+
+
+
   // Генерация жалобы (обновлённая версия)
   router.post('/generate', async (req, res) => {
     try {

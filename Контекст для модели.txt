@@ -166,15 +166,14 @@ export default function useComplaintGenerator() {
     } finally {
       isGenerating.value = false;
     }
-  }
+  };
 
   return {
     isGenerating,
     generationError,
     generateComplaint
-  }
+  };
 }
-
 Это код файла FatherGuard\frontend\src\composables\useDocumentAnalysis.js:
 import { useDocumentStore } from '@/stores/documentStore';
 import { useAIStore } from '@/stores/aiStore';

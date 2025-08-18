@@ -1,109 +1,36 @@
 import { defineStore } from "pinia";
 import axios from "axios";
+import AIService from "../../../backend/services/aiService";
 
 export const useAIStore = defineStore("ai", {
   state: () => ({
     isLoading: false,
     error: null,
-    apiStatus: "unknown", // 'ready', 'error', 'offline'
+    apiStatus: "unknown",
     apiUrl: "http://localhost:11434/api/generate",
-    activeModel: "llama3.1:latest",
-    
+    model: "llama3.1:latest",
+    availableModels: [
+      {
+        name: "llama3.1:latest",
+        description: "Llama 3.1 (latest)",
+        parameters: {
+          temperature: 0.3,
+          top_p: 0.9,
+          num_ctx: 16384,
+        },
+      },
+    ],
     agencies: ["ФССП", "Прокуратура", "Суд", "Омбудсмен"],
   }),
 
   actions: {
-    /**
-     * Фильтр для удаления предложений с латинскими символами (>15)
-     */
-    _filterLatinText(text) {
-      if (!text) return text;
-
-      return text
-        .split(/(?<=[.!?])\s+/)
-        .filter((sentence) => {
-          const latinChars = (sentence.match(/[a-zA-Z]/g) || []).length;
-          return latinChars <= 15;
-        })
-        .join(" ")
-        .trim();
-    },
-    
-
-    /**
-     * Формат промптов
-     */
-    _formatPrompt(text, model, taskType = 'default') {
-      
-        const systemMessages = {
-          summary: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Ты — юридический ассистент. Сгенерируй краткую суть документа по правилам:
-1. Только факты из текста (без рассуждений)
-2. Объем: 3-5 предложений
-3. Укажи ведомство-отправитель, если оно есть
-4. Выдели дату документа, если указана
-5. Формат: "Документ от [дата] от [ведомство]. [Суть]"
-6. Без вступительных фраз
-
-Текст:
-${text.substring(0, 7000)}
-
-Краткая суть:`,
-
-          paragraphs: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Выдели 3-5 УНИКАЛЬНЫХ ключевых цитат по правилам:
-1. Только дословные цитаты в кавычках
-2. Без повторов и похожих формулировок
-3. Каждая с новой строки
-4. Выделяй полные предложения (не обрезай)
-5. Приоритет: цитаты с датами, номерами, ведомствами
-6. Отвечай только на русском языке!
-7. Без вступительных фраз!
-
-Текст:
-${text.substring(0, 7000)}
-
-Ключевые цитаты:`,
-
-          documentAnalysis: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Проанализируй вложенный документ и верни JSON:
-{
-  "documentType": "тип (приказ, постановление и т.д.)",
-  "sentDate": "дата в формате ДД.ММ.ГГГГ",
-  "senderAgency": "ведомство-отправитель",
-  "summary": "краткая суть (3-5 предложений)",
-  "keyParagraphs": ["дословные цитаты"]
-}
-
-Текст:
-${text.substring(0, 7000)}
-
-Анализ:`,
-
-          violations: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-Найди юридические нарушения в тексте. Формат:
-- Закон: [название]
-- Статья: [номер]
-- Описание: [текст]
-- Доказательство: [цитата (предложение полностью)]
-<</SYS>>
-
-Текст:
-${text.substring(0, 7000)}
-
-Выявленные нарушения:`
-        };
-        return systemMessages[taskType] || text;
-      
-      
+    _initAIService() {
+      return new AIService(this.apiUrl, this.model);
     },
 
-    /**
-     * Проверка доступности AI сервера
-     */
     async checkServerStatus() {
       try {
-        const response = await axios.get("http://localhost:11434", {
+        const response = await axios.get("http://localhost:11434/api/tags", {
           timeout: 3000,
         });
         this.apiStatus = response.status === 200 ? "ready" : "error";
@@ -114,244 +41,181 @@ ${text.substring(0, 7000)}
       }
     },
 
-    /**
-     * Универсальный метод запроса к AI
-     */
-    async _makeAIRequest(prompt, model = this.activeModel, customOptions = {}, taskType = null) {
-      const currentModel = model;
-      const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
-      
-      const payload = {
-        model: currentModel,
-        prompt: this._formatPrompt(prompt, currentModel, taskType),
-        stream: false,
-        options: {
-          temperature: customOptions.temperature ?? modelConfig.temperature ?? 0.3,
-          top_p: customOptions.top_p ?? modelConfig.top_p ?? 0.9,
-          num_ctx: customOptions.num_ctx ?? modelConfig.num_ctx ?? 8192
-        }
-      };
+    async generateSummary(text) {
+      this.isLoading = true;
+      this.error = null;
 
       try {
-        const response = await axios.post(
-          this.apiUrl,
-          payload,
-          {
-            timeout: 500000,
-            headers: {
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        if (!response.data?.response) {
-          throw new Error("Некорректный ответ от сервера AI");
-        }
-
-        return response.data.response;
-      } catch (error) {
-        console.error("AI Request Error:", {
-          config: error.config,
-          response: error.response?.data,
-          error: error.message
+        const aiService = this._initAIService();
+        const summary = await aiService.queryLocalModel(text, {
+          taskType: "summary",
         });
-
-        
-      
+        return summary?.response || "Не удалось сгенерировать краткую суть";
+      } catch (error) {
+        console.error("Ошибка генерации сводки:", error);
+        this.error = error.message;
+        return "Ошибка генерации краткой сводки";
       } finally {
         this.isLoading = false;
       }
     },
 
-    /**
-     * Генерация краткой сводки
-     */
-    async generateSummary(text) {
-      try {
-        const response = await this._makeAIRequest(
-          text,
-          this.activeModel,
-          { temperature: 0.3 },
-          'summary'
-        );
-        
-        return response.split("\n")[0].replace(/^"|"$/g, "") ||
-               "Не удалось сгенерировать краткую суть";
-      } catch (error) {
-        console.error("Ошибка генерации сводки:", error);
-        return "Ошибка генерации краткой сводки";
-      }
-    },
-
-    /**
-     * Извлечение ключевых параграфов
-     */
     async extractKeyParagraphs(text) {
+      this.isLoading = true;
+      this.error = null;
+
       try {
-        const response = await this._makeAIRequest(
-          text,
-          this.activeModel,
-          { temperature: 0.3 },
-          'paragraphs'
-        );
-
-        const paragraphs = (response || '').split('\n')
-          .map(p => p.trim().replace(/^["']|["']$/g, ''))
-          .filter(p => p.length > 10)
-          .slice(0, 5);
-
-        return paragraphs.length > 0 
-          ? paragraphs 
-          : ['Не удалось извлечь значимые цитаты'];
+        const aiService = this._initAIService();
+        const response = await aiService.analyzeLegalText(text);
+        return response.keyParagraphs || [];
       } catch (error) {
-        console.error('Ошибка extractKeyParagraphs:', error);
-        return ['Ошибка обработки документа'];
+        console.error("Ошибка extractKeyParagraphs:", error);
+        this.error = error.message;
+        return ["Не удалось извлечь ключевые параграфы"];
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    /**
-     * Поиск юридических нарушений
-     */
     async detectViolations(text) {
+      this.isLoading = true;
+      this.error = null;
+
       try {
-        return await this._makeAIRequest(
-          text,
-          this.activeModel,
-          { temperature: 0.5 },
-          'violations'
-        );
+        const aiService = this._initAIService();
+        const response = await aiService.queryLocalModel(text, {
+          taskType: "violations",
+          temperature: 0.5,
+        });
+        return response?.response || "Не удалось проанализировать нарушения";
       } catch (error) {
         console.error("Ошибка анализа нарушений:", error);
+        this.error = error.message;
         return "Не удалось проанализировать нарушения. Проверьте текст документа.";
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    /**
-     * Анализ вложенного документа
-     */
     async analyzeAttachment(text) {
+      this.isLoading = true;
+      this.error = null;
+
       try {
-        const response = await this._makeAIRequest(
-          text,
-          this.activeModel,
-          { temperature: 0.2 },
-          'documentAnalysis'
-        );
-        
-        return typeof response === 'string' ? JSON.parse(response) : response;
+        const aiService = this._initAIService();
+        const response = await aiService.queryLocalModel(text, {
+          taskType: "attachment",
+          temperature: 0.2,
+          format: "json",
+        });
+        return aiService.parseAttachmentAnalysis(response);
       } catch (error) {
         console.error("Ошибка анализа вложения:", error);
+        this.error = error.message;
         return {
           documentType: "Неизвестный тип",
           sentDate: "",
           senderAgency: "",
           summary: "Ошибка анализа документа",
-          keyParagraphs: []
+          keyParagraphs: [],
         };
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    /**
-     * Полный анализ документа
-     */
     async analyzeDocument(text) {
+      this.isLoading = true;
+      this.error = null;
+
       try {
         const [summary, paragraphs, violations] = await Promise.all([
           this.generateSummary(text),
           this.extractKeyParagraphs(text),
-          this.detectViolations(text)
+          this.detectViolations(text),
         ]);
 
         return {
           summary: summary || "Не удалось сгенерировать сводку",
-          paragraphs: Array.isArray(paragraphs) ? paragraphs : ['Ошибка извлечения цитат'],
-          violations: violations || 'Ошибка анализа нарушений',
-          status: "complete"
+          paragraphs: Array.isArray(paragraphs)
+            ? paragraphs
+            : ["Ошибка извлечения цитат"],
+          violations: violations || "Ошибка анализа нарушений",
+          status: "complete",
         };
       } catch (error) {
         console.error("Ошибка анализа документа:", error);
+        this.error = error.message;
         return {
           summary: "Системная ошибка анализа",
           paragraphs: ["Системная ошибка"],
           violations: "Системная ошибка",
-          status: "error"
+          status: "error",
         };
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    /**
-     * Генерация жалобы
-     */
+    async generateAttachmentSummary(text) {
+      const aiService = this._initAIService();
+      return aiService.queryLocalModel(text, {
+        taskType: "attachment",
+        temperature: 0,
+        format: "json",
+      });
+    },
+
     async generateComplaint(text, agency, violation = "") {
+      this.isLoading = true;
+      this.error = null;
+
       if (!this.agencies.includes(agency)) {
-        throw new Error("Указано недопустимое ведомство");
+        this.error = "Указано недопустимое ведомство";
+        throw new Error(this.error);
       }
 
       try {
+        const aiService = this._initAIService();
         const prompt = `Сгенерируй официальную жалобу в ${agency} на основе документа.
                       ${violation ? `Выявленное нарушение:\n${violation}\n` : ""}
                       Текст документа:\n${text.substring(0, 3000)}`;
 
-        return await this._makeAIRequest(
-          prompt,
-          this.activeModel,
-          { temperature: 0.5 }
+        const response = await aiService.queryLocalModel(prompt, {
+          temperature: 0.5,
+          max_tokens: 7000,
+        });
+
+        return (
+          response?.response || this._generateFallbackComplaint(text, agency)
         );
       } catch (error) {
         console.error("Ошибка генерации жалобы:", error);
-        return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${text.substring(0, 500)}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+        this.error = error.message;
+        return this._generateFallbackComplaint(text, agency);
+      } finally {
+        this.isLoading = false;
       }
     },
 
-    /**
-     * Обработка параграфов
-     */
-    _postProcessParagraphs(text) {
-      if (!text) return ["Не найдено значимых цитат"];
-      
-      return (text || '').split('\n')
-        .map(p => {
-          let cleaned = p.replace(/<\|.*?\|\>|```/g, '')
-                       .replace(/^["']+|["']+$/g, '')
-                       .trim();
-          return cleaned.length > 15 ? cleaned : null;
-        })
-        .filter(Boolean)
-        .filter((item, index, arr) => 
-          index === arr.findIndex(i => i.substring(0, 50) === item.substring(0, 50))
-        )
-        .slice(0, 5);
-    }
+    _generateFallbackComplaint(text, agency) {
+      return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${text.substring(
+        0,
+        500
+      )}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+    },
   },
 
   getters: {
     isServerOnline: (state) => state.apiStatus === "ready",
     activeModelName: (state) => {
-      const model = state.activeModel
-      
+      const model = state.availableModels.find(
+        (m) => m.name === state.model
+      );
       return model ? model.description : "Неизвестная модель";
     },
   },
 });
-
-export default useAIStore
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -363,6 +227,7 @@ export default useAIStore
 
 // import { defineStore } from "pinia";
 // import axios from "axios";
+// import AIService from "../../../backend/services/aiService";
 
 // export const useAIStore = defineStore("ai", {
 //   state: () => ({
@@ -370,30 +235,29 @@ export default useAIStore
 //     error: null,
 //     apiStatus: "unknown", // 'ready', 'error', 'offline'
 //     apiUrl: "http://localhost:11434/api/generate",
-//     activeModel: "llama3:8b",
+//     model: "llama3.1:latest",
 //     availableModels: [
 //       {
-//         name: "llama3:8b",
-//         description: "Оптимизированная модель для анализа документов",
+//         name: "llama3.1:latest",
+//         description: "Llama 3.1 (latest)",
 //         parameters: {
 //           temperature: 0.3,
 //           top_p: 0.9,
-//           num_ctx: 4096
-//         }
-//       },
-//       { 
-//         name: "deepseek-r1:14b", 
-//         description: "Базовая модель" 
-//       },
-//       { 
-//         name: "hf.co/mradermacher/Medra4b-i1-GGUF:Q4_K_M",
-//         description: "Резервная модель" 
+//           num_ctx: 16384,
+//         },
 //       },
 //     ],
 //     agencies: ["ФССП", "Прокуратура", "Суд", "Омбудсмен"],
 //   }),
 
 //   actions: {
+//     /**
+//      * Инициализация AI сервиса
+//      */
+//     _initAIService() {
+//       return new AIService(this.apiUrl, this.activeModel);
+//     },
+
 //     /**
 //      * Фильтр для удаления предложений с латинскими символами (>15)
 //      */
@@ -411,110 +275,11 @@ export default useAIStore
 //     },
 
 //     /**
-//      * Улучшенный формат промпта для Medra4b
-//      */
-//     _formatMedraPrompt(text, taskType = "default") {
-//       const prompts = {
-//         summary: `[INST] <<SYS>>
-// Ты - юридический ассистент. Сгенерируй краткую суть документа по правилам:
-// 1. Только констатация сути предоставленного текста.
-// 2. Максимально кратко (2-3 предложения)
-// 4. Никаких пояснений.
-// <</SYS>>
-
-// Текст:
-// ${text.substring(0, 5000)}
-
-// Краткая суть: [/INST]`,
-
-//         paragraphs: `[INST] <<SYS>>
-// Ты — юридический эксперт. Выдели 3-5 самых важных УНИКАЛЬНЫХ цитат из документа по правилам:
-// 1. Только разные по смыслу предложения
-// 2. НЕ повторяй одинаковые формулировки
-// 3. Каждая цитата должна раскрывать новую мысль
-// 4. Если предложения повторяются — выбери только один вариант
-// 5. Формат: "Точная цитата в кавычках"
-// <</SYS>>
-
-// Текст:
-// ${text.substring(0, 5000)}
-
-// Цитаты: [/INST]`,
-
-//         default: `[INST] <<SYS>>
-// Ты - юридический ассистент. Сгенерируй краткую суть документа по правилам:
-// 1. Только констатация сути предоставленного текста.
-// 2. Максимально кратко (2-3 предложения)
-// 4. Никаких пояснений.
-// <</SYS>>
-
-// ${text} [/INST]`,
-//       };
-
-//       return prompts[taskType] || prompts.default;
-//     },
-
-//     /**
-//      * Формат промптов для Llama3
-//      */
-//     _formatPrompt(text, model, taskType = 'default') {
-//       if (model.includes('llama3')) {
-//         const systemMessages = {
-//           summary: `
-//   <|begin_of_text|><|start_header_id|>system<|end_header_id|>
-//   Ты — юридический ассистент. Сгенерируй краткую суть документа:
-//   1. Только факты (без рассуждений)
-//   2. Объем: 2-3 предложения.
-//   3. Без вступительных фраз вроде "Here is a brief summary of the document:"
-
-//   <</SYS>>
-
-//   Текст:
-//   ${text.substring(0, 7000)}
-
-//   Краткая суть:`,
-          
-//           paragraphs: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-//   Выдели 3-5 УНИКАЛЬНЫХ ключевых цитат:
-//   1. Только дословные цитаты
-//   2. Без повторов
-//   3. Каждая с новой строки
-//   4. Без вступительных фраз вроде "Here are 3-5 unique key quotes from the text:"
-//   5. Без перевода, строго только на русском языке.
-//   6. Объем каждого существенного параграфа - от 1 до 3 предложений. 
-//   7. Предложения выделяй только полностью, не обрезая, чтобы не терялась суть.
-//   >
-//   <</SYS>>
-
-//   Текст:
-//   ${text.substring(0, 7000)}
-
-//   Ключевые цитаты:`,
-          
-//           violations: `<|begin_of_text|><|start_header_id|>system<|end_header_id|>
-// Найди юридические нарушения в тексте. Формат:
-// - Закон: [название]
-// - Статья: [номер]
-// - Описание: [текст]
-// - Доказательство: [цитата (предложение полностью)]
-// <</SYS>>
-
-// Текст:
-// ${text.substring(0, 7000)}
-
-// Выявленные нарушения:`
-//         };
-//         return systemMessages[taskType] || text;
-//       }
-//       return this._formatMedraPrompt(text, taskType);
-//     },
-
-//     /**
 //      * Проверка доступности AI сервера
 //      */
 //     async checkServerStatus() {
 //       try {
-//         const response = await axios.get("http://localhost:11434", {
+//         const response = await axios.get("http://localhost:11434/api/tags", {
 //           timeout: 3000,
 //         });
 //         this.apiStatus = response.status === 200 ? "ready" : "error";
@@ -526,76 +291,26 @@ export default useAIStore
 //     },
 
 //     /**
-//      * Универсальный метод запроса к AI
-//      */
-//     async _makeAIRequest(prompt, model = null, customOptions = {}, taskType = null) {
-//       const currentModel = model || this.activeModel;
-//       const modelConfig = this.availableModels.find(m => m.name === currentModel)?.parameters || {};
-      
-//       const payload = {
-//         model: currentModel,
-//         prompt: this._formatPrompt(prompt, currentModel, taskType),
-//         stream: false,
-//         options: {
-//           temperature: customOptions.temperature ?? modelConfig.temperature ?? 0.3,
-//           top_p: customOptions.top_p ?? modelConfig.top_p ?? 0.9,
-//           num_ctx: customOptions.num_ctx ?? modelConfig.num_ctx ?? 4096
-//         }
-//       };
-
-//       try {
-//         const response = await axios.post(
-//           this.apiUrl,
-//           payload,
-//           {
-//             timeout: 500000,
-//             headers: {
-//               'Content-Type': 'application/json'
-//             }
-//           }
-//         );
-
-//         if (!response.data?.response) {
-//           throw new Error("Некорректный ответ от сервера AI");
-//         }
-
-//         return response.data.response;
-//       } catch (error) {
-//         console.error("AI Request Error:", {
-//           config: error.config,
-//           response: error.response?.data,
-//           error: error.message
-//         });
-
-//         // Fallback на другую модель
-//         if (currentModel !== 'llama2') {
-//           console.warn("Пробуем использовать резервную модель");
-//           return this._makeAIRequest(prompt, 'llama2', customOptions, taskType);
-//         }
-
-//         throw new Error(`Ошибка AI: ${error.message}`);
-//       } finally {
-//         this.isLoading = false;
-//       }
-//     },
-
-//     /**
 //      * Генерация краткой сводки
 //      */
 //     async generateSummary(text) {
+//       this.isLoading = true;
+//       this.error = null;
+
 //       try {
-//         const response = await this._makeAIRequest(
-//           text,
-//           null,
-//           { temperature: 0.3 },
-//           'summary'
-//         );
-        
-//         return response.split("\n")[0].replace(/^"|"$/g, "") ||
-//                "Не удалось сгенерировать краткую суть";
+//         const aiService = this._initAIService();
+//         const filteredText = this._filterLatinText(text);
+//         const summary = await aiService.queryLocalModel(filteredText, {
+//           taskType: "summary",
+//         });
+
+//         return summary?.response || "Не удалось сгенерировать краткую суть";
 //       } catch (error) {
 //         console.error("Ошибка генерации сводки:", error);
+//         this.error = error.message;
 //         return "Ошибка генерации краткой сводки";
+//       } finally {
+//         this.isLoading = false;
 //       }
 //     },
 
@@ -603,25 +318,21 @@ export default useAIStore
 //      * Извлечение ключевых параграфов
 //      */
 //     async extractKeyParagraphs(text) {
+//       this.isLoading = true;
+//       this.error = null;
+
 //       try {
-//         const response = await this._makeAIRequest(
-//           text,
-//           null,
-//           { temperature: 0.1 },
-//           'paragraphs'
-//         );
+//         const aiService = this._initAIService();
+//         const response = await aiService.analyzeLegalText(text);
 
-//         const paragraphs = (response || '').split('\n')
-//           .map(p => p.trim().replace(/^["']|["']$/g, ''))
-//           .filter(p => p.length > 10)
-//           .slice(0, 5);
-
-//         return paragraphs.length > 0 
-//           ? paragraphs 
-//           : ['Не удалось извлечь значимые цитаты'];
+//         // Возвращаем нормализованные параграфы
+//         return response.keyParagraphs || [];
 //       } catch (error) {
-//         console.error('Ошибка extractKeyParagraphs:', error);
-//         return ['Ошибка обработки документа'];
+//         console.error("Ошибка extractKeyParagraphs:", error);
+//         this.error = error.message;
+//         return ["Не удалось извлечь ключевые параграфы"];
+//       } finally {
+//         this.isLoading = false;
 //       }
 //     },
 
@@ -629,16 +340,56 @@ export default useAIStore
 //      * Поиск юридических нарушений
 //      */
 //     async detectViolations(text) {
+//       this.isLoading = true;
+//       this.error = null;
+
 //       try {
-//         return await this._makeAIRequest(
-//           text,
-//           null,
-//           { temperature: 0.5 },
-//           'violations'
-//         );
+//         const aiService = this._initAIService();
+//         const filteredText = this._filterLatinText(text);
+//         const response = await aiService.queryLocalModel(filteredText, {
+//           taskType: "violations",
+//           temperature: 0.5,
+//         });
+
+//         return response?.response || "Не удалось проанализировать нарушения";
 //       } catch (error) {
 //         console.error("Ошибка анализа нарушений:", error);
+//         this.error = error.message;
 //         return "Не удалось проанализировать нарушения. Проверьте текст документа.";
+//       } finally {
+//         this.isLoading = false;
+//       }
+//     },
+
+//     /**
+//      * Анализ вложенного документа
+//      */
+//     async analyzeAttachment(text) {
+//       this.isLoading = true;
+//       this.error = null;
+
+//       try {
+//         const aiService = this._initAIService();
+//         const filteredText = this._filterLatinText(text);
+//         const response = await aiService.queryLocalModel(filteredText, {
+//           taskType: "attachment",
+//           temperature: 0.2,
+//           format: "json",
+//         });
+
+//         return aiService.parseAttachmentAnalysis(response);
+//       } catch (error) {
+//         console.error("Ошибка анализа вложения:", error);
+//         this.error = error.message;
+//         return {
+//           documentType: "Неизвестный тип",
+//           sentDate: "",
+//           senderAgency: "",
+//           summary: "Ошибка анализа документа",
+//           keyParagraphs: [],
+//         };
+//       } finally {
+//         this.isLoading = false;
 //       }
 //     },
 
@@ -646,51 +397,80 @@ export default useAIStore
 //      * Полный анализ документа
 //      */
 //     async analyzeDocument(text) {
+//       this.isLoading = true;
+//       this.error = null;
+
 //       try {
 //         const [summary, paragraphs, violations] = await Promise.all([
 //           this.generateSummary(text),
 //           this.extractKeyParagraphs(text),
-//           this.detectViolations(text)
+//           this.detectViolations(text),
 //         ]);
 
 //         return {
 //           summary: summary || "Не удалось сгенерировать сводку",
-//           paragraphs: Array.isArray(paragraphs) ? paragraphs : ['Ошибка извлечения цитат'],
-//           violations: violations || 'Ошибка анализа нарушений',
-//           status: "complete"
+//           paragraphs: Array.isArray(paragraphs)
+//             ? paragraphs
+//             : ["Ошибка извлечения цитат"],
+//           violations: violations || "Ошибка анализа нарушений",
+//           status: "complete",
 //         };
 //       } catch (error) {
 //         console.error("Ошибка анализа документа:", error);
+//         this.error = error.message;
 //         return {
 //           summary: "Системная ошибка анализа",
 //           paragraphs: ["Системная ошибка"],
 //           violations: "Системная ошибка",
-//           status: "error"
+//           status: "error",
 //         };
+//       } finally {
+//         this.isLoading = false;
 //       }
+//     },
+
+//     async generateAttachmentSummary(text) {
+//       return this.queryLocalModel(text, {
+//         taskType: "attachment",
+//         temperature: 0,
+//         format: "json",
+//       });
 //     },
 
 //     /**
 //      * Генерация жалобы
 //      */
 //     async generateComplaint(text, agency, violation = "") {
+//       this.isLoading = true;
+//       this.error = null;
+
 //       if (!this.agencies.includes(agency)) {
-//         throw new Error("Указано недопустимое ведомство");
+//         this.error = "Указано недопустимое ведомство";
+//         throw new Error(this.error);
 //       }
 
 //       try {
+//         const aiService = this._initAIService();
 //         const prompt = `Сгенерируй официальную жалобу в ${agency} на основе документа.
-//                       ${violation ? `Выявленное нарушение:\n${violation}\n` : ""}
+//                       ${
+//                         violation ? `Выявленное нарушение:\n${violation}\n` : ""
+//                       }
 //                       Текст документа:\n${text.substring(0, 3000)}`;
 
-//         return await this._makeAIRequest(
-//           prompt,
-//           null,
-//           { temperature: 0.7 }
+//         const response = await aiService.queryLocalModel(prompt, {
+//           temperature: 0.5,
+//           max_tokens: 7000,
+//         });
+
+//         return (
+//           response?.response || this._generateFallbackComplaint(text, agency)
 //         );
 //       } catch (error) {
 //         console.error("Ошибка генерации жалобы:", error);
-//         return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${text.substring(0, 500)}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+//         this.error = error.message;
+//         return this._generateFallbackComplaint(text, agency);
+//       } finally {
+//         this.isLoading = false;
 //       }
 //     },
 
@@ -699,20 +479,38 @@ export default useAIStore
 //      */
 //     _postProcessParagraphs(text) {
 //       if (!text) return ["Не найдено значимых цитат"];
-      
-//       return (text || '').split('\n')
-//         .map(p => {
-//           let cleaned = p.replace(/<\|.*?\|\>|```/g, '')
-//                        .replace(/^["']+|["']+$/g, '')
-//                        .trim();
+
+//       // Обрабатываем как строку, если text не объект
+//       const textToProcess =
+//         typeof text === "string" ? text : text.response || text.content || "";
+
+//       return textToProcess
+//         .split(/(?<=[.!?])\s+/)
+//         .map((p) => {
+//           let cleaned = p
+//             .replace(/<\|.*?\|\>|```/g, "")
+//             .replace(/^["']+|["']+$/g, "")
+//             .trim();
 //           return cleaned.length > 15 ? cleaned : null;
 //         })
 //         .filter(Boolean)
-//         .filter((item, index, arr) => 
-//           index === arr.findIndex(i => i.substring(0, 50) === item.substring(0, 50))
+//         .filter(
+//           (item, index, arr) =>
+//             index ===
+//             arr.findIndex((i) => i.substring(0, 50) === item.substring(0, 50))
 //         )
 //         .slice(0, 5);
-//     }
+//     },
+
+//     /**
+//      * Генерация резервной жалобы при ошибке
+//      */
+//     _generateFallbackComplaint(text, agency) {
+//       return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${text.substring(
+//         0,
+//         500
+//       )}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
+//     },
 //   },
 
 //   getters: {
@@ -725,3 +523,5 @@ export default useAIStore
 //     },
 //   },
 // });
+
+// export default useAIStore;

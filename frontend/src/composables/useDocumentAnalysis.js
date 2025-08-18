@@ -10,7 +10,7 @@ export const useDocumentAnalysis = () => {
   };
 
   const analyzeTextWithLLM = async (text) => {
-    return await aiStore.analyzeDocumentText(text);
+    return await aiStore.analyzeDocument(text);
   };
 
   return {

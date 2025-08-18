@@ -1,386 +1,117 @@
-// import axios from 'axios';
-
-// class AIService {
-//   constructor() {
-//     this.localModelUrl = process.env.LOCAL_MODEL_URL || "http://localhost:11434";
-//     this.modelName = "llama3:8b";
-//     this.defaultOptions = {
-//       temperature: 0.3,
-//       max_tokens: 4000,
-//       repeat_penalty: 1.2,
-//       format: "json"
-//     };
-//     this.analysisCache = new Map();
-//     this.maxRetries = 2;
-//   }
-
-//   async queryLocalModel(prompt, customOptions = {}) {
-//     const options = {
-//       ...this.defaultOptions,
-//       ...customOptions,
-//       prompt: this.preparePrompt(prompt, customOptions.taskType)
-//     };
-
-//     let retries = 0;
-//     let lastError = null;
-
-//     while (retries <= this.maxRetries) {
-//       try {
-//         const response = await axios.post(
-//           `${this.localModelUrl}/api/generate`,
-//           {
-//             model: this.modelName,
-//             ...options
-//           },
-//           {
-//             timeout: 500000
-//           }
-//         );
-
-//         return this.parseModelResponse(response.data);
-//       } catch (error) {
-//         lastError = error;
-//         if (retries < this.maxRetries) {
-//           await new Promise(resolve => setTimeout(resolve, 1000 * (retries + 1)));
-//           retries++;
-//           continue;
-//         }
-//         throw this.normalizeError(error);
-//       }
-//     }
-//   }
-
-//   async analyzeLegalText(text, instructions = "", strictMode = false) {
-//     const cacheKey = this.generateCacheKey(text, instructions);
-//     if (this.analysisCache.has(cacheKey)) {
-//       return this.analysisCache.get(cacheKey);
-//     }
-
-//     const prompt = this.buildLegalAnalysisPrompt(text, instructions, strictMode);
-//     const result = await this.queryLocalModel(prompt, {
-//       temperature: strictMode ? 0.1 : 0.3
-//     });
-
-//     const validatedResult = this.validateLegalAnalysis(result, text);
-//     this.analysisCache.set(cacheKey, validatedResult);
-//     return validatedResult;
-//   }
-
-//   async generateComplaint(documentText, agency, relatedDocuments = [], instructions = "") {
-//     const prompt = this.buildComplaintPrompt(documentText, agency, relatedDocuments, instructions);
-//     const response = await this.queryLocalModel(prompt, {
-//       temperature: 0.5,
-//       max_tokens: 7000
-//     });
-
-//     return this.validateComplaintResponse(response, documentText, agency);
-//   }
-
-//   async analyzeAttachment(text) {
-//     const prompt = this.buildAttachmentPrompt(text);
-//     const response = await this.queryLocalModel(prompt, {
-//       temperature: 0.2
-//     });
-
-//     return this.validateAttachmentAnalysis(response);
-//   }
-
-//   // ========== Вспомогательные методы ==========
-
-//   buildLegalAnalysisPrompt(text, instructions, strictMode) {
-//     return `Ты - юридический ассистент. Проанализируй документ и верни JSON:
-// {
-//   "summary": "Краткая суть (3-5 предложений)",
-//   "keyParagraphs": ["Дословные цитаты"],
-//   "documentDate": "ДД.ММ.ГГГГ",
-//   "senderAgency": "Ведомство",
-//   "violations": [{
-//     "law": "Название закона",
-//     "article": "Статья",
-//     "description": "Описание нарушения",
-//     "evidence": "Дословная цитата"
-//   }]
-// }
-
-// Требования:
-// 1. Сохраняй оригинальную орфографию
-// 2. Для дат используй формат ДД.ММ.ГГГГ
-// 3. Указывай полные названия ведомств
-// 4. ${strictMode ? "Выявляй все возможные нарушения" : "Выявляй явные нарушения"}
-
-// ${instructions ? `Дополнительные инструкции: ${instructions}` : ''}
-
-// Текст документа:
-// ${text.substring(0, 10000)}`;
-//   }
-
-//   buildComplaintPrompt(documentText, agency, relatedDocuments, instructions) {
-//     return `Сгенерируй официальную жалобу в ${agency} на основании документа:
-
-// Требования к жалобе:
-// 1. Официальный стиль
-// 2. Четкая структура:
-//    - Шапка (кому/от кого)
-//    - Изложение фактов
-//    - Ссылки на нарушения
-//    - Требования
-//    - Приложения
-// 3. Используй дословные цитаты из документа
-// 4. Ссылайся на законы
-
-// ${instructions ? `Дополнительные инструкции: ${instructions}` : ''}
-
-// Текст документа:
-// ${documentText.substring(0, 5000)}
-
-// ${relatedDocuments.length ? `Связанные документы:
-// ${relatedDocuments.map(doc => `- ${doc.substring(0, 1000)}`).join('\n')}` : ''}`;
-//   }
-
-//   buildAttachmentPrompt(text) {
-//     return `Проанализируй вложение и верни JSON:
-// {
-//   "documentType": "Тип документа",
-//   "sentDate": "ДД.ММ.ГГГГ",
-//   "senderAgency": "Ведомство",
-//   "summary": "Краткая суть",
-//   "keyParagraphs": ["Дословные цитаты"]
-// }
-
-// Текст вложения:
-// ${text.substring(0, 7000)}`;
-//   }
-
-//   validateLegalAnalysis(result, originalText) {
-//     const defaultResult = {
-//       summary: "",
-//       keyParagraphs: [],
-//       documentDate: this.extractDate(originalText) || "",
-//       senderAgency: this.extractAgency(originalText) || "",
-//       violations: []
-//     };
-
-//     if (!result || typeof result !== 'object') return defaultResult;
-
-//     return {
-//       summary: result.summary || defaultResult.summary,
-//       keyParagraphs: Array.isArray(result.keyParagraphs)
-//         ? result.keyParagraphs.filter(p => p && typeof p === 'string')
-//         : defaultResult.keyParagraphs,
-//       documentDate: result.documentDate || defaultResult.documentDate,
-//       senderAgency: result.senderAgency || defaultResult.senderAgency,
-//       violations: Array.isArray(result.violations)
-//         ? result.violations.filter(v => v.law && v.article && v.evidence)
-//         : defaultResult.violations
-//     };
-//   }
-
-//   validateComplaintResponse(response, documentText, agency) {
-//     if (!response || typeof response !== 'object') {
-//       return {
-//         content: this.generateDefaultComplaint(documentText, agency),
-//         violations: [],
-//         status: 'draft'
-//       };
-//     }
-
-//     return {
-//       content: response.content || this.generateDefaultComplaint(documentText, agency),
-//       violations: Array.isArray(response.violations)
-//         ? response.violations
-//         : [],
-//       status: 'draft'
-//     };
-//   }
-
-//   validateAttachmentAnalysis(response) {
-//     const defaultResult = {
-//       documentType: "Неизвестный тип",
-//       sentDate: "",
-//       senderAgency: "",
-//       summary: "",
-//       keyParagraphs: []
-//     };
-
-//     if (!response || typeof response !== 'object') return defaultResult;
-
-//     return {
-//       documentType: response.documentType || defaultResult.documentType,
-//       sentDate: response.sentDate || defaultResult.sentDate,
-//       senderAgency: response.senderAgency || defaultResult.senderAgency,
-//       summary: response.summary || defaultResult.summary,
-//       keyParagraphs: Array.isArray(response.keyParagraphs)
-//         ? response.keyParagraphs
-//         : defaultResult.keyParagraphs
-//     };
-//   }
-
-//   generateDefaultComplaint(text, agency) {
-//     return `В ${agency}\n\nЗаявитель: [ФИО]\n\nЖалоба на документ:\n${
-//       text.substring(0, 500)
-//     }\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString('ru-RU')}`;
-//   }
-
-//   extractDate(text) {
-//     const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
-//     const match = text.match(dateRegex);
-//     return match ? match[0] : null;
-//   }
-
-//   extractAgency(text) {
-//     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-//     return agencies.find(agency => text.includes(agency)) || null;
-//   }
-
-//   parseModelResponse(data) {
-//     try {
-//       if (typeof data === 'string') {
-//         const jsonMatch = data.match(/\{[\s\S]*\}/);
-//         return jsonMatch ? JSON.parse(jsonMatch[0]) : { response: data };
-//       }
-//       return data.response || data;
-//     } catch (e) {
-//       console.error("Ошибка парсинга ответа модели:", e);
-//       return null;
-//     }
-//   }
-
-//   normalizeError(error) {
-//     return error.response?.data?.error
-//       ? new Error(`Ошибка модели: ${error.response.data.error}`)
-//       : error;
-//   }
-
-//   generateCacheKey(text, instructions = "") {
-//     const str = text.substring(0, 200) + instructions;
-//     let hash = 0;
-//     for (let i = 0; i < str.length; i++) {
-//       hash = (hash << 5) - hash + str.charCodeAt(i);
-//       hash |= 0;
-//     }
-//     return hash.toString(36);
-//   }
-// }
-
-// export default new AIService();
-
 import axios from "axios";
-import useAIStore from '@/stores/aiStore'
-import pinia from 'pinia'
-
-app.use(pinia)
 
 class AIService {
-  constructor() {
-    this.aiStore = useAIStore();
-    this.localModelUrl = import.meta.env.VITE_LOCAL_MODEL_URL;
+  constructor(apiUrl, activeModel) {
+    this.apiUrl = 'http://localhost:11434/api/generate';
+    this.activeModel = 'llama3.1:latest'; 
     this.defaultOptions = {
       temperature: 0.3,
-      max_tokens: 6000,
+      max_tokens: 16384,
       repeat_penalty: 1.2,
       format: "json",
     };
     this.analysisCache = new Map();
     this.maxRetries = 2;
+    // Явная привязка методов
+    this.queryLocalModel = this.queryLocalModel.bind(this);
+    this.analyzeLegalText = this.analyzeLegalText.bind(this);
+    this.safeParseResponse = this.safeParseResponse.bind(this);
+    this.generateComplaintV2 = this.generateComplaintV2.bind(this);
+    this.analyzeAttachment = this.analyzeAttachment.bind(this);
+    this.parseAttachmentAnalysis = this.parseAttachmentAnalysis.bind(this);
   }
 
-  /**
-   * Основной метод для запросов к AI
-   */
   async queryLocalModel(prompt, customOptions = {}) {
     const options = {
+      method: 'POST',
       ...this.defaultOptions,
       ...customOptions,
       prompt: this.preparePrompt(prompt, customOptions.taskType),
     };
 
-    let retries = 0;
-    let lastError = null;
+    try {
+      const response = await axios.post(
+        this.apiUrl,
+        {
+          model: this.activeModel,
+          prompt,
+          stream: false,
+          format: "json",
+          ...options,
+        },
+        { timeout: 500000 }
+      );
 
-    while (retries <= this.maxRetries) {
-      try {
-        const response = await axios.post(
-          this.aiStore.apiUrl,
-          {
-            model: this.aiStore.activeModel, // Используем активную модель из хранилища
-            prompt,
-            stream: false,
-            format: "json",
-            ...options,
-          },
-          {
-            timeout: 500000,
-          }
-        );
-
-        return this.parseModelResponse(response.data);
-      } catch (error) {
-        lastError = error;
-        console.error(`Attempt ${retries + 1} failed:`, error.message);
-
-        if (retries < this.maxRetries) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * (retries + 1))
-          );
-          retries++;
-          continue;
-        }
-
-        throw this.normalizeError(error);
-      }
+      return this.safeParseResponse(response.data);
+    } catch (error) {
+      console.error("Ошибка запроса к модели:", error);
+      throw this.normalizeError(error);
     }
   }
 
-  /**
-   * Анализ юридического текста с улучшенной обработкой
-   */
   async analyzeLegalText(text, instructions = "", strictMode = false) {
+    console.log("Отправляемый текст:", text.substring(0, 200) + "...");
     const cacheKey = this.generateCacheKey(text, instructions);
+    
     if (this.analysisCache.has(cacheKey)) {
       return this.analysisCache.get(cacheKey);
     }
 
     const prompt = this.buildAnalysisPrompt(text, instructions, strictMode);
     const result = await this.queryLocalModel(prompt, {
-      temperature: strictMode ? 0.1 : 0.3,
+      temperature: 0.3,
+      format: "json"
     });
 
-    if (!result.summary) {
-      console.error("Invalid model response format:", result);
-      throw new Error("Отсутствует поле summary в ответе модели");
+    const parsedResult = this.safeParseResponse(result);
+    
+    if (!parsedResult) {
+      throw new Error("Не удалось разобрать ответ модели");
     }
 
-    const enhancedResult = this.enhanceAnalysisResult(result, text);
+    const enhancedResult = {
+      summary: parsedResult.summary || "Не удалось сгенерировать краткую суть",
+      keyParagraphs: Array.isArray(parsedResult.keyParagraphs) ? 
+        parsedResult.keyParagraphs.filter(p => p && p.length > 10) : 
+        [],
+      violations: Array.isArray(parsedResult.violations) ?
+        parsedResult.violations :
+        [],
+      documentDate: parsedResult.documentDate || this.extractDate(text),
+      senderAgency: parsedResult.senderAgency || this.extractAgency(text)
+    };
+
     this.analysisCache.set(cacheKey, enhancedResult);
     return enhancedResult;
   }
 
-  /**
-   * Генерация жалобы (версия 2)
-   */
-  async generateComplaintV2(documentText, agency, relatedDocuments = []) {
-    const prompt = this.buildComplaintPromptV2(
-      documentText,
-      agency,
-      relatedDocuments
-    );
+  safeParseResponse(response) {
+    try {
+      if (typeof response === 'string') {
+        // Попытка найти JSON в строке
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      }
+      return response;
+    } catch (e) {
+      console.error("Ошибка парсинга ответа:", e);
+      return null;
+    }
+  }
+
+  async generateComplaintV2(documentText, agency, relatedDocuments = [], instructions = "") {
+    const prompt = this.buildComplaintPromptV2(documentText, agency, relatedDocuments, instructions);
     const response = await this.queryLocalModel(prompt, {
       temperature: 0.5,
-      max_tokens: 7000,
+      max_tokens: 7000
     });
 
     return {
-      content:
-        response.content || this.generateDefaultComplaint(documentText, agency),
-      violations: response.identifiedViolations || [],
-      analysis: response.legalAnalysis || "",
-      relatedDocuments: response.relatedDocuments || [],
+      content: response.content || this.generateDefaultComplaint(documentText, agency),
+      violations: response.violations || []
     };
   }
 
-  /**
-   * Анализ вложенного документа
-   */
   async analyzeAttachment(text) {
     const prompt = this.buildAttachmentPrompt(text);
     const response = await this.queryLocalModel(prompt, {
@@ -391,44 +122,49 @@ class AIService {
     return this.parseAttachmentAnalysis(response);
   }
 
-  // ========== Вспомогательные методы ==========
-
   preparePrompt(text, taskType = "default") {
-    const prompts = {
-      summary: `[SYSTEM] Ты - юридический ассистент. Сгенерируй краткую суть документа:
+    const baseSystemPrompt = `[SYSTEM] Ты - юридический ассистент. Проанализируй текст как юридический документ.
+Требования:
 1. Только факты
-2. 3-5 предложений
-3. Укажи ведомство и дату если есть
-4. Без вводных фраз, сразу к сути дела
-5. Повествование от имени клиента в первом лице
-[TEXT]: ${text.substring(0, 8000)}
+2. Укажи ведомство и дату если есть
+`;
+
+    const taskSpecificPrompts = {
+      summary: `${baseSystemPrompt}
+Сгенерируй краткую суть документа объемом от трёх до пяти предложений: 
+1. Повествование о клиенте в следующем стиле: 'Вы оспорили... Вы подали прошение...'
+2. Без вступительных фраз вроде 'Документ:' или 
+  'Краткая суть текста:' - сразу сгенерированная краткая суть!
+[TEXT]: ${text.substring(0, 12000)}
 [SUMMARY]:`,
 
-      violations: `[SYSTEM] Найди нарушения в тексте. Формат:
+      violations: `${baseSystemPrompt}
+Найди нарушения в тексте. Формат:
 - Закон: [название]
 - Статья: [номер]
 - Описание: [текст]
 - Доказательство: [цитата]
-[TEXT]: ${text.substring(0, 7000)}
+[TEXT]: ${text.substring(0, 9000)}
 [VIOLATIONS]:`,
 
-      attachment: `[SYSTEM] Проанализируй вложение. Верни JSON:
+      attachment: `${baseSystemPrompt}
+Проанализируй вложение. Верни JSON:
 {
   "documentType": "тип",
   "sentDate": "дата",
   "senderAgency": "ведомство",
   "summary": "суть",
-  "keyParagraphs": []
+  "keyParagraphs": ["ключевые параграфы документа во вложении"]
 }
-[TEXT]: ${text.substring(0, 7000)}
+[TEXT]: ${text.substring(0, 9000)}
 [ANALYSIS]:`,
 
-      default: `[SYSTEM] Проанализируй текст как юридический документ
-[TEXT]: ${text.substring(0, 7000)}
-[RESULT]:`,
+      default: `${baseSystemPrompt}
+[TEXT]: ${text.substring(0, 9000)}
+[RESULT]:`
     };
 
-    return prompts[taskType] || prompts.default;
+    return taskSpecificPrompts[taskType] || taskSpecificPrompts.default;
   }
 
   buildAnalysisPrompt(text, instructions, strictMode) {
@@ -454,12 +190,12 @@ class AIService {
     });
   }
 
-  buildComplaintPromptV2(text, agency, relatedDocuments) {
+  buildComplaintPromptV2(text, agency, relatedDocuments, instructions = "") {
     return JSON.stringify({
       task: "GENERATE_COMPLAINT_V2",
       agency,
       sourceText: text.substring(0, 5000),
-      relatedDocuments: relatedDocuments.map((doc) => doc.substring(0, 2000)),
+      relatedDocuments: relatedDocuments.map(doc => doc.substring(0, 2000)),
       requirements: {
         style: "Официальный",
         sections: [
@@ -472,6 +208,7 @@ class AIService {
         ],
         includeReferences: true,
         citeLaws: true,
+        additionalInstructions: instructions
       },
     });
   }
@@ -480,25 +217,15 @@ class AIService {
     return this.preparePrompt(text, "attachment");
   }
 
-  enhanceAnalysisResult(result, text) {
-    return {
-      ...result,
-      documentDate: this.extractDate(text) || result.documentDate || "",
-      senderAgency: this.extractAgency(text) || result.senderAgency || "",
-      keyParagraphs: result.keyParagraphs || [],
-    };
-  }
-
   parseAttachmentAnalysis(response) {
     try {
-      const parsed =
-        typeof response === "string" ? JSON.parse(response) : response;
+      const parsed = this.safeParseResponse(response);
       return {
-        documentType: parsed.documentType || "Неизвестный тип",
-        sentDate: parsed.sentDate || "",
-        senderAgency: parsed.senderAgency || "",
-        summary: parsed.summary || "Не удалось сгенерировать краткую суть",
-        keyParagraphs: parsed.keyParagraphs || [],
+        documentType: parsed?.documentType || "Неизвестный тип",
+        sentDate: parsed?.sentDate || "",
+        senderAgency: parsed?.senderAgency || "",
+        summary: parsed?.summary || "Не удалось сгенерировать краткую суть",
+        keyParagraphs: parsed?.keyParagraphs || [],
       };
     } catch (e) {
       console.error("Ошибка парсинга анализа вложения:", e);
@@ -510,34 +237,6 @@ class AIService {
         keyParagraphs: [],
       };
     }
-  }
-
-  parseModelResponse(data) {
-    try {
-      const rawResponse = data.response || data;
-
-      if (typeof rawResponse === "string") {
-        // Пытаемся извлечь JSON из строки если есть
-        const jsonMatch = rawResponse.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          return JSON.parse(jsonMatch[0]);
-        }
-        return { response: rawResponse };
-      }
-
-      return rawResponse;
-    } catch (e) {
-      console.error("Ошибка парсинга ответа модели:", e);
-      throw new Error("Неверный формат ответа от модели");
-    }
-  }
-
-  normalizeError(error) {
-    const serverError = error.response?.data?.error;
-    if (serverError) {
-      return new Error(`Ошибка модели: ${serverError}`);
-    }
-    return error;
   }
 
   generateCacheKey(text, instructions = "") {
@@ -557,15 +256,8 @@ class AIService {
   }
 
   extractAgency(text) {
-    const agencies = [
-      "ФССП",
-      "Прокуратура",
-      "Суд",
-      "Омбудсмен",
-      "МВД",
-      "Росреестр",
-    ];
-    return agencies.find((agency) => text.includes(agency)) || null;
+    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
+    return agencies.find(agency => text.includes(agency)) || "";
   }
 
   generateDefaultComplaint(text, agency) {
@@ -574,6 +266,11 @@ class AIService {
       500
     )}\n\nТребования: Провести проверку\n\nДата: ${new Date().toLocaleDateString()}`;
   }
+
+  normalizeError(error) {
+    const serverError = error.response?.data?.error;
+    return serverError ? new Error(`Ошибка модели: ${serverError}`) : error;
+  }
 }
 
-export default new AIService();
+export default AIService;

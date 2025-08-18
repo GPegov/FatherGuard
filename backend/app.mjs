@@ -10,6 +10,7 @@ import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
 import aiRoutes from './routes/aiRoutes.js'
+import aiService from './services/aiService.js';
 
 const app = express();
 
@@ -120,6 +121,8 @@ async function startServer() {
       }
     );
     app.use("/api/ai", aiRoutes);
+
+    app.set('aiService', aiService);
 
 
     
