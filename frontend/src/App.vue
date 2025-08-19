@@ -51,10 +51,10 @@ watch(
   { immediate: true }
 )
 watch(
-  () => documentStore.documents,
+  () => complaintStore.complaints,
   (newVal) => {
     if (newVal.length === 0) { 
-      documentStore.fetchComplaints()
+      complaintStore.fetchComplaints()
     }
   },
   { immediate: true }

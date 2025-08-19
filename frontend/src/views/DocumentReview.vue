@@ -31,7 +31,7 @@
 
           <div class="form-group">
             <label for="originalText">Текст документа:</label>
-            <textarea id="originalText" v-model="document.originalText" required class="form-textarea" rows="8"
+            <textarea id="originalText" v-model="document.originalText" required class="form-textarea" rows="15"
               placeholder="Введите текст документа"></textarea>
           </div>
         </div>
@@ -43,7 +43,7 @@
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Краткая суть:</label>
             <div class="summary-container">
-              <textarea v-model="document.summary" required class="form-textarea" rows="5"
+              <textarea v-model="document.summary" required class="form-textarea" rows="12"
                 placeholder="Анализ выполняется..."></textarea>
               <button type="button" @click="regenerateSummary" class="refresh-btn" :disabled="aiStore.isLoading"
                 title="Перегенерировать краткую суть">
@@ -68,17 +68,17 @@
             <input v-model="document.senderAgency" class="form-input" list="agencies" />
           </div>
 
-          <!-- Ключевые параграфы -->
+          <!-- Важные предложения -->
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
-            <label>Существенные параграфы:</label>
-            <div v-for="(paragraph, index) in document.keyParagraphs" :key="index" class="paragraph-item">
-              <textarea v-model="document.keyParagraphs[index]" required class="form-textarea" rows="3"></textarea>
-              <button type="button" @click="removeParagraph(index)" class="remove-btn" title="Удалить параграф">
+            <label>Важные предложения:</label>
+            <div v-for="(sentence, index) in document.keySentences" :key="index" class="paragraph-item">
+              <textarea v-model="document.keySentences[index]" required class="form-textarea" rows="3"></textarea>
+              <button type="button" @click="removeSentence(index)" class="remove-btn" title="Удалить предложение">
                 ×
               </button>
             </div>
-            <button type="button" @click="addParagraph" class="add-btn" title="Добавить параграф">
-              + Добавить параграф
+            <button type="button" @click="addSentence" class="add-btn" title="Добавить предложение">
+              + Добавить предложение
             </button>
           </div>
         </div>
@@ -126,17 +126,17 @@
               </div>
 
               <div class="key-paragraphs">
-                <h4>Ключевые параграфы:</h4>
-                <div v-for="(paragraph, index) in attachment.keyParagraphs" :key="index" class="paragraph-item">
-                  <textarea v-model="attachment.keyParagraphs[index]" class="form-textarea" rows="2"></textarea>
-                  <button type="button" @click="removeAttachmentParagraph(attachment.id, index)" class="remove-btn"
-                    title="Удалить параграф">
+                <h4>Важные предложения:</h4>
+                <div v-for="(sentence, index) in attachment.keySentences" :key="index" class="paragraph-item">
+                  <textarea v-model="attachment.keySentences[index]" class="form-textarea" rows="2"></textarea>
+                  <button type="button" @click="removeAttachmentSentence(attachment.id, index)" class="remove-btn"
+                    title="Удалить предложение">
                     ×
                   </button>
                 </div>
-                <button type="button" @click="addAttachmentParagraph(attachment.id)" class="add-btn"
-                  title="Добавить параграф">
-                  + Добавить параграф
+                <button type="button" @click="addAttachmentSentence(attachment.id)" class="add-btn"
+                  title="Добавить предложение">
+                  + Добавить предложение
                 </button>
               </div>
             </div>
@@ -235,20 +235,20 @@ onMounted(async () => {
   }
 })
 
-const addAttachmentParagraph = (attachmentId) => {
+const addAttachmentSentence = (attachmentId) => {
   const attachment = document.value.attachments.find(a => a.id === attachmentId);
   if (attachment) {
-    if (!attachment.keyParagraphs) {
-      attachment.keyParagraphs = [];
+    if (!attachment.keySentences) {
+      attachment.keySentences = [];
     }
-    attachment.keyParagraphs.push('');
+    attachment.keySentences.push('');
   }
 };
 
-const removeAttachmentParagraph = (attachmentId, index) => {
+const removeAttachmentSentence = (attachmentId, index) => {
   const attachment = document.value.attachments.find(a => a.id === attachmentId);
-  if (attachment && attachment.keyParagraphs) {
-    attachment.keyParagraphs.splice(index, 1);
+  if (attachment && attachment.keySentences) {
+    attachment.keySentences.splice(index, 1);
   }
 };
 
@@ -258,12 +258,19 @@ const analyzeAttachment = async (attachment) => {
   
   isAnalyzing.value = true;
   try {
-    const analysis = await documentStore.analyzeAttachment(attachment);
+    // Поскольку метод analyzeAttachment был удален из documentStore,
+    // мы напрямую вызываем метод из aiStore
+    const analysis = await aiStore.analyzeAttachment(attachment.text);
     const index = document.value.attachments.findIndex(a => a.id === attachment.id);
     if (index !== -1) {
       document.value.attachments[index] = {
         ...document.value.attachments[index],
-        ...analysis
+        analysis,
+        documentDate: analysis.documentDate || "",
+        senderAgency: analysis.senderAgency || "",
+        documentSummary: analysis.summary || "",
+        fullText: attachment.text,
+        keySentences: analysis.keySentences || []
       };
     }
   } catch (err) {
@@ -289,12 +296,12 @@ const regenerateAttachmentAnalysis = async (attachmentId) => {
   }
 }
 
-const addParagraph = () => {
-  document.value.keyParagraphs.push('')
+const addSentence = () => {
+  document.value.keySentences.push('')
 }
 
-const removeParagraph = (index) => {
-  document.value.keyParagraphs.splice(index, 1)
+const removeSentence = (index) => {
+  document.value.keySentences.splice(index, 1)
 }
 
 const analyzeDocument = async () => {
@@ -304,10 +311,51 @@ const analyzeDocument = async () => {
   try {
     const analysis = await documentStore.analyzeDocument()
 
+    // Функция для извлечения текста из ответа модели
+    const extractSummaryText = (summary) => {
+      // Если summary - это объект или строка JSON, пытаемся извлечь текст
+      if (typeof summary === 'string') {
+        // Проверяем, начинается ли строка с фигурной скобки
+        if (summary.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(summary);
+            // Если есть поле response, возвращаем его
+            if (parsed.response) {
+              return parsed.response;
+            }
+            // Если есть другие поля, пытаемся найти текст
+            if (parsed.summary) {
+              return parsed.summary;
+            }
+            // Если это объект, пытаемся преобразовать в строку
+            return Object.values(parsed).join(' ');
+          } catch (e) {
+            // Если не удалось распарсить JSON, возвращаем оригинальную строку
+            return summary;
+          }
+        }
+        // Если это обычная строка, возвращаем её как есть
+        return summary;
+      }
+      // Если summary - это объект, пытаемся извлечь текст
+      if (typeof summary === 'object' && summary !== null) {
+        if (summary.response) {
+          return summary.response;
+        }
+        if (summary.summary) {
+          return summary.summary;
+        }
+        // Если это объект, пытаемся преобразовать в строку
+        return Object.values(summary).join(' ');
+      }
+      // В остальных случаях возвращаем как есть
+      return summary;
+    };
+
     document.value = {
       ...document.value,
-      summary: analysis.summary,
-      keyParagraphs: analysis.keyParagraphs,
+      summary: extractSummaryText(analysis.summary),
+      keySentences: analysis.keySentences,
       documentDate: analysis.documentDate || '',
       senderAgency: analysis.senderAgency || '',
       analysisStatus: 'completed',
@@ -324,7 +372,48 @@ const analyzeDocument = async () => {
 const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
-    document.value.summary = await aiStore.generateSummary(document.value.originalText)
+        const summary = await aiStore.generateSummary(document.value.originalText);
+    // Функция для извлечения текста из ответа модели
+    const extractSummaryText = (summary) => {
+      // Если summary - это объект или строка JSON, пытаемся извлечь текст
+      if (typeof summary === 'string') {
+        // Проверяем, начинается ли строка с фигурной скобки
+        if (summary.trim().startsWith('{')) {
+          try {
+            const parsed = JSON.parse(summary);
+            // Если есть поле response, возвращаем его
+            if (parsed.response) {
+              return parsed.response;
+            }
+            // Если есть другие поля, пытаемся найти текст
+            if (parsed.summary) {
+              return parsed.summary;
+            }
+            // Если это объект, пытаемся преобразовать в строку
+            return Object.values(parsed).join(' ');
+          } catch (e) {
+            // Если не удалось распарсить JSON, возвращаем оригинальную строку
+            return summary;
+          }
+        }
+        // Если это обычная строка, возвращаем её как есть
+        return summary;
+      }
+      // Если summary - это объект, пытаемся извлечь текст
+      if (typeof summary === 'object' && summary !== null) {
+        if (summary.response) {
+          return summary.response;
+        }
+        if (summary.summary) {
+          return summary.summary;
+        }
+        // Если это объект, пытаемся преобразовать в строку
+        return Object.values(summary).join(' ');
+      }
+      // В остальных случаях возвращаем как есть
+      return summary;
+    };
+    document.value.summary = extractSummaryText(summary);
   } catch (err) {
     error.value = 'Ошибка перегенерации: ' + err.message
   } finally {

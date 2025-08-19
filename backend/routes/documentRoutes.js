@@ -2,6 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs/promises';
 import Document from '../models/Document.js';
 import aiService from '../services/aiService.js';
 import pdfService from '../services/pdfService.js';
@@ -35,7 +36,7 @@ export default function documentRoutes({ db, upload }) {
       summary: data.summary || '',
       documentDate: data.documentDate || '',
       senderAgency: data.senderAgency || '',
-      keyParagraphs: data.keyParagraphs || [],
+      keySentences: data.keySentences || [],
       attachments: (data.attachments || []).map(att => ({
         id: att.id || uuidv4(),
         name: att.name,
@@ -262,7 +263,7 @@ export default function documentRoutes({ db, upload }) {
     doc.summary = analysis.summary;
     doc.documentDate = analysis.documentDate || "";
     doc.senderAgency = analysis.senderAgency || "";
-    doc.keyParagraphs = analysis.keyParagraphs;
+    doc.keySentences = analysis.keySentences;
     doc.analysisStatus = 'completed';
     doc.lastAnalyzedAt = new Date().toISOString();
     doc.updatedAt = new Date().toISOString();

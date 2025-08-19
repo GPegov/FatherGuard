@@ -1,6 +1,4 @@
 import { createRouter, createWebHistory } from "vue-router";
-import HomeView from "@/views/HomeView.vue"; // Импорт напрямую для главной страницы
-
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -8,10 +6,10 @@ const router = createRouter({
     {
       path: "/",
       name: "home",
-      component: HomeView,
+      component: () => import("@/views/HomeView.vue"),
     },
     {
-      path: "/review/:id", // Добавляем динамический сегмент
+      path: "/review/:id",
       name: "review",
       component: () => import("@/views/DocumentReview.vue"),
       props: true,
@@ -19,12 +17,12 @@ const router = createRouter({
     {
       path: "/documents",
       name: "documents",
-      component: () => import("@/views/DocumentsList.vue"), // DocumentsList вместо DocumentsView
+      component: () => import("@/views/DocumentsList.vue"),
     },
     {
       path: "/complaints",
       name: "complaints",
-      component: () => import("@/views/ComplaintsList.vue"), // ComplaintsList вместо ComplaintsView
+      component: () => import("@/views/ComplaintsList.vue"),
     },
     {
       path: "/documents/:id",
@@ -38,7 +36,6 @@ const router = createRouter({
       component: () => import('@/views/ComplaintForm.vue'),
       props: true
     }
-
   ],
 });
 

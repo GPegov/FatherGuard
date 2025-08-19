@@ -71,8 +71,8 @@ class AIService {
 
     const enhancedResult = {
       summary: parsedResult.summary || "Не удалось сгенерировать краткую суть",
-      keyParagraphs: Array.isArray(parsedResult.keyParagraphs)
-        ? parsedResult.keyParagraphs.filter((p) => p && p.length > 10)
+      keySentences: Array.isArray(parsedResult.keySentences)
+        ? parsedResult.keySentences.filter((p) => p && p.length > 10)
         : [],
       violations: Array.isArray(parsedResult.violations)
         ? parsedResult.violations
@@ -170,7 +170,7 @@ class AIService {
   "sentDate": "дата",
   "senderAgency": "ведомство",
   "summary": "суть",
-  "keyParagraphs": ["ключевые параграфы документа во вложении"]
+  "keySentences": ["важные предложения документа во вложении"]
 }
 [TEXT]: ${text.substring(0, 9000)}
 [ANALYSIS]:`,
@@ -189,7 +189,7 @@ class AIService {
       text: text.substring(0, 10000),
       requirements: {
         summaryLength: "3-5 предложений",
-        keyParagraphs: {
+        keySentences: {
         },
         extractDates: true,
         identifyAgencies: true,
@@ -239,7 +239,7 @@ class AIService {
         sentDate: parsed?.sentDate || "",
         senderAgency: parsed?.senderAgency || "",
         summary: parsed?.summary || "Не удалось сгенерировать краткую суть",
-        keyParagraphs: parsed?.keyParagraphs || [],
+        keySentences: parsed?.keySentences || [],
       };
     } catch (e) {
       console.error("Ошибка парсинга анализа вложения:", e);
@@ -248,7 +248,7 @@ class AIService {
         sentDate: "",
         senderAgency: "",
         summary: "Ошибка анализа вложения",
-        keyParagraphs: [],
+        keySentences: [],
       };
     }
   }

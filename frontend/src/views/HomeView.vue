@@ -5,6 +5,7 @@
       v-model="userText" 
       placeholder="Подробно опишите вашу ситуацию..."
       class="text-input"
+      rows="15"
     ></textarea>
     
     <div class="upload-section">
@@ -72,7 +73,7 @@ const submitData = async () => {
       summary: '',
       documentDate: '',
       senderAgency: '',
-      keyParagraphs: [],
+      keySentences: [],
       attachments: [],
       comments: userText.value,
       complaints: [],

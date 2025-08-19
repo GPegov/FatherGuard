@@ -73,30 +73,6 @@ import { saveAs } from 'file-saver'
 import NotificationToast from '@/components/ui/NotificationToast.vue'
 
 
-const analyzeBailiffAction = async (text) => {
-  try {
-    const analysis = await complaintStore.analyzeLegalText(text);
-    
-    if (analysis.violations.some(v => v.side === 'пристав')) {
-      useToast().show({
-        title: "Нарушение ФЗ 'О судебных приставах'",
-        message: `Статья ${analysis.violations[0].article}`,
-        variant: "warning"
-      });
-    }
-    
-    return {
-      payerTips: analysis.recommendations.payer,
-      bailiffWarnings: analysis.violations
-        .filter(v => v.side === 'пристав')
-    };
-  } catch (error) {
-    useToast().error("Ошибка анализа алиментного дела");
-    throw error;
-  }
-};
-
-
 // Debug
 const debugMode = ref(false)
 
@@ -133,30 +109,6 @@ const deleteComplaint = async () => {
     }
   }
 }
-
-// Методы
-
-
-const analyzeDocument = async (documentId) => {
-  try {
-    const doc = await fetchDocument(documentId); // Ваш метод загрузки документа
-    const analysis = await complaintStore.analyzeLegalText(doc.content);
-    
-    useToast().show({
-      title: "Анализ завершен",
-      message: `Найдено нарушений: ${analysis.violations.length}`,
-      variant: analysis.violations.length ? "danger" : "success"
-    });
-
-    return analysis;
-  } catch (error) {
-    useToast().show({
-      title: "Ошибка анализа",
-      message: error.message,
-      variant: "error"
-    });
-  }
-};
 
 
 

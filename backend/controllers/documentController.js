@@ -17,7 +17,7 @@ export default {
 
       const analysis = await aiService.analyzeWithDeepSeek(document.text);
       document.summary = analysis.summary;
-      document.keyParagraphs = analysis.keyParagraphs;
+      document.keySentences = analysis.keyParagraphs;
 
       await document.save();
       res.status(201).json(document);

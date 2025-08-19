@@ -1,58 +1,12 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import * as docx from 'docx';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
+import aiService from '../services/aiService.js';
 
 export default function complaintRoutes({ db }) {
   const router = Router();
 
-    const helpers = {
-  async generateComplaintContent(doc, agency, relatedDocs, instructions) {
-    try {
-      // Используем AI сервис через dependency injection
-      const aiService = req.app.get('aiService'); // Предполагаем, что сервис добавлен в app
-      
-      const complaint = await aiService.generateComplaintV2(
-        doc.originalText,
-        agency,
-        relatedDocs.map(d => d.originalText),
-        instructions
-      );
-      
-      return complaint.content || this.generateFallbackComplaint(doc, agency);
-    } catch (err) {
-      console.error('Ошибка генерации жалобы через AI:', err);
-      return this.generateFallbackComplaint(doc, agency);
-    }
-  },
-
-  generateFallbackComplaint(doc, agency) {
-    return `Жалоба в ${agency}\n\n` +
-      `Документ: ${doc.summary || "Без описания"}\n` +
-      `Дата: ${doc.documentDate || "Не указана"}\n\n` +
-      `Текст: ${doc.originalText.substring(0, 500)}...`;
-  }
-};
-
-  // Генерация жалобы (обновляем вызов)
-  router.post('/generate', async (req, res) => {
-    try {
-      // ... существующий код
-      const complaintContent = await helpers.generateComplaintContent(
-        doc,
-        agency,
-        relatedDocs,
-        instructions
-      );
-      // ... остальной код
-    } catch (err) {
-      // ... обработка ошибок
-    }
-  });
-
-
-
-  // Генерация жалобы (обновлённая версия)
+  // Генерация жалобы
   router.post('/generate', async (req, res) => {
     try {
       const { documentId, agency, instructions } = req.body;
@@ -73,13 +27,20 @@ export default function complaintRoutes({ db }) {
         d.id !== documentId && d.date <= doc.date
       );
 
-      // Генерация жалобы
-      const complaintContent = await this.generateComplaintContent(
-        doc,
-        agency,
-        relatedDocs,
-        instructions
-      );
+      // Генерация жалобы через AI сервис
+      let complaintContent;
+      try {
+        const result = await aiService.generateComplaintV2(
+          doc.originalText,
+          agency,
+          relatedDocs.map(d => d.originalText),
+          instructions
+        );
+        complaintContent = result.content || generateFallbackComplaint(doc, agency);
+      } catch (aiError) {
+        console.error('Ошибка генерации жалобы через AI:', aiError);
+        complaintContent = generateFallbackComplaint(doc, agency);
+      }
 
       // Создание объекта жалобы
       const complaint = {
@@ -114,6 +75,14 @@ export default function complaintRoutes({ db }) {
     }
   });
 
+  // Вспомогательный метод для генерации содержания жалобы
+  function generateFallbackComplaint(doc, agency) {
+    return `Жалоба в ${agency}\n\n` +
+      `Документ: ${doc.summary || "Без описания"}\n` +
+      `Дата: ${doc.documentDate || "Не указана"}\n\n` +
+      `Текст: ${doc.originalText.substring(0, 500)}...`;
+  }
+
   // Экспорт жалобы
   router.get('/:id/export', async (req, res) => {
     try {
@@ -130,7 +99,7 @@ export default function complaintRoutes({ db }) {
         res.send(complaint.content);
       } 
       else if (format === 'doc') {
-        const doc = new Document({
+        const docxDocument = new Document({
           sections: [{
             children: [
               new Paragraph({
@@ -145,7 +114,7 @@ export default function complaintRoutes({ db }) {
           }]
         });
 
-        const buffer = await Packer.toBuffer(doc);
+        const buffer = await Packer.toBuffer(docxDocument);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
         res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.docx`);
         res.send(buffer);
@@ -200,38 +169,6 @@ export default function complaintRoutes({ db }) {
       res.status(500).json({ message: err.message });
     }
   });
-
-  // Вспомогательный метод для генерации содержания жалобы
-  async function generateComplaintContent(doc, agency, relatedDocs, instructions) {
-    try {
-      // Здесь должна быть логика обращения к AI сервису
-      // Временная реализация:
-      let content = `Жалоба в ${agency}\n\n`;
-      content += `Основание: ${doc.summary || "Не указано"}\n\n`;
-      content += `Дата документа: ${doc.documentDate || "Не указана"}\n`;
-      content += `Ведомство: ${doc.agency || "Не указано"}\n\n`;
-      
-      if (doc.keyParagraphs?.length) {
-        content += `Существенные моменты:\n${doc.keyParagraphs.join('\n')}\n\n`;
-      }
-      
-      if (relatedDocs.length) {
-        content += `Связанные документы:\n`;
-        content += relatedDocs.map(d => `- ${d.date}: ${d.summary || "Без описания"}`).join('\n');
-      }
-      
-      if (instructions) {
-        content += `\n\nДополнительные указания: ${instructions}`;
-      }
-      
-      content += `\n\nДата составления: ${new Date().toLocaleDateString()}`;
-      
-      return content;
-    } catch (err) {
-      console.error('Ошибка генерации содержания жалобы:', err);
-      return `Жалоба в ${agency}\n\nТекст документа: ${doc.originalText.substring(0, 500)}...`;
-    }
-  }
 
   return router;
 }

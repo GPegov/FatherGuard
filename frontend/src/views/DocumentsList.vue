@@ -204,16 +204,23 @@ const resetFilters = () => {
 }
 
 const analyzeDocument = async (docId) => {
-  isAnalyzing.value = true
-  currentDocumentId.value = docId
+  isAnalyzing.value = true;
+  currentDocumentId.value = docId;
   try {
-    // Здесь будет вызов API к нейросети для анализа нарушений
+    // Выполняем анализ документа через documentStore
+    await documentStore.fetchDocumentById(docId);
+    await documentStore.analyzeDocument();
+    
     // После анализа показываем диалог выбора ведомства
-    showComplaintDialog.value = true
+    showComplaintDialog.value = true;
   } catch (error) {
-    console.error('Ошибка анализа:', error)
+    console.error('Ошибка анализа:', error);
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при анализе документа';
+    notificationType.value = 'error';
+    showNotification.value = true;
   } finally {
-    isAnalyzing.value = false
+    isAnalyzing.value = false;
   }
 }
 
@@ -221,13 +228,22 @@ const generateComplaint = async () => {
   if (!selectedComplaintAgency.value || !currentDocumentId.value) return
 
   try {
-    await complaintStore.generateAIComplaint(
+    await complaintStore.generateComplaint(
       currentDocumentId.value,
       selectedComplaintAgency.value
     )
     router.push('/complaints')
+    
+    // Показываем уведомление об успешной генерации
+    notificationMessage.value = 'Жалоба успешно сформирована';
+    notificationType.value = 'success';
+    showNotification.value = true;
   } catch (error) {
     console.error('Ошибка генерации жалобы:', error)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при формировании жалобы';
+    notificationType.value = 'error';
+    showNotification.value = true;
   } finally {
     showComplaintDialog.value = false
   }

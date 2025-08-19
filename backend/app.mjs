@@ -88,7 +88,7 @@ async function startServer() {
             agency: "",
             originalText: "",
             summary: "",
-            keyParagraphs: [],
+            keySentences: [],
             attachments: [],
             createdAt: new Date().toISOString(),
             ...req.body,

@@ -24,7 +24,7 @@ export const useDocumentStore = defineStore("document", () => {
     originalText: "", // Дословный текст (п.2)
     agencyTarget: "", // Ведомство (п.3)
     summary: "", // Краткая суть (п.4)
-    keyParagraphs: [], // Существенные параграфы (п.5)
+    keySentences: [], // Важные предложения (п.5)
     // Расшифровка документа (п.6)
     documentDate: "",
     senderAgency: "",
@@ -132,18 +132,17 @@ export const useDocumentStore = defineStore("document", () => {
 
   const analyzeDocument = async () => {
     if (!currentDocument.value.originalText?.trim()) {
-    error.value = "Нет текста для анализа";
-    return;
-  }
+      error.value = "Нет текста для анализа";
+      return;
+    }
     isAnalyzing.value = true;
     error.value = null;
 
     try {
-      
       currentDocument.value.analysisStatus = "processing";
       await saveDocument();
 
-      const analysis = await analyzeDocumentContent();
+      const analysis = await analyzeDocumentContent(currentDocument.value.originalText);
       const attachmentsAnalysis = await analyzeAttachments();
 
       currentDocument.value = {
@@ -174,7 +173,7 @@ export const useDocumentStore = defineStore("document", () => {
     agencyTarget: data.agencyTarget || "", // новое поле (п.3)
     originalText: data.originalText || "", // п.2
     summary: data.summary || "", // п.4
-    keyParagraphs: data.keyParagraphs || [], // п.5
+    keySentences: data.keySentences || [], // п.5 (важные предложения вместо параграфов)
     // Поля для расшифровки документа (п.6)
     documentDate: data.documentDate || "",
     senderAgency: data.senderAgency || "",
@@ -194,7 +193,7 @@ export const useDocumentStore = defineStore("document", () => {
         senderAgency: att.senderAgency || "",
         attachmentSummary: att.attachmentSummary || att.documentSummary || "",
         fullText: att.fullText || att.text || "",
-        keyParagraphs: att.keyParagraphs || [],
+        keySentences: att.keySentences || [], // Важные предложения для вложений
       })) || [],
     complaints: data.complaints || [],
     analysisStatus: data.analysisStatus || "pending",
@@ -202,19 +201,48 @@ export const useDocumentStore = defineStore("document", () => {
     violations: data.violations || [],
   });
 
-  const prepareDocumentForSave = (doc) => ({
-    ...doc,
-    keyParagraphs: doc.keyParagraphs.filter((p) => p.trim()),
-    attachments: doc.attachments.map((att) => ({
-      id: att.id || uuidv4(),
-      name: att.name,
-      type: att.type,
-      size: att.size,
-      path: att.path,
-      text: att.text || "",
-      analysis: att.analysis || null,
-    })),
-  });
+  const prepareDocumentForSave = (doc) => {
+    // Убедимся, что все поля документа корректно сериализуются
+    const preparedDoc = {
+      id: doc.id,
+      date: doc.date,
+      agency: doc.agency || "",
+      agencyTarget: doc.agencyTarget || "",
+      originalText: doc.originalText || "",
+      summary: doc.summary || "",
+      keySentences: Array.isArray(doc.keySentences) 
+        ? doc.keySentences.filter((p) => p && p.trim()) 
+        : [],
+      documentDate: doc.documentDate || "",
+      senderAgency: doc.senderAgency || "",
+      documentSummary: doc.documentSummary || "",
+      fullText: doc.fullText || "",
+      attachments: Array.isArray(doc.attachments) 
+        ? doc.attachments.map((att) => ({
+            id: att.id || uuidv4(),
+            name: att.name || "",
+            type: att.type || "",
+            size: att.size || 0,
+            path: att.path || "",
+            text: att.text || "",
+            analysis: att.analysis || null,
+            documentDate: att.documentDate || "",
+            senderAgency: att.senderAgency || "",
+            attachmentSummary: att.attachmentSummary || "",
+            fullText: att.fullText || "",
+            keySentences: Array.isArray(att.keySentences) 
+              ? att.keySentences.filter((p) => p && p.trim()) 
+              : []
+          }))
+        : [],
+      complaints: Array.isArray(doc.complaints) ? doc.complaints : [],
+      analysisStatus: doc.analysisStatus || "pending",
+      lastAnalyzedAt: doc.lastAnalyzedAt || null,
+      violations: Array.isArray(doc.violations) ? doc.violations : [],
+    };
+    
+    return preparedDoc;
+  };
 
   const updateDocumentsList = (savedDocument) => {
     const index = documents.value.findIndex((d) => d.id === savedDocument.id);
@@ -238,19 +266,23 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-const analyzeDocumentContent = async () => {
+const analyzeDocumentContent = async (docText) => {
   try {
-    const docText = currentDocument.value.originalText;
     const analysis = await aiStore.analyzeDocument(docText);
 
     // Выводим полный ответ модели в консоль
     console.log("Полный ответ модели:", analysis);
     
-    // Гарантируем, что keyParagraphs будет массивом
+    // Проверяем, что keySentences является массивом
+    if (!Array.isArray(analysis.keySentences)) {
+      console.warn("keySentences не является массивом:", analysis.keySentences);
+    }
+    
+    // Гарантируем, что keySentences будет массивом
     return {
       summary: analysis.summary || "Не удалось сгенерировать краткую суть",
-      keyParagraphs: Array.isArray(analysis.paragraphs) ? 
-        analysis.paragraphs : 
+      keySentences: Array.isArray(analysis.keySentences) ? 
+        analysis.keySentences : 
         [],
       violations: Array.isArray(analysis.violations) ?
         analysis.violations :
@@ -262,7 +294,7 @@ const analyzeDocumentContent = async () => {
     console.error("Ошибка анализа документа:", error);
     return {
       summary: "Ошибка анализа документа",
-      keyParagraphs: [],
+      keySentences: [],
       violations: [],
       documentDate: "",
       senderAgency: ""
@@ -302,7 +334,7 @@ const analyzeDocumentContent = async () => {
           senderAgency: extractAgency(att.text),
           attachmentSummary: attachmentSummary.summary || "", // Чёткое название
           fullText: att.text,
-          keyParagraphs: analysis.keyParagraphs || []
+          keySentences: analysis.keySentences || []
         };
       })
     );
@@ -352,7 +384,7 @@ const analyzeDocumentContent = async () => {
         senderAgency: extractAgency(attachment.text),
         documentSummary: analysis.summary || "",
         fullText: attachment.text,
-        keyParagraphs: analysis.paragraphs || [],
+        keySentences: analysis.keySentences || [],
       };
 
       const index = currentDocument.value.attachments.findIndex(
@@ -370,7 +402,10 @@ const analyzeDocumentContent = async () => {
 
   const generateComplaint = async (documentId, agency) => {
     return handleApiCall(async () => {
-      const doc = documents.value.find((d) => d.id === documentId);
+      // Убедимся, что у нас есть актуальные данные документа
+      await fetchDocumentById(documentId);
+      const doc = currentDocument.value;
+      
       if (!doc) throw new Error("Документ не найден");
 
       const relatedDocs = documents.value.filter(

@@ -1906,7 +1906,7 @@ const generateComplaint = async () => {
 
           <!-- Ключевые параграфы -->
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
-            <label>Существенные параграфы:</label>
+            <label>Важные предложения:</label>
             <div v-for="(paragraph, index) in document.keyParagraphs" :key="index" class="paragraph-item">
               <textarea v-model="document.keyParagraphs[index]" required class="form-textarea" rows="3"></textarea>
               <button type="button" @click="removeParagraph(index)" class="remove-btn" title="Удалить параграф">
