@@ -19,7 +19,6 @@ coverage
 /cypress/screenshots/
 
 node_modules/
-models/
 .git/
 
 
