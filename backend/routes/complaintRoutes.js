@@ -9,16 +9,20 @@ export default function complaintRoutes({ db }) {
   // Генерация жалобы
   router.post('/generate', async (req, res) => {
     try {
+      console.log('Получен запрос на генерацию жалобы:', req.body);
       const { documentId, agency, instructions } = req.body;
       
       // Проверка обязательных полей
       if (!agency || !documentId) {
+        console.log('Не указаны обязательные параметры');
         return res.status(400).json({ message: 'Не указаны обязательные параметры' });
       }
 
       // Поиск документа
       const doc = db.data.documents.find(d => d.id === documentId);
+      console.log('Найден документ:', doc);
       if (!doc) {
+        console.log('Документ не найден');
         return res.status(404).json({ message: 'Document not found' });
       }
 
@@ -26,20 +30,51 @@ export default function complaintRoutes({ db }) {
       const relatedDocs = db.data.documents.filter(d => 
         d.id !== documentId && d.date <= doc.date
       );
+      console.log('Связанные документы:', relatedDocs);
+
+      // Подготовка данных предыдущих документов
+      const relatedDocData = relatedDocs.map(d => ({
+        summary: d.summary || '',
+        keySentences: d.keySentences || []
+      }));
+      console.log('Подготовленные данные связанных документов:', relatedDocData);
+
+      // Подготовка данных для AI-модели
+      const aiRequestData = {
+        currentDocument: {
+          fullText: doc.originalText,
+          summary: doc.summary || '',
+          keySentences: doc.keySentences || []
+        },
+        relatedDocuments: relatedDocData,
+        agency: agency,
+        instructions: instructions || ''
+      };
+      
+      console.log('Данные для AI-модели:', JSON.stringify(aiRequestData, null, 2));
 
       // Генерация жалобы через AI сервис
-      let complaintContent;
+      let complaintResult;
       try {
-        const result = await aiService.generateComplaintV2(
-          doc.originalText,
+        console.log('Вызов AI сервиса для генерации жалобы');
+        complaintResult = await aiService.generateComplaintV2(
+          {
+            fullText: doc.originalText,
+            summary: doc.summary || '',
+            keySentences: doc.keySentences || []
+          },
           agency,
-          relatedDocs.map(d => d.originalText),
+          relatedDocData,
           instructions
         );
-        complaintContent = result.content || generateFallbackComplaint(doc, agency);
+        console.log('Результат от AI сервиса:', complaintResult);
       } catch (aiError) {
         console.error('Ошибка генерации жалобы через AI:', aiError);
-        complaintContent = generateFallbackComplaint(doc, agency);
+        // Если AI не сработал, используем запасной вариант
+        complaintResult = {
+          content: generateFallbackComplaint(doc, agency),
+          violations: []
+        };
       }
 
       // Создание объекта жалобы
@@ -47,12 +82,16 @@ export default function complaintRoutes({ db }) {
         id: uuidv4(),
         documentId,
         agency,
-        content: complaintContent,
+        content: complaintResult.content || generateFallbackComplaint(doc, agency),
         relatedDocuments: relatedDocs.map(d => d.id),
         status: 'draft',
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        analysis: {
+          violations: complaintResult.violations || []
+        }
       };
+      console.log('Создан объект жалобы:', complaint);
 
       // Сохранение в БД
       if (!db.data.complaints) {
@@ -60,6 +99,7 @@ export default function complaintRoutes({ db }) {
       }
       db.data.complaints.push(complaint);
       await db.write();
+      console.log('Жалоба сохранена в БД');
 
       // Обновление документа
       if (!doc.complaints) {
@@ -67,6 +107,7 @@ export default function complaintRoutes({ db }) {
       }
       doc.complaints.push(complaint.id);
       await db.write();
+      console.log('Документ обновлен');
 
       res.status(201).json(complaint);
     } catch (err) {

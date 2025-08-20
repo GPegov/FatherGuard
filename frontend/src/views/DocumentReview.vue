@@ -58,16 +58,6 @@
             </div>
           </div>
 
-          <div class="form-group">
-            <label>Дата отправления документа:</label>
-            <input v-model="document.documentDate" type="date" class="form-input" />
-          </div>
-
-          <div class="form-group">
-            <label>Ведомство-отправитель:</label>
-            <input v-model="document.senderAgency" class="form-input" list="agencies" />
-          </div>
-
           <!-- Важные предложения -->
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
             <label>Важные предложения:</label>
@@ -80,6 +70,21 @@
             <button type="button" @click="addSentence" class="add-btn" title="Добавить предложение">
               + Добавить предложение
             </button>
+          </div>
+        </div>
+
+        <!-- Отправитель вложенного документа (только при наличии вложений) -->
+        <div class="form-section" v-if="document.attachments?.length">
+          <h2>Отправитель вложенного документа</h2>
+          
+          <div class="form-group">
+            <label>Дата отправления документа:</label>
+            <input v-model="document.documentDate" type="date" class="form-input" />
+          </div>
+
+          <div class="form-group">
+            <label>Ведомство-отправитель:</label>
+            <input v-model="document.senderAgency" class="form-input" list="agencies" />
           </div>
         </div>
 

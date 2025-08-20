@@ -22,15 +22,18 @@
 
     <ul v-else class="complaints">
       <li v-for="complaint in complaints" :key="complaint.id" class="complaint-item">
-        <div class="complaint-card">
+        <div class="complaint-card" @click="viewComplaint(complaint.id)">
           <h3>{{ complaint.agency }}</h3>
           <p class="date">{{ formatDate(complaint.createdAt) }}</p>
           <p class="preview">{{ complaint.content.substring(0, 100) }}...</p>
           <div class="actions">
-            <button @click="exportComplaint(complaint.id, 'txt')" class="export-btn">
+            <button @click.stop="viewComplaint(complaint.id)" class="view-btn">
+              Посмотреть
+            </button>
+            <button @click.stop="exportComplaint(complaint.id, 'txt')" class="export-btn">
               TXT
             </button>
-            <button @click="exportComplaint(complaint.id, 'doc')" class="export-btn">
+            <button @click.stop="exportComplaint(complaint.id, 'doc')" class="export-btn">
               DOC
             </button>
             <button 
@@ -68,6 +71,7 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { useComplaintStore } from '@/stores/complaintStore'
 import { saveAs } from 'file-saver'
 import NotificationToast from '@/components/ui/NotificationToast.vue'
@@ -78,6 +82,7 @@ const debugMode = ref(false)
 
 // Store
 const complaintStore = useComplaintStore()
+const router = useRouter()
 const isLoading = ref(false)
 const complaints = computed(() => complaintStore.complaints || [])
 
@@ -110,6 +115,9 @@ const deleteComplaint = async () => {
   }
 }
 
+const viewComplaint = (complaintId) => {
+  router.push(`/complaints/${complaintId}`)
+}
 
 
 const formatDate = (dateString) => {
@@ -194,6 +202,7 @@ h1 {
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  cursor: pointer;
 }
 
 .complaint-card h3 {
@@ -232,14 +241,28 @@ h1 {
   border-color: #42b983;
 }
 
+.view-btn {
+  background: #2196f3;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+
+.view-btn:hover {
+  background: #1976d2;
+}
+
 .delete-btn {
   background: #ff4444;
   color: white;
   border: none;
-  padding: 5px 10px;
+  padding: 6px 12px;
   border-radius: 4px;
   cursor: pointer;
-  transition: background-color 0.3s;
+  font-size: 0.9em;
 }
 
 .delete-btn:hover {

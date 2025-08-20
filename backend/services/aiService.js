@@ -26,15 +26,22 @@ class AIService {
       method: "POST",
       ...this.defaultOptions,
       ...customOptions,
-      prompt: this.preparePrompt(prompt, customOptions.taskType),
+      prompt: this.preparePrompt(prompt, customOptions.taskType, customOptions),
     };
+
+    console.log("Отправка запроса к AI-модели:", {
+      url: this.apiUrl,
+      model: this.activeModel,
+      prompt: options.prompt,
+      options: customOptions
+    });
 
     try {
       const response = await axios.post(
         this.apiUrl,
         {
           model: this.activeModel,
-          prompt,
+          prompt: options.prompt,
           stream: false,
           format: "json",
           ...options,
@@ -42,6 +49,7 @@ class AIService {
         { timeout: 500000 }
       );
 
+      console.log("Ответ от AI-модели:", response.data);
       return this.safeParseResponse(response.data);
     } catch (error) {
       console.error("Ошибка запроса к модели:", error);
@@ -100,25 +108,37 @@ class AIService {
   }
 
   async generateComplaintV2(
-    documentText,
+    currentDocument,
     agency,
     relatedDocuments = [],
     instructions = ""
   ) {
+    console.log("Входные данные для генерации жалобы:");
+    console.log("currentDocument:", currentDocument);
+    console.log("agency:", agency);
+    console.log("relatedDocuments:", relatedDocuments);
+    console.log("instructions:", instructions);
+    
     const prompt = this.buildComplaintPromptV2(
-      documentText,
+      currentDocument,
       agency,
       relatedDocuments,
       instructions
     );
+    console.log("Сформированный промт для генерации жалобы:", prompt);
+    
     const response = await this.queryLocalModel(prompt, {
       temperature: 0.5,
       max_tokens: 7000,
+      taskType: "complaint",
+      agency: agency
     });
+    
+    console.log("Ответ от AI-модели:", response);
 
     return {
       content:
-        response.content || this.generateDefaultComplaint(documentText, agency),
+        response.content || this.generateDefaultComplaint(currentDocument.fullText || currentDocument.originalText, agency),
       violations: response.violations || [],
     };
   }
@@ -133,7 +153,10 @@ class AIService {
     return this.parseAttachmentAnalysis(response);
   }
 
-  preparePrompt(text, taskType = "default") {
+  preparePrompt(text, taskType = "default", options = {}) {
+    // Если text уже является объектом (например, JSON), преобразуем его в строку
+    const promptText = typeof text === 'object' ? JSON.stringify(text) : text;
+    
     const baseSystemPrompt = `
     [SYSTEM] Ты - юридический ассистент. 
     Проанализируй текст как юридический документ.
@@ -146,12 +169,12 @@ class AIService {
 1. Повествование о клиенте в следующем стиле: 'Вы оспорили... Вы подали прошение...'
 2. Без вступительных фраз вроде 'Документ:' или 
   'Краткая суть текста:' - сразу сгенерированная краткая суть!
-[TEXT]: ${text.substring(0, 12000)}
+[TEXT]: ${promptText.substring(0, 12000)}
 [SUMMARY]:`,
       paragraphs: `${baseSystemPrompt}
       Выбери из текста несколько самых важных предложений и передай их 
       в своём ответе полностью, дословно, без редактирования.   
-[TEXT]: ${text.substring(0, 12000)}
+[TEXT]: ${promptText.substring(0, 12000)}
 [keySentences]:`,
 
       violations: `${baseSystemPrompt}
@@ -160,7 +183,7 @@ class AIService {
 - Статья: [номер]
 - Описание: [текст]
 - Доказательство: [цитата]
-[TEXT]: ${text.substring(0, 9000)}
+[TEXT]: ${promptText.substring(0, 9000)}
 [VIOLATIONS]:`,
 
       attachment: `${baseSystemPrompt}
@@ -172,11 +195,18 @@ class AIService {
   "summary": "суть",
   "keySentences": ["важные предложения документа во вложении"]
 }
-[TEXT]: ${text.substring(0, 9000)}
+[TEXT]: ${promptText.substring(0, 9000)}
 [ANALYSIS]:`,
 
+      complaint: `${baseSystemPrompt}
+Сгенерируй официальную жалобу в ${options.agency || taskType} на основе предоставленных данных.
+Включи в жалобу ссылки на документы и укажи нарушения.
+Верни результат в формате JSON с полем "content" для текста жалобы.
+${promptText}
+[COMPLAINT]:`,
+
       default: `${baseSystemPrompt}
-[TEXT]: ${text.substring(0, 9000)}
+[TEXT]: ${promptText.substring(0, 9000)}
 [RESULT]:`,
     };
 
@@ -204,12 +234,28 @@ class AIService {
     });
   }
 
-  buildComplaintPromptV2(text, agency, relatedDocuments, instructions = "") {
+  buildComplaintPromptV2(currentDocument, agency, relatedDocuments, instructions = "") {
+    // Ограничиваем длину текстов для промта
+    const truncateText = (text, maxLength) => {
+      return text ? text.substring(0, maxLength) : "";
+    };
+    
+    const truncateArray = (arr, maxLength) => {
+      return Array.isArray(arr) ? arr.map(item => truncateText(item, maxLength)) : [];
+    };
+    
     return JSON.stringify({
       task: "GENERATE_COMPLAINT_V2",
       agency,
-      sourceText: text.substring(0, 5000),
-      relatedDocuments: relatedDocuments.map((doc) => doc.substring(0, 2000)),
+      currentDocument: {
+        fullText: truncateText(currentDocument.fullText || currentDocument.originalText, 5000),
+        summary: truncateText(currentDocument.summary, 1000),
+        keySentences: truncateArray(currentDocument.keySentences, 500)
+      },
+      relatedDocuments: relatedDocuments.map((doc) => ({
+        summary: truncateText(doc.summary, 1000),
+        keySentences: truncateArray(doc.keySentences, 500)
+      })),
       requirements: {
         style: "Официальный",
         sections: [

@@ -39,12 +39,28 @@ export const useDocumentStore = defineStore("document", () => {
 
   // Геттеры
   const agenciesList = computed(() => {
-    const agencies = new Set(["ФССП", "Прокуратура", "Суд", "Омбудсмен"]);
+    // Базовый список ведомств, в которые можно подавать жалобы
+    const complaintAgencies = new Set(["ФССП", "Прокуратура", "Суд", "Омбудсмен"]);
+    
+    // Множество для хранения всех упомянутых ведомств
+    const allAgencies = new Set(complaintAgencies);
+    
+    // Добавляем ведомства, упомянутые в документах как нарушители
     documents.value.forEach((doc) => {
-      if (doc.agency) agencies.add(doc.agency);
-      if (doc.senderAgency) agencies.add(doc.senderAgency);
+      // Проверяем поля, которые могут содержать информацию о нарушителе
+      const agency = doc.agency || doc.agencyTarget || doc.senderAgency;
+      if (agency && typeof agency === 'string') {
+        // Добавляем ведомство в список, если оно не входит в список для жалоб
+        // Это предотвращает появление ведомств, предназначенных для жалоб, 
+        // в списке нарушителей
+        if (!complaintAgencies.has(agency)) {
+          allAgencies.add(agency);
+        }
+      }
     });
-    return Array.from(agencies).sort();
+    
+    // Возвращаем отсортированный массив всех ведомств
+    return Array.from(allAgencies).sort();
   });
 
   const hasAttachments = computed(() => {
@@ -402,21 +418,29 @@ const analyzeDocumentContent = async (docText) => {
 
   const generateComplaint = async (documentId, agency) => {
     return handleApiCall(async () => {
+      console.log('Начало генерации жалобы для документа:', documentId, 'в ведомство:', agency);
       // Убедимся, что у нас есть актуальные данные документа
       await fetchDocumentById(documentId);
       const doc = currentDocument.value;
       
-      if (!doc) throw new Error("Документ не найден");
+      if (!doc) {
+        console.error('Документ не найден');
+        throw new Error("Документ не найден");
+      }
+      console.log('Данные документа загружены:', doc);
 
       const relatedDocs = documents.value.filter(
         (d) => d.date <= doc.date && d.id !== documentId
       );
+      console.log('Связанные документы:', relatedDocs);
 
-      const { data } = await axios.post(`${API_BASE}/api/complaints`, {
+      // Вызываем API для генерации жалобы, передавая информацию о связанных документах
+      const { data } = await axios.post(`${API_BASE}/api/complaints/generate`, {
         documentId,
         agency,
-        relatedDocuments: relatedDocs.map((d) => d.id),
+        // relatedDocuments: relatedDocs.map((d) => d.id), // Этот параметр обрабатывается на бэке
       });
+      console.log('Ответ от API:', data);
 
       if (currentDocument.value.id === documentId) {
         currentDocument.value.complaints = [
@@ -424,6 +448,7 @@ const analyzeDocumentContent = async (docText) => {
           data,
         ];
         await saveDocument();
+        console.log('Жалоба добавлена в документ и сохранена');
       }
 
       return data;

@@ -207,16 +207,15 @@ const analyzeDocument = async (docId) => {
   isAnalyzing.value = true;
   currentDocumentId.value = docId;
   try {
-    // Выполняем анализ документа через documentStore
+    // Загружаем данные документа
     await documentStore.fetchDocumentById(docId);
-    await documentStore.analyzeDocument();
     
-    // После анализа показываем диалог выбора ведомства
+    // Показываем диалог выбора ведомства
     showComplaintDialog.value = true;
   } catch (error) {
-    console.error('Ошибка анализа:', error);
+    console.error('Ошибка загрузки документа:', error);
     // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при анализе документа';
+    notificationMessage.value = 'Ошибка при загрузке документа';
     notificationType.value = 'error';
     showNotification.value = true;
   } finally {
@@ -228,10 +227,12 @@ const generateComplaint = async () => {
   if (!selectedComplaintAgency.value || !currentDocumentId.value) return
 
   try {
-    await complaintStore.generateComplaint(
+    console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value);
+    const result = await documentStore.generateComplaint(
       currentDocumentId.value,
       selectedComplaintAgency.value
     )
+    console.log('Результат генерации жалобы:', result);
     router.push('/complaints')
     
     // Показываем уведомление об успешной генерации
@@ -241,7 +242,7 @@ const generateComplaint = async () => {
   } catch (error) {
     console.error('Ошибка генерации жалобы:', error)
     // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при формировании жалобы';
+    notificationMessage.value = 'Ошибка при формировании жалобы: ' + error.message;
     notificationType.value = 'error';
     showNotification.value = true;
   } finally {

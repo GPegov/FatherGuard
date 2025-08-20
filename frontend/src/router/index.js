@@ -35,6 +35,12 @@ const router = createRouter({
       name: 'ComplaintForm',
       component: () => import('@/views/ComplaintForm.vue'),
       props: true
+    },
+    {
+      path: '/complaints/:id',
+      name: 'ComplaintDetail',
+      component: () => import('@/views/ComplaintDetail.vue'),
+      props: true
     }
   ],
 });
