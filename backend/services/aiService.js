@@ -135,12 +135,150 @@ class AIService {
     });
     
     console.log("Ответ от AI-модели:", response);
+    
+    // Обработка ответа от модели
+    let content = "";
+    let violations = [];
+    
+    if (response) {
+      if (typeof response === 'string') {
+        // Если ответ - строка, используем её как содержимое жалобы
+        content = response;
+      } else if (typeof response === 'object') {
+        // Если ответ - объект, пытаемся извлечь содержимое
+        content = response.content || 
+                  response.complaint || 
+                  response.text || 
+                  JSON.stringify(response, null, 2);
+        violations = response.violations || [];
+      }
+    }
+    
+    // Если не удалось извлечь содержимое, генерируем жалобу по умолчанию
+    if (!content) {
+      content = this.generateDefaultComplaint(currentDocument.fullText || currentDocument.originalText, agency);
+    }
 
     return {
-      content:
-        response.content || this.generateDefaultComplaint(currentDocument.fullText || currentDocument.originalText, agency),
-      violations: response.violations || [],
+      content: content,
+      violations: violations,
     };
+  }
+
+  // Новый метод для генерации жалоб из подготовленных данных
+  async generateComplaintFromData(complaintData) {
+    console.log("Генерация жалобы из подготовленных данных:", complaintData);
+    
+    const prompt = this.buildComplaintPromptFromData(complaintData);
+    console.log("Сформированный промт для генерации жалобы:", prompt);
+    
+    try {
+      const response = await this.queryLocalModel(prompt, {
+        temperature: 0.5,
+        max_tokens: 8000,
+        taskType: "complaint",
+        format: "json"
+      });
+      
+      console.log("Ответ от AI-модели:", response);
+      
+      // Обработка ответа от модели
+      let content = "";
+      
+      if (response) {
+        if (typeof response === 'string') {
+          // Если ответ - строка, пытаемся найти JSON в строке
+          const jsonMatch = response.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0]);
+              content = parsed.content || parsed.complaint || parsed.text || jsonMatch[0];
+            } catch (e) {
+              content = response;
+            }
+          } else {
+            content = response;
+          }
+        } else if (typeof response === 'object') {
+          // Если ответ - объект, пытаемся извлечь содержимое
+          content = response.content || 
+                    response.complaint || 
+                    response.text || 
+                    JSON.stringify(response, null, 2);
+        }
+      }
+      
+      // Если контент пустой или содержит только JSON, генерируем жалобу по умолчанию
+      if (!content || content.trim() === "{}" || content.trim().startsWith("{")) {
+        content = this.generateDefaultComplaint(
+          complaintData.currentDocument.fullText, 
+          complaintData.agency
+        );
+      }
+      
+      return {
+        content: content
+      };
+    } catch (error) {
+      console.error("Ошибка генерации жалобы:", error);
+      return {
+        content: this.generateDefaultComplaint(
+          complaintData.currentDocument.fullText, 
+          complaintData.agency
+        )
+      };
+    }
+  }
+
+  // Новый метод для построения промта для генерации жалоб из данных
+  buildComplaintPromptFromData(complaintData) {
+    const baseSystemPrompt = `
+    [SYSTEM] Ты - юридический ассистент. 
+    Создай официальную жалобу в ${complaintData.agency} на основе предоставленных данных.
+    
+    Требования к жалобе:
+    1. Используй официальный деловой стиль
+    2. Включи информацию из текущего документа и всех предыдущих документов
+    3. Укажи конкретные нарушения и ссылки на законодательство
+    4. Сформулируй четкие требования
+    5. Верни результат в формате JSON с полем "content" для текста жалобы
+    
+    Структура жалобы:
+    - Заголовок (кому)
+    - Введение (кто пишет жалобу)
+    - Описание ситуации (на основе текущего документа)
+    - Ссылки на предыдущие документы и их содержание
+    - Выявленные нарушения
+    - Требования
+    - Приложения (список документов)
+    - Подпись, дата
+    
+    Дополнительные инструкции: ${complaintData.instructions || "Нет дополнительных инструкций"}
+    `;
+    
+    // Форматирование данных для лучшего понимания моделью
+    const formattedData = {
+      currentDocument: {
+        fullText: complaintData.currentDocument.fullText ? complaintData.currentDocument.fullText.substring(0, 3000) : "",
+        summary: complaintData.currentDocument.summary,
+        keySentences: complaintData.currentDocument.keySentences
+      },
+      relatedDocuments: complaintData.relatedDocuments.map((doc, index) => ({
+        documentNumber: index + 1,
+        fullText: doc.fullText ? doc.fullText.substring(0, 2000) : "",
+        summary: doc.summary,
+        keySentences: doc.keySentences
+      })),
+      agency: complaintData.agency
+    };
+    
+    return `${baseSystemPrompt}
+    
+    [COMPLAINT_DATA]: ${JSON.stringify(formattedData, null, 2)}
+    
+    [RESPONSE_FORMAT]: {"content": "текст жалобы"}
+    
+    [COMPLAINT]:`;
   }
 
   async analyzeAttachment(text) {
@@ -202,6 +340,7 @@ class AIService {
 Сгенерируй официальную жалобу в ${options.agency || taskType} на основе предоставленных данных.
 Включи в жалобу ссылки на документы и укажи нарушения.
 Верни результат в формате JSON с полем "content" для текста жалобы.
+Данные для генерации жалобы:
 ${promptText}
 [COMPLAINT]:`,
 
@@ -253,6 +392,7 @@ ${promptText}
         keySentences: truncateArray(currentDocument.keySentences, 500)
       },
       relatedDocuments: relatedDocuments.map((doc) => ({
+        fullText: truncateText(doc.fullText || doc.originalText, 3000),
         summary: truncateText(doc.summary, 1000),
         keySentences: truncateArray(doc.keySentences, 500)
       })),

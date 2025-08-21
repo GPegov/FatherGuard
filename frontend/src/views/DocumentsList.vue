@@ -71,7 +71,7 @@
 
 
 
-    <div v-if="showComplaintDialog" class="complaint-dialog">
+    <div v-if="showComplaintDialog" class="complaint-dialog" :class="{ closing: !showComplaintDialog && !isAnalyzing }">
       <div class="dialog-content">
         <h3>Выберите ведомство для жалобы</h3>
         <select v-model="selectedComplaintAgency" class="agency-select">
@@ -80,7 +80,7 @@
           </option>
         </select>
         <div class="dialog-actions">
-          <button @click="generateComplaint" class="action-btn primary">
+          <button @click="generateComplaint" class="action-btn primary" :disabled="!selectedComplaintAgency">
             Сформировать жалобу
           </button>
           <button @click="showComplaintDialog = false" class="action-btn">
@@ -97,6 +97,15 @@
       :duration="1500"
       @close="showNotification = false"
     />
+
+    <!-- Индикатор загрузки -->
+    <div v-if="isAnalyzing" class="loading-overlay">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Генерация жалобы...</div>
+        <div class="loading-subtext">Пожалуйста, подождите</div>
+      </div>
+    </div>
 
   </div>
 </template>
@@ -226,27 +235,36 @@ const analyzeDocument = async (docId) => {
 const generateComplaint = async () => {
   if (!selectedComplaintAgency.value || !currentDocumentId.value) return
 
+  // Скрываем модальное окно сразу после нажатия кнопки
+  showComplaintDialog.value = false
+  
+  // Показываем индикатор загрузки
+  isAnalyzing.value = true
+
   try {
-    console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value);
+    console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value)
     const result = await documentStore.generateComplaint(
       currentDocumentId.value,
       selectedComplaintAgency.value
     )
-    console.log('Результат генерации жалобы:', result);
-    router.push('/complaints')
+    console.log('Результат генерации жалобы:', result)
     
-    // Показываем уведомление об успешной генерации
-    notificationMessage.value = 'Жалоба успешно сформирована';
-    notificationType.value = 'success';
-    showNotification.value = true;
+    // Ждем немного для плавного перехода
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    
+    // Переходим к подробному просмотру созданной жалобы
+    router.push(`/complaints/${result.id}`)
+    
   } catch (error) {
     console.error('Ошибка генерации жалобы:', error)
+    
     // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при формировании жалобы: ' + error.message;
-    notificationType.value = 'error';
-    showNotification.value = true;
+    notificationMessage.value = 'Ошибка при формировании жалобы: ' + (error.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
   } finally {
-    showComplaintDialog.value = false
+    // Скрываем индикатор загрузки
+    isAnalyzing.value = false
   }
 }
 </script>
@@ -393,6 +411,11 @@ h1 {
   justify-content: center;
   align-items: center;
   z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.complaint-dialog.closing {
+  animation: fadeOut 0.3s ease-out forwards;
 }
 
 .dialog-content {
@@ -401,6 +424,7 @@ h1 {
   border-radius: 8px;
   width: 90%;
   max-width: 500px;
+  animation: slideIn 0.3s ease-out;
 }
 
 .dialog-content h3 {
@@ -420,12 +444,113 @@ h1 {
   border: 1px solid #ddd;
   border-radius: 4px;
   cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.action-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 .action-btn.primary {
   background: #42b983;
   color: white;
   border: none;
+}
+
+.action-btn.primary:hover {
+  background: #359f6b;
+}
+
+/* Анимация загрузки */
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.loading-content {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  max-width: 300px;
+  width: 90%;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(66, 185, 131, 0.3);
+  border-top: 4px solid #42b983;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+.loading-text {
+  font-size: 1.1em;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.loading-subtext {
+  font-size: 0.9em;
+  color: #666;
+}
+
+/* Анимации */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes slideIn {
+  from {
+    transform: translateY(-20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 

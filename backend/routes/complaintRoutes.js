@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { Document, Paragraph, TextRun, Packer } from 'docx';
-import aiService from '../services/aiService.js';
+import AIService from '../services/aiService.js';
+
+// Создаем экземпляр AIService
+const aiService = new AIService();
 
 export default function complaintRoutes({ db }) {
   const router = Router();
@@ -10,7 +13,7 @@ export default function complaintRoutes({ db }) {
   router.post('/generate', async (req, res) => {
     try {
       console.log('Получен запрос на генерацию жалобы:', req.body);
-      const { documentId, agency, instructions } = req.body;
+      const { documentId, agency, currentDocument, relatedDocuments } = req.body;
       
       // Проверка обязательных полей
       if (!agency || !documentId) {
@@ -18,6 +21,71 @@ export default function complaintRoutes({ db }) {
         return res.status(400).json({ message: 'Не указаны обязательные параметры' });
       }
 
+      // Если переданы полные данные документов, используем их
+      if (currentDocument && relatedDocuments) {
+        console.log('Используем переданные данные документов для генерации жалобы');
+        
+        // Подготовка данных для генерации жалобы
+        const complaintData = {
+          currentDocument: currentDocument,
+          relatedDocuments: relatedDocuments,
+          agency: agency,
+          instructions: ''
+        };
+        
+        // Генерация жалобы через AI сервис
+        let complaintResult;
+        try {
+          console.log('Вызов AI сервиса для генерации жалобы с переданными данными');
+          complaintResult = await aiService.generateComplaintFromData(complaintData);
+          console.log('Результат от AI сервиса:', complaintResult);
+        } catch (aiError) {
+          console.error('Ошибка генерации жалобы через AI:', aiError);
+          // Если AI не сработал, используем запасной вариант
+          complaintResult = {
+            content: generateFallbackComplaint(currentDocument, agency),
+          };
+        }
+
+        // Создание объекта жалобы
+        const complaint = {
+          id: uuidv4(),
+          documentId,
+          agency,
+          content: complaintResult.content || generateFallbackComplaint(currentDocument, agency),
+          relatedDocuments: relatedDocuments.map((d, index) => `related-doc-${index}`), // Заглушки для ID
+          status: 'draft',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        console.log('Создан объект жалобы:', complaint);
+
+        // Сохранение в БД
+        if (!db.data.complaints) {
+          db.data.complaints = [];
+        }
+        db.data.complaints.push(complaint);
+        await db.write();
+        console.log('Жалоба сохранена в БД');
+
+        // Обновление документа
+        const doc = db.data.documents.find(d => d.id === documentId);
+        if (doc) {
+          if (!doc.complaints) {
+            doc.complaints = [];
+          }
+          doc.complaints.push(complaint.id);
+          await db.write();
+          console.log('Документ обновлен');
+        }
+
+        res.status(201).json(complaint);
+        return;
+      }
+
+      // Если данные документов не переданы, используем старую логику
+      console.log('Используем старую логику с поиском документов в БД');
+      
       // Поиск документа
       const doc = db.data.documents.find(d => d.id === documentId);
       console.log('Найден документ:', doc);
@@ -34,6 +102,7 @@ export default function complaintRoutes({ db }) {
 
       // Подготовка данных предыдущих документов
       const relatedDocData = relatedDocs.map(d => ({
+        fullText: d.originalText || d.fullText || '',
         summary: d.summary || '',
         keySentences: d.keySentences || []
       }));
@@ -48,7 +117,7 @@ export default function complaintRoutes({ db }) {
         },
         relatedDocuments: relatedDocData,
         agency: agency,
-        instructions: instructions || ''
+        instructions: ''
       };
       
       console.log('Данные для AI-модели:', JSON.stringify(aiRequestData, null, 2));
@@ -57,16 +126,20 @@ export default function complaintRoutes({ db }) {
       let complaintResult;
       try {
         console.log('Вызов AI сервиса для генерации жалобы');
-        complaintResult = await aiService.generateComplaintV2(
-          {
+        
+        // Подготовка данных для генерации жалобы
+        const complaintData = {
+          currentDocument: {
             fullText: doc.originalText,
             summary: doc.summary || '',
             keySentences: doc.keySentences || []
           },
-          agency,
-          relatedDocData,
-          instructions
-        );
+          relatedDocuments: relatedDocData,
+          agency: agency,
+          instructions: ''
+        };
+        
+        complaintResult = await aiService.generateComplaintFromData(complaintData);
         console.log('Результат от AI сервиса:', complaintResult);
       } catch (aiError) {
         console.error('Ошибка генерации жалобы через AI:', aiError);
@@ -117,11 +190,23 @@ export default function complaintRoutes({ db }) {
   });
 
   // Вспомогательный метод для генерации содержания жалобы
-  function generateFallbackComplaint(doc, agency) {
-    return `Жалоба в ${agency}\n\n` +
-      `Документ: ${doc.summary || "Без описания"}\n` +
-      `Дата: ${doc.documentDate || "Не указана"}\n\n` +
-      `Текст: ${doc.originalText.substring(0, 500)}...`;
+  function generateFallbackComplaint(docOrCurrentDoc, agency) {
+    // Определяем, какой формат данных мы получили
+    const isCurrentDocFormat = docOrCurrentDoc && docOrCurrentDoc.fullText !== undefined;
+    
+    if (isCurrentDocFormat) {
+      // Новый формат данных
+      return `Жалоба в ${agency}\n\n` +
+        `Документ: ${docOrCurrentDoc.summary || "Без описания"}\n` +
+        `Дата: ${new Date().toLocaleDateString()}\n\n` +
+        `Текст: ${docOrCurrentDoc.fullText ? docOrCurrentDoc.fullText.substring(0, 500) : "Нет текста"}...`;
+    } else {
+      // Старый формат данных
+      return `Жалоба в ${agency}\n\n` +
+        `Документ: ${docOrCurrentDoc.summary || "Без описания"}\n` +
+        `Дата: ${docOrCurrentDoc.documentDate || "Не указана"}\n\n` +
+        `Текст: ${docOrCurrentDoc.originalText ? docOrCurrentDoc.originalText.substring(0, 500) : "Нет текста"}...`;
+    }
   }
 
   // Экспорт жалобы

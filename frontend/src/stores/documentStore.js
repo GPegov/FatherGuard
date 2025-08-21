@@ -434,12 +434,24 @@ const analyzeDocumentContent = async (docText) => {
       );
       console.log('Связанные документы:', relatedDocs);
 
-      // Вызываем API для генерации жалобы, передавая информацию о связанных документах
-      const { data } = await axios.post(`${API_BASE}/api/complaints/generate`, {
+      // Подготавливаем данные для отправки на бэкенд
+      const complaintData = {
         documentId,
         agency,
-        // relatedDocuments: relatedDocs.map((d) => d.id), // Этот параметр обрабатывается на бэке
-      });
+        currentDocument: {
+          fullText: doc.originalText,
+          summary: doc.summary || '',
+          keySentences: doc.keySentences || []
+        },
+        relatedDocuments: relatedDocs.map(d => ({
+          fullText: d.originalText,
+          summary: d.summary || '',
+          keySentences: d.keySentences || []
+        }))
+      };
+
+      // Вызываем API для генерации жалобы, передавая информацию о связанных документах
+      const { data } = await axios.post(`${API_BASE}/api/complaints/generate`, complaintData);
       console.log('Ответ от API:', data);
 
       if (currentDocument.value.id === documentId) {
