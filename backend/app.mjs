@@ -9,7 +9,6 @@ import { JSONFile } from "lowdb/node";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
-import aiRoutes from './routes/aiRoutes.js'
 import AIService from './services/aiService.js';
 
 // Создаем экземпляр AIService
@@ -123,10 +122,25 @@ async function startServer() {
         app.use("/api/complaints", complaintRoutes({ db }));
       }
     );
-    app.use("/api/ai", aiRoutes);
 
     // Делаем aiService доступным в приложении
     app.locals.aiService = aiService;
+
+    // Эндпоинт для проверки статуса AI-сервера
+    app.get('/api/status', async (req, res) => {
+      try {
+        const response = await fetch('http://localhost:11434/api/tags', {
+          timeout: 3000,
+        });
+        if (response.status === 200) {
+          res.json({ status: 'ready' });
+        } else {
+          res.json({ status: 'error' });
+        }
+      } catch (error) {
+        res.json({ status: 'offline' });
+      }
+    });
 
 
     

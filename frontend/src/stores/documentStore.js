@@ -29,7 +29,6 @@ export const useDocumentStore = defineStore("document", () => {
     documentDate: "",
     senderAgency: "",
     documentSummary: "",
-    fullText: "",
     attachments: [],
     complaints: [],
     analysisStatus: "pending",
@@ -194,7 +193,6 @@ export const useDocumentStore = defineStore("document", () => {
     documentDate: data.documentDate || "",
     senderAgency: data.senderAgency || "",
     documentSummary: data.documentSummary || data.summary || "", // п.6в (используем summary если нет отдельного поля)
-    fullText: data.fullText || data.originalText || "", // п.6г
     attachments:
       data.attachments?.map((att) => ({
         id: att.id || uuidv4(),
@@ -208,7 +206,7 @@ export const useDocumentStore = defineStore("document", () => {
         documentDate: att.documentDate || "",
         senderAgency: att.senderAgency || "",
         attachmentSummary: att.attachmentSummary || att.documentSummary || "",
-        fullText: att.fullText || att.text || "",
+        fullText: att.text || "", // Используем text вместо fullText
         keySentences: att.keySentences || [], // Важные предложения для вложений
       })) || [],
     complaints: data.complaints || [],
@@ -232,7 +230,6 @@ export const useDocumentStore = defineStore("document", () => {
       documentDate: doc.documentDate || "",
       senderAgency: doc.senderAgency || "",
       documentSummary: doc.documentSummary || "",
-      fullText: doc.fullText || "",
       attachments: Array.isArray(doc.attachments) 
         ? doc.attachments.map((att) => ({
             id: att.id || uuidv4(),
@@ -245,7 +242,7 @@ export const useDocumentStore = defineStore("document", () => {
             documentDate: att.documentDate || "",
             senderAgency: att.senderAgency || "",
             attachmentSummary: att.attachmentSummary || "",
-            fullText: att.fullText || "",
+            fullText: att.text || "", // Используем text вместо fullText
             keySentences: Array.isArray(att.keySentences) 
               ? att.keySentences.filter((p) => p && p.trim()) 
               : []
@@ -284,27 +281,30 @@ export const useDocumentStore = defineStore("document", () => {
 
 const analyzeDocumentContent = async (docText) => {
   try {
-    const analysis = await aiStore.analyzeDocument(docText);
+    // Вызываем API для анализа документа
+    const { data } = await axios.post(`${API_BASE}/api/documents/${currentDocument.value.id}/analyze`, {
+      text: docText
+    });
 
     // Выводим полный ответ модели в консоль
-    console.log("Полный ответ модели:", analysis);
+    console.log("Полный ответ модели:", data);
     
     // Проверяем, что keySentences является массивом
-    if (!Array.isArray(analysis.keySentences)) {
-      console.warn("keySentences не является массивом:", analysis.keySentences);
+    if (!Array.isArray(data.keySentences)) {
+      console.warn("keySentences не является массивом:", data.keySentences);
     }
     
     // Гарантируем, что keySentences будет массивом
     return {
-      summary: analysis.summary || "Не удалось сгенерировать краткую суть",
-      keySentences: Array.isArray(analysis.keySentences) ? 
-        analysis.keySentences : 
+      summary: data.summary || "Не удалось сгенерировать краткую суть",
+      keySentences: Array.isArray(data.keySentences) ? 
+        data.keySentences : 
         [],
-      violations: Array.isArray(analysis.violations) ?
-        analysis.violations :
+      violations: Array.isArray(data.violations) ?
+        data.violations :
         [],
-      documentDate: analysis.documentDate || "",
-      senderAgency: analysis.senderAgency || ""
+      documentDate: data.documentDate || "",
+      senderAgency: data.senderAgency || ""
     };
   } catch (error) {
     console.error("Ошибка анализа документа:", error);
@@ -336,27 +336,9 @@ const analyzeDocumentContent = async (docText) => {
 
   isAnalyzing.value = true;
   try {
-    const updatedAttachments = await Promise.all(
-      currentDocument.value.attachments.map(async (att) => {
-        if (!att.text) return att;
-        
-        const analysis = await aiStore.analyzeAttachment(att.text);
-        const attachmentSummary = await aiStore.generateAttachmentSummary(att.text);
-        
-        return {
-          ...att,
-          analysis,
-          documentDate: extractDate(att.text),
-          senderAgency: extractAgency(att.text),
-          attachmentSummary: attachmentSummary.summary || "", // Чёткое название
-          fullText: att.text,
-          keySentences: analysis.keySentences || []
-        };
-      })
-    );
-
-    currentDocument.value.attachments = updatedAttachments;
-    return updatedAttachments;
+    // Анализ вложений будет происходить на бэкенде при анализе документа
+    // Здесь мы просто возвращаем существующие вложения
+    return currentDocument.value.attachments;
   } catch (err) {
     error.value = 'Ошибка анализа вложений: ' + err.message;
     throw err;
@@ -377,7 +359,22 @@ const analyzeDocumentContent = async (docText) => {
   };
 
   const resetCurrentDocument = () => {
-    currentDocument.value = createEmptyDocument();
+    currentDocument.value = {
+      id: uuidv4(),
+      date: new Date().toISOString(),
+      originalText: "",
+      agencyTarget: "",
+      summary: "",
+      keySentences: [],
+      documentDate: "",
+      senderAgency: "",
+      documentSummary: "",
+      attachments: [],
+      complaints: [],
+      analysisStatus: "pending",
+      lastAnalyzedAt: null,
+      violations: [],
+    };
   };
 
   const viewDocument = async (id) => {
@@ -386,85 +383,9 @@ const analyzeDocumentContent = async (docText) => {
   };
 
   const regenerateAttachmentAnalysis = async (attachmentId) => {
-    const attachment = currentDocument.value.attachments.find(
-      (a) => a.id === attachmentId
-    );
-    if (!attachment) return;
-
-    try {
-      const analysis = await aiStore.analyzeAttachment(attachment.text);
-      const updatedAttachment = {
-        ...attachment,
-        analysis,
-        documentDate: extractDate(attachment.text),
-        senderAgency: extractAgency(attachment.text),
-        documentSummary: analysis.summary || "",
-        fullText: attachment.text,
-        keySentences: analysis.keySentences || [],
-      };
-
-      const index = currentDocument.value.attachments.findIndex(
-        (a) => a.id === attachmentId
-      );
-      currentDocument.value.attachments[index] = updatedAttachment;
-      await saveDocument();
-
-      return updatedAttachment;
-    } catch (err) {
-      error.value = "Ошибка перегенерации анализа вложения: " + err.message;
-      throw err;
-    }
-  };
-
-  const generateComplaint = async (documentId, agency) => {
-    return handleApiCall(async () => {
-      console.log('Начало генерации жалобы для документа:', documentId, 'в ведомство:', agency);
-      // Убедимся, что у нас есть актуальные данные документа
-      await fetchDocumentById(documentId);
-      const doc = currentDocument.value;
-      
-      if (!doc) {
-        console.error('Документ не найден');
-        throw new Error("Документ не найден");
-      }
-      console.log('Данные документа загружены:', doc);
-
-      const relatedDocs = documents.value.filter(
-        (d) => d.date <= doc.date && d.id !== documentId
-      );
-      console.log('Связанные документы:', relatedDocs);
-
-      // Подготавливаем данные для отправки на бэкенд
-      const complaintData = {
-        documentId,
-        agency,
-        currentDocument: {
-          fullText: doc.originalText,
-          summary: doc.summary || '',
-          keySentences: doc.keySentences || []
-        },
-        relatedDocuments: relatedDocs.map(d => ({
-          fullText: d.originalText,
-          summary: d.summary || '',
-          keySentences: d.keySentences || []
-        }))
-      };
-
-      // Вызываем API для генерации жалобы, передавая информацию о связанных документах
-      const { data } = await axios.post(`${API_BASE}/api/complaints/generate`, complaintData);
-      console.log('Ответ от API:', data);
-
-      if (currentDocument.value.id === documentId) {
-        currentDocument.value.complaints = [
-          ...(currentDocument.value.complaints || []),
-          data,
-        ];
-        await saveDocument();
-        console.log('Жалоба добавлена в документ и сохранена');
-      }
-
-      return data;
-    });
+    // Перегенерация анализа вложения будет происходить на бэкенде
+    // Здесь мы просто вызываем анализ документа заново
+    return await analyzeDocument();
   };
 
   const fetchComplaints = async (documentId) => {
@@ -497,7 +418,6 @@ const analyzeDocumentContent = async (docText) => {
     deleteDocument,
     analyzeDocument,
     regenerateAttachmentAnalysis,
-    generateComplaint,
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,

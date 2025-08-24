@@ -1,5 +1,4 @@
-import { Router } from 'express';
-import express from 'express';
+import { Router, json } from 'express'; // Добавьте json
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
@@ -14,7 +13,7 @@ export default function documentRoutes({ db, upload }) {
   const router = Router();
 
   // Middleware для проверки JSON
-  router.use(express.json({
+  router.use(json({
     verify: (req, res, buf, encoding) => {
       try {
         JSON.parse(buf.toString());
@@ -60,34 +59,17 @@ export default function documentRoutes({ db, upload }) {
     }
   };
 
-  // Загрузка документа (текст + файлы)
-  router.post('/upload', upload.array('files'), async (req, res) => {
-    try {
-      const userText = req.body.text || "";
-      const userComments = req.body.comments || "";
-
-      // Обработка только текста
-      if (userText && (!req.files || req.files.length === 0)) {
-        const newDocument = normalizeDocument({
-          originalText: userText,
-          comments: userComments
-        });
-        
-        db.data.documents.push(newDocument);
-        await db.write();
-        return res.status(201).json(newDocument);
-      }
-
-      // Обработка файлов
-      const filesData = await processUploadedFiles(req.files, userText, userComments);
-      res.status(201).json(filesData[0]);
-    } catch (err) {
-      console.error('Ошибка загрузки:', err);
-      res.status(500).json({ 
-        message: err.message || 'Ошибка сервера при обработке документа'
-      });
+  // Извлечение текста из файла
+  const extractFileContent = async (file) => {
+    if (file.mimetype === 'application/pdf') {
+      const dataBuffer = await fs.readFile(file.path);
+      const pdfData = await pdfService.extractTextFromPdf(dataBuffer);
+      return pdfData.text;
+    } else if (file.mimetype === 'text/plain') {
+      return await fs.readFile(file.path, 'utf-8');
     }
-  });
+    throw new Error('Неподдерживаемый тип файла');
+  };
 
   // Обработка загруженных файлов
   const processUploadedFiles = async (files, userText, userComments) => {
@@ -127,17 +109,83 @@ export default function documentRoutes({ db, upload }) {
     return filesData;
   };
 
-  // Извлечение текста из файла
-  const extractFileContent = async (file) => {
-    if (file.mimetype === 'application/pdf') {
-      const dataBuffer = await fs.readFile(file.path);
-      const pdfData = await pdfService.extractTextFromPdf(dataBuffer);
-      return pdfData.text;
-    } else if (file.mimetype === 'text/plain') {
-      return await fs.readFile(file.path, 'utf-8');
-    }
-    throw new Error('Неподдерживаемый тип файла');
+  // Анализ содержимого документа
+  const analyzeDocumentContent = async (doc, instructions, strictMode) => {
+    return await aiService.analyzeLegalText(
+      doc.originalText,
+      instructions,
+      strictMode
+    );
   };
+
+  // Анализ вложений
+  const analyzeAttachments = async (doc) => {
+    if (!doc.attachments?.length) return;
+
+    for (const attachment of doc.attachments) {
+      if (attachment.text) {
+        attachment.analysis = await aiService.analyzeLegalText(
+          attachment.text,
+          'Определи тип документа, дату отправления и ведомство',
+          true
+        );
+      }
+    }
+  };
+
+  // Обновление данных анализа
+  const updateDocumentAnalysis = (doc, analysis) => {
+    doc.summary = analysis.summary;
+    doc.documentDate = analysis.documentDate || "";
+    doc.senderAgency = analysis.senderAgency || "";
+    doc.keySentences = analysis.keySentences;
+    doc.analysisStatus = 'completed';
+    doc.lastAnalyzedAt = new Date().toISOString();
+    doc.updatedAt = new Date().toISOString();
+  };
+
+  // Сохранение жалобы
+  const saveComplaint = (doc, complaint) => {
+    if (!db.data.complaints) {
+      db.data.complaints = [];
+    }
+    db.data.complaints.push(complaint);
+
+    if (!doc.complaints) {
+      doc.complaints = [];
+    }
+    doc.complaints.push(complaint.id);
+    doc.updatedAt = new Date().toISOString();
+  };
+
+    // Загрузка документа (текст + файлы)
+  router.post('/upload', upload.array('files'), async (req, res) => {
+    try {
+      const userText = req.body.text || "";
+      const userComments = req.body.comments || "";
+
+      // Обработка только текста
+      if (userText && (!req.files || req.files.length === 0)) {
+        const newDocument = normalizeDocument({
+          originalText: userText,
+          comments: userComments
+        });
+        
+        db.data.documents.push(newDocument);
+        await db.write();
+        return res.status(201).json(newDocument);
+      }
+
+      // Обработка файлов
+      const filesData = await processUploadedFiles(req.files, userText, userComments);
+      res.status(201).json(filesData[0]);
+    } catch (err) {
+      console.error('Ошибка загрузки:', err);
+      res.status(500).json({ 
+        message: err.message || 'Ошибка сервера при обработке документа'
+      });
+    }
+  });
 
   // Создание документа
   router.post('/', async (req, res) => {
@@ -234,41 +282,6 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  // Анализ содержимого документа
-  const analyzeDocumentContent = async (doc, instructions, strictMode) => {
-    return await aiService.analyzeLegalText(
-      doc.originalText,
-      instructions,
-      strictMode
-    );
-  };
-
-  // Анализ вложений
-  const analyzeAttachments = async (doc) => {
-    if (!doc.attachments?.length) return;
-
-    for (const attachment of doc.attachments) {
-      if (attachment.text) {
-        attachment.analysis = await aiService.analyzeLegalText(
-          attachment.text,
-          'Определи тип документа, дату отправления и ведомство',
-          true
-        );
-      }
-    }
-  };
-
-  // Обновление данных анализа
-  const updateDocumentAnalysis = (doc, analysis) => {
-    doc.summary = analysis.summary;
-    doc.documentDate = analysis.documentDate || "";
-    doc.senderAgency = analysis.senderAgency || "";
-    doc.keySentences = analysis.keySentences;
-    doc.analysisStatus = 'completed';
-    doc.lastAnalyzedAt = new Date().toISOString();
-    doc.updatedAt = new Date().toISOString();
-  };
-
   // Удаление документа
   router.delete('/:id', async (req, res) => {
     try {
@@ -293,58 +306,21 @@ export default function documentRoutes({ db, upload }) {
       const { agency } = req.body;
       if (!agency) return res.status(400).json({ message: 'Не указано ведомство' });
 
-      const doc = db.data.documents.find(d => d.id === req.params.id);
-      if (!doc) return res.status(404).json({ message: 'Документ не найден' });
+      // Подготавливаем данные для унифицированного метода
+      const complaintData = {
+        documentId: req.params.id,
+        agency: agency
+      };
 
-      const relatedDocs = db.data.documents.filter(d => 
-        d.date <= doc.date && d.id !== req.params.id
-      );
-
-      const complaint = await generateComplaint(doc, agency, relatedDocs);
-      saveComplaint(doc, complaint);
-
+      // Используем унифицированный метод генерации жалобы
+      const { generateUnifiedComplaint } = await import('../services/complaintService.js');
+      const complaint = await generateUnifiedComplaint(db, complaintData);
+      
       res.status(201).json(complaint);
-    } catch (err) {
-      res.status(500).json({ 
-        message: err.message || 'Ошибка генерации жалобы',
-        details: err.response?.data
-      });
+    } catch (error) {
+      res.status(500).json({ message: error.message });
     }
   });
-
-  // Генерация жалобы
-  const generateComplaint = async (doc, agency, relatedDocs) => {
-    const complaint = await aiService.generateComplaintV2(
-      doc.originalText,
-      agency,
-      relatedDocs.map(d => d.originalText)
-    );
-
-    return {
-      id: uuidv4(),
-      documentId: doc.id,
-      agency,
-      content: complaint.content,
-      violations: complaint.violations || [],
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-  };
-
-  // Сохранение жалобы
-  const saveComplaint = (doc, complaint) => {
-    if (!db.data.complaints) {
-      db.data.complaints = [];
-    }
-    db.data.complaints.push(complaint);
-
-    if (!doc.complaints) {
-      doc.complaints = [];
-    }
-    doc.complaints.push(complaint.id);
-    doc.updatedAt = new Date().toISOString();
-  };
 
   // Получение жалоб для документа
   router.get('/:id/complaints', async (req, res) => {
@@ -375,14 +351,5 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  return router;
-}
-
-
-
-
-
-
-
-
-
+  return router; // Правильный экспорт для функции
+} // Закрывающая скобка для function documentRoutes

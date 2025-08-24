@@ -243,7 +243,7 @@ const generateComplaint = async () => {
 
   try {
     console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value)
-    const result = await documentStore.generateComplaint(
+    const result = await complaintStore.generateComplaint(
       currentDocumentId.value,
       selectedComplaintAgency.value
     )
