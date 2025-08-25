@@ -2,11 +2,10 @@ import axios from "axios";
 
 class AIService {
   constructor(apiUrl, activeModel) {
-    this.apiUrl = "http://localhost:11434/api/generate";
-    this.activeModel = "llama3.1/18/8192";
+    this.apiUrl = apiUrl || "http://localhost:11434/api/generate";
+    this.activeModel = activeModel || "llama3.1/18/8192";
     this.defaultOptions = {
       temperature: 0.3,
-      max_tokens: 16384,
       repeat_penalty: 1.2,
       format: "json",
     };
@@ -30,19 +29,21 @@ class AIService {
       processedPrompt = JSON.stringify(prompt).substring(0, 25000);
     }
 
-    const options = {
-      method: "POST",
-      ...this.defaultOptions,
-      ...customOptions,
-      max_tokens: 16384, // Установка максимального количества токенов
-      prompt: this.preparePrompt(processedPrompt, customOptions.taskType, customOptions),
+    // Подготовка параметров для Ollama API
+    const ollamaOptions = {
+      temperature: customOptions.temperature || this.defaultOptions.temperature,
+      repeat_penalty: customOptions.repeat_penalty || this.defaultOptions.repeat_penalty,
+      // max_tokens не используется в Ollama API, вместо этого есть другие параметры
     };
+
+    // Подготовка промпта
+    const preparedPrompt = this.preparePrompt(processedPrompt, customOptions.taskType, customOptions);
 
     console.log("Отправка запроса к AI-модели:", {
       url: this.apiUrl,
       model: this.activeModel,
-      prompt: options.prompt,
-      options: customOptions
+      prompt: preparedPrompt,
+      options: ollamaOptions
     });
 
     try {
@@ -50,10 +51,10 @@ class AIService {
         this.apiUrl,
         {
           model: this.activeModel,
-          prompt: options.prompt,
+          prompt: preparedPrompt,
           stream: false,
-          format: "json",
-          ...options,
+          format: customOptions.format || this.defaultOptions.format,
+          options: ollamaOptions,
         },
         { timeout: 500000 }
       );

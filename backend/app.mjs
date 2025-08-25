@@ -114,7 +114,7 @@ async function startServer() {
 
     // Подключение роутов (убедитесь, что они экспортируют router)
     import("./routes/documentRoutes.js").then(({ default: documentRoutes }) => {
-      app.use("/api/documents", documentRoutes({ db, upload }));
+      app.use("/api/documents", documentRoutes({ db, upload, aiService }));
     });
 
     import("./routes/complaintRoutes.js").then(

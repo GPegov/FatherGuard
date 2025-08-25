@@ -20,19 +20,19 @@
         <div class="document-info">
           <div class="info-row">
             <span class="label">Дата поступления:</span>
-            <span class="value">{{ formatDate(document.date) }}</span>
+            <span class="value">{{ formatDate(documentStore.currentDocument.date) }}</span>
           </div>
           <div class="info-row">
             <span class="label">Ведомство:</span>
-            <span class="value">{{ document.agency || 'Не указано' }}</span>
+            <span class="value">{{ documentStore.currentDocument.agency || 'Не указано' }}</span>
           </div>
           <div class="info-row">
             <span class="label">Дата документа:</span>
-            <span class="value">{{ document.documentDate || 'Не указана' }}</span>
+            <span class="value">{{ documentStore.currentDocument.documentDate || 'Не указана' }}</span>
           </div>
           <div class="info-row">
             <span class="label">Краткая суть:</span>
-            <span class="value">{{ document.summary || 'Нет краткой сводки' }}</span>
+            <span class="value">{{ documentStore.currentDocument.summary || 'Нет краткой сводки' }}</span>
           </div>
         </div>
       </div>
@@ -95,7 +95,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDocumentStore } from '@/stores/documentStore'
 import { useComplaintStore } from '@/stores/complaintStore'
@@ -106,18 +106,21 @@ const router = useRouter()
 const documentStore = useDocumentStore()
 const complaintStore = useComplaintStore()
 
-// Состояния (все в Pinia store)
+// Состояния
 const selectedAgency = ref('')
 const customInstructions = ref('')
 const generatedComplaint = ref(null)
+const showNotification = ref(false)
+const notificationMessage = ref('')
+const notificationType = ref('success')
 
 // Геттеры из store
 const agenciesOptions = computed(() => complaintStore.agenciesOptions)
 const isGenerating = computed(() => complaintStore.isGenerating)
-const loading = computed(() => documentStore.loading)
-const error = computed(() => documentStore.error)
+const loading = computed(() => documentStore.isLoading)
+const error = computed(() => documentStore.error || complaintStore.error)
 
-// Методы из store
+// Методы
 const formatDate = (dateString) => {
   return dateString ? new Date(dateString).toLocaleDateString('ru-RU') : 'Дата не указана'
 }
@@ -130,29 +133,38 @@ const generateComplaint = async () => {
   if (!selectedAgency.value) return
   
   try {
-    const payload = {
-      documentId: route.params.id,
-      agency: selectedAgency.value,
-      instructions: customInstructions.value
-    }
+    // Используем метод из store с правильными параметрами
+    const result = await complaintStore.generateComplaint(
+      route.params.id, 
+      selectedAgency.value, 
+      customInstructions.value
+    )
+    generatedComplaint.value = result.content || result
     
-    // Используем метод из store
-    await complaintStore.generateComplaint(payload)
-    generatedComplaint.value = complaintStore.generatedComplaint
+    // Показываем уведомление об успешной генерации
+    notificationMessage.value = 'Жалоба успешно сгенерирована'
+    notificationType.value = 'success'
+    showNotification.value = true
     
     // Сбросим состояние после успешной генерации
-    selectedAgency.value = ''
-    customInstructions.value = ''
+    // selectedAgency.value = ''
+    // customInstructions.value = ''
   } catch (err) {
     console.error('Ошибка генерации жалобы:', err)
-    // Обработка ошибки через store или уведомления
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при генерации жалобы: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
   }
 }
 
 const copyToClipboard = () => {
   if (generatedComplaint.value) {
     navigator.clipboard.writeText(generatedComplaint.value)
-    // Уведомление через store
+    // Показываем уведомление
+    notificationMessage.value = 'Жалоба скопирована в буфер обмена'
+    notificationType.value = 'success'
+    showNotification.value = true
   }
 }
 
@@ -160,20 +172,34 @@ const saveComplaint = async () => {
   if (!generatedComplaint.value) return
   
   try {
-    const complaintData = {
-      documentId: route.params.id,
-      agency: selectedAgency.value,
-      content: generatedComplaint.value,
-      status: 'draft'
+    // Обновляем документ с новой жалобой
+    await documentStore.fetchDocumentById(route.params.id)
+    
+    // Добавляем жалобу к документу
+    if (!documentStore.currentDocument.complaints) {
+      documentStore.currentDocument.complaints = []
     }
     
-    await complaintStore.saveComplaintToDocument(complaintData)
+    // Находим сгенерированную жалобу в complaintStore
+    const complaint = complaintStore.complaints.find(c => c.documentId === route.params.id)
+    if (complaint) {
+      documentStore.currentDocument.complaints.push(complaint)
+      await documentStore.saveDocument()
+    }
     
-    // После сохранения обновляем документ
-    await documentStore.fetchDocumentById(route.params.id)
+    // Показываем уведомление об успешном сохранении
+    notificationMessage.value = 'Жалоба успешно сохранена в документ'
+    notificationType.value = 'success'
+    showNotification.value = true
+    
+    // Переходим к просмотру документа
     router.push(`/documents/${route.params.id}`)
   } catch (err) {
     console.error('Ошибка сохранения жалобы:', err)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при сохранении жалобы: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
   }
 }
 
@@ -185,8 +211,14 @@ const goBack = () => {
 onMounted(async () => {
   try {
     await documentStore.fetchDocumentById(route.params.id)
+    // Также загружаем жалобы для документа
+    await complaintStore.fetchComplaints()
   } catch (err) {
     console.error('Ошибка загрузки документа:', err)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при загрузке документа: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
   }
 })
 </script>

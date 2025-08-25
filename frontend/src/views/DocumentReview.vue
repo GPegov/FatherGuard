@@ -10,6 +10,15 @@
       <p>Загрузка данных...</p>
     </div>
 
+    <!-- Индикатор анализа -->
+    <div v-if="isAnalyzing && !isLoading" class="analyzing-overlay">
+      <div class="analyzing-content">
+        <div class="loading-spinner"></div>
+        <div class="analyzing-text">Анализ документа...</div>
+        <div class="analyzing-subtext">Пожалуйста, подождите</div>
+      </div>
+    </div>
+
     <div v-else class="review-container">
       <form @submit.prevent="handleSubmit" class="review-form">
         <!-- Основные поля -->
@@ -123,11 +132,11 @@
               </div>
               <div class="detail-row full-width">
                 <span class="detail-label">Краткая суть:</span>
-                <textarea v-model="attachment.documentSummary" class="form-textarea" rows="3"></textarea>
+                <textarea v-model="attachment.summary" class="form-textarea" rows="3"></textarea>
               </div>
               <div class="detail-row full-width">
                 <span class="detail-label">Полный текст:</span>
-                <textarea v-model="attachment.fullText" class="form-textarea" rows="6" readonly></textarea>
+                <textarea v-model="attachment.text" class="form-textarea" rows="6" readonly></textarea>
               </div>
 
               <div class="key-paragraphs">
@@ -190,12 +199,22 @@
         </div>
       </div>
     </div>
+    
+    <!-- Индикатор анализа -->
+    <div v-if="isAnalyzing && !isLoading" class="analyzing-overlay">
+      <div class="analyzing-content">
+        <div class="loading-spinner"></div>
+        <div class="analyzing-text">Анализ документа...</div>
+        <div class="analyzing-subtext">Пожалуйста, подождите</div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
+import axios from 'axios'
 import { useAIStore } from '@/stores/aiStore'
 import { useDocumentStore } from '@/stores/documentStore'
 
@@ -263,9 +282,12 @@ const analyzeAttachment = async (attachment) => {
   
   isAnalyzing.value = true;
   try {
-    // Поскольку метод analyzeAttachment был удален из documentStore,
-    // мы напрямую вызываем метод из aiStore
-    const analysis = await aiStore.analyzeAttachment(attachment.text);
+    // Вызываем бэкенд для анализа вложения
+    const response = await axios.post('http://localhost:3001/api/attachments/analyze', {
+      text: attachment.text
+    });
+    const analysis = response.data;
+    
     const index = document.value.attachments.findIndex(a => a.id === attachment.id);
     if (index !== -1) {
       document.value.attachments[index] = {
@@ -273,8 +295,8 @@ const analyzeAttachment = async (attachment) => {
         analysis,
         documentDate: analysis.documentDate || "",
         senderAgency: analysis.senderAgency || "",
-        documentSummary: analysis.summary || "",
-        fullText: attachment.text,
+        summary: analysis.summary || "",
+        text: attachment.text,
         keySentences: analysis.keySentences || []
       };
     }
@@ -377,48 +399,13 @@ const analyzeDocument = async () => {
 const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
-        const summary = await aiStore.generateSummary(document.value.originalText);
-    // Функция для извлечения текста из ответа модели
-    const extractSummaryText = (summary) => {
-      // Если summary - это объект или строка JSON, пытаемся извлечь текст
-      if (typeof summary === 'string') {
-        // Проверяем, начинается ли строка с фигурной скобки
-        if (summary.trim().startsWith('{')) {
-          try {
-            const parsed = JSON.parse(summary);
-            // Если есть поле response, возвращаем его
-            if (parsed.response) {
-              return parsed.response;
-            }
-            // Если есть другие поля, пытаемся найти текст
-            if (parsed.summary) {
-              return parsed.summary;
-            }
-            // Если это объект, пытаемся преобразовать в строку
-            return Object.values(parsed).join(' ');
-          } catch (e) {
-            // Если не удалось распарсить JSON, возвращаем оригинальную строку
-            return summary;
-          }
-        }
-        // Если это обычная строка, возвращаем её как есть
-        return summary;
-      }
-      // Если summary - это объект, пытаемся извлечь текст
-      if (typeof summary === 'object' && summary !== null) {
-        if (summary.response) {
-          return summary.response;
-        }
-        if (summary.summary) {
-          return summary.summary;
-        }
-        // Если это объект, пытаемся преобразовать в строку
-        return Object.values(summary).join(' ');
-      }
-      // В остальных случаях возвращаем как есть
-      return summary;
-    };
-    document.value.summary = extractSummaryText(summary);
+    // Вызываем бэкенд для генерации краткой сути
+    const response = await axios.post('http://localhost:3001/api/documents/analyze-text', {
+      text: document.value.originalText
+    });
+    const analysis = response.data;
+    
+    document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
   } catch (err) {
     error.value = 'Ошибка перегенерации: ' + err.message
   } finally {
@@ -846,6 +833,60 @@ const getStatusText = (status) => {
 @keyframes spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Анимация анализа */
+.analyzing-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.analyzing-content {
+  background: white;
+  padding: 30px;
+  border-radius: 10px;
+  text-align: center;
+  max-width: 300px;
+  width: 90%;
+}
+
+.loading-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(66, 185, 131, 0.3);
+  border-top: 4px solid #42b983;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 20px;
+}
+
+.analyzing-text {
+  font-size: 1.1em;
+  color: #333;
+  margin-bottom: 10px;
+}
+
+.analyzing-subtext {
+  font-size: 0.9em;
+  color: #666;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 </style>

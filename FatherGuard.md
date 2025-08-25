@@ -164,7 +164,7 @@
       "agency": "Ведомство",
       "originalText": "Текст документа",
       "summary": "Краткая суть",
-      "keyParagraphs": ["Цитата 1", "Цитата 2"],
+      "keySentences": ["Цитата 1", "Цитата 2"],
       "documentDate": "Дата документа",
       "senderAgency": "Ведомство-отправитель",
       "attachments": [
