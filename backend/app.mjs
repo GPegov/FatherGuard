@@ -1,6 +1,6 @@
-import express from 'express';
-import cors from 'cors';
-import path from 'path';
+import express from "express";
+import cors from "cors";
+import path from "path";
 import "dotenv/config";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
@@ -9,11 +9,10 @@ import { JSONFile } from "lowdb/node";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
-import AIService from './services/aiService.js';
+import AIService from "./services/aiService.js";
 
 // Создаем экземпляр AIService
 const aiService = new AIService();
-
 const app = express();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +54,7 @@ async function initDB() {
 
 // 3. Инициализация приложения
 async function startServer() {
+  
   try {
     // Загружаем данные
     const initialData = await initDB();
@@ -73,8 +73,9 @@ async function startServer() {
     const app = express();
     app.use(
       cors({
-        origin: "http://localhost:5173", // или ваш фронтенд URL
-        methods: ["GET", "POST", "PUT", "DELETE"], // добавьте PUT
+        origin: "http://localhost:5173",
+        methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"], 
+        allowedHeaders: ["Content-Type", "Authorization"],
       })
     );
     app.use(express.json());
@@ -114,7 +115,7 @@ async function startServer() {
 
     // Подключение роутов (убедитесь, что они экспортируют router)
     import("./routes/documentRoutes.js").then(({ default: documentRoutes }) => {
-      app.use("/api/documents", documentRoutes({ db, upload, aiService }));
+      app.use("/api/documents", documentRoutes({ db, upload }));
     });
 
     import("./routes/complaintRoutes.js").then(
@@ -127,24 +128,22 @@ async function startServer() {
     app.locals.aiService = aiService;
 
     // Эндпоинт для проверки статуса AI-сервера
-    app.get('/api/status', async (req, res) => {
+    app.get("/api/status", async (req, res) => {
       try {
-        const response = await fetch('http://localhost:11434/api/tags', {
+        const response = await fetch("http://localhost:11434/api/tags", {
           timeout: 3000,
         });
         if (response.status === 200) {
-          res.json({ status: 'ready' });
+          res.json({ status: "ready" });
         } else {
-          res.json({ status: 'error' });
+          res.json({ status: "error" });
         }
       } catch (error) {
-        res.json({ status: 'offline' });
+        res.json({ status: "offline" });
       }
     });
 
-
     
-
 
     // Запуск сервера
     const PORT = process.env.PORT || 3001;

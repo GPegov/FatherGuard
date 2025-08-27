@@ -168,7 +168,7 @@
         <!-- Кнопки действий -->
         <div class="form-actions">
           <button type="button" @click="analyzeDocument" class="analyze-btn"
-            :disabled="isAnalyzing || !document.originalText">
+            :disabled="isAnalyzing || (!document.originalText && (!document.attachments || document.attachments.length === 0))">
             <span v-if="isAnalyzing" class="button-loader"></span>
             {{ isAnalyzing ? 'Анализ...' : 'Анализировать документ' }}
           </button>
@@ -235,29 +235,40 @@ const agenciesList = computed(() => documentStore.agenciesList)
 
 onMounted(async () => {
   try {
-    await aiStore.checkServerStatus()
+    console.log('Инициализация компонента DocumentReview');
+    await aiStore.checkServerStatus();
 
-    if (!document.value.id && !document.value.originalText) {
-      router.push('/')
-      return
+    // Проверяем, есть ли текст для анализа
+    const hasOriginalText = document.value.originalText && document.value.originalText.trim().length > 0;
+    const hasAttachmentsWithText = document.value.attachments?.some(att => att.text && att.text.trim().length > 0);
+    
+    console.log('Проверка текста при инициализации:', { hasOriginalText, hasAttachmentsWithText, document: document.value });
+    
+    if (!document.value.id && !hasOriginalText && !hasAttachmentsWithText) {
+      console.log('Нет документа для анализа, перенаправление на главную');
+      router.push('/');
+      return;
     }
 
     if (document.value.id) {
-      await documentStore.fetchDocumentById(document.value.id)
+      console.log('Загрузка документа по ID:', document.value.id);
+      await documentStore.fetchDocumentById(document.value.id);
       document.value = {
         ...documentStore.currentDocument,
         attachments: documentStore.currentDocument.attachments?.map(att => ({
           ...att,
           analysis: att.analysis || null
         })) || []
-      }
+      };
+      console.log('Документ загружен:', document.value);
     }
   } catch (err) {
-    error.value = 'Ошибка загрузки: ' + err.message
+    console.error('Ошибка загрузки:', err);
+    error.value = 'Ошибка загрузки: ' + err.message;
   } finally {
-    isLoading.value = false
+    isLoading.value = false;
   }
-})
+});
 
 const addAttachmentSentence = (attachmentId) => {
   const attachment = document.value.attachments.find(a => a.id === attachmentId);
@@ -336,58 +347,14 @@ const analyzeDocument = async () => {
   error.value = null
 
   try {
-    const analysis = await documentStore.analyzeDocument()
-
-    // Функция для извлечения текста из ответа модели
-    const extractSummaryText = (summary) => {
-      // Если summary - это объект или строка JSON, пытаемся извлечь текст
-      if (typeof summary === 'string') {
-        // Проверяем, начинается ли строка с фигурной скобки
-        if (summary.trim().startsWith('{')) {
-          try {
-            const parsed = JSON.parse(summary);
-            // Если есть поле response, возвращаем его
-            if (parsed.response) {
-              return parsed.response;
-            }
-            // Если есть другие поля, пытаемся найти текст
-            if (parsed.summary) {
-              return parsed.summary;
-            }
-            // Если это объект, пытаемся преобразовать в строку
-            return Object.values(parsed).join(' ');
-          } catch (e) {
-            // Если не удалось распарсить JSON, возвращаем оригинальную строку
-            return summary;
-          }
-        }
-        // Если это обычная строка, возвращаем её как есть
-        return summary;
-      }
-      // Если summary - это объект, пытаемся извлечь текст
-      if (typeof summary === 'object' && summary !== null) {
-        if (summary.response) {
-          return summary.response;
-        }
-        if (summary.summary) {
-          return summary.summary;
-        }
-        // Если это объект, пытаемся преобразовать в строку
-        return Object.values(summary).join(' ');
-      }
-      // В остальных случаях возвращаем как есть
-      return summary;
-    };
+    const updatedDocument = await documentStore.analyzeDocument(document.value.id)
 
     document.value = {
-      ...document.value,
-      summary: extractSummaryText(analysis.summary),
-      keySentences: analysis.keySentences,
-      documentDate: analysis.documentDate || '',
-      senderAgency: analysis.senderAgency || '',
-      analysisStatus: 'completed',
-      lastAnalyzedAt: new Date().toISOString()
+      ...updatedDocument
     }
+    
+    // Обновляем currentDocument в хранилище
+    documentStore.currentDocument = document.value
   } catch (err) {
     error.value = 'Ошибка анализа: ' + err.message
   } finally {

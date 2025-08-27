@@ -67,7 +67,7 @@ const submitData = async () => {
     // Инициализируем новый документ с полной структурой
     const newDocument = {
       id: null, // Будет установлен при сохранении
-      dateReceived: new Date().toISOString().split('T')[0],
+      date: new Date().toISOString().split('T')[0],
       agency: '',
       originalText: userText.value,
       summary: '',
