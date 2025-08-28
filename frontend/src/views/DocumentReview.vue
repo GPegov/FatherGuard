@@ -105,16 +105,6 @@
             <div class="attachment-header">
               <h3>{{ attachment.name }}</h3>
               <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
-              <button @click="regenerateAttachmentAnalysis(attachment.id)" class="refresh-btn" :disabled="isAnalyzing"
-                title="Переанализировать документ">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                  <path d="M16 16h5v5" />
-                </svg>
-              </button>
             </div>
 
             <div v-if="attachment.analysis" class="attachment-details">
@@ -156,9 +146,6 @@
             </div>
             <div v-else class="no-analysis">
               <p>Анализ не выполнен</p>
-              <button @click="analyzeAttachment(attachment)" class="analyze-btn" :disabled="isAnalyzing">
-                Анализировать
-              </button>
             </div>
           </div>
         </div>
@@ -287,53 +274,6 @@ const removeAttachmentSentence = (attachmentId, index) => {
   }
 };
 
-// Обновленный метод анализа вложения
-const analyzeAttachment = async (attachment) => {
-  if (!attachment.text) return;
-  
-  isAnalyzing.value = true;
-  try {
-    // Вызываем бэкенд для анализа вложения
-    const response = await axios.post('http://localhost:3001/api/attachments/analyze', {
-      text: attachment.text
-    });
-    const analysis = response.data;
-    
-    const index = document.value.attachments.findIndex(a => a.id === attachment.id);
-    if (index !== -1) {
-      document.value.attachments[index] = {
-        ...document.value.attachments[index],
-        analysis,
-        documentDate: analysis.documentDate || "",
-        senderAgency: analysis.senderAgency || "",
-        summary: analysis.summary || "",
-        text: attachment.text,
-        keySentences: analysis.keySentences || []
-      };
-    }
-  } catch (err) {
-    error.value = 'Ошибка анализа вложения: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Метод для перегенерации анализа
-const regenerateAttachmentAnalysis = async (attachmentId) => {
-  isAnalyzing.value = true;
-  try {
-    const updatedAttachment = await documentStore.regenerateAttachmentAnalysis(attachmentId);
-    const index = document.value.attachments.findIndex(a => a.id === attachmentId);
-    if (index !== -1) {
-      document.value.attachments[index] = updatedAttachment;
-    }
-  } catch (err) {
-    error.value = 'Ошибка перегенерации анализа: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-}
-
 const addSentence = () => {
   document.value.keySentences.push('')
 }
@@ -347,7 +287,7 @@ const analyzeDocument = async () => {
   error.value = null
 
   try {
-    const updatedDocument = await documentStore.analyzeDocument(document.value.id)
+    const updatedDocument = await documentStore.analyzeDocument()
 
     document.value = {
       ...updatedDocument

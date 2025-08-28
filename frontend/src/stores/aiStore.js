@@ -63,14 +63,6 @@ export const useAIStore = defineStore("ai", () => {
     }
   };
 
-  const generateSummary = async (text) => {
-    return analyzeText(text);
-  };
-
-  const analyzeAttachment = async (text) => {
-    return analyzeText(text);
-  };
-
   // Геттеры
   const isServerOnline = computed(() => apiStatus.value === "ready");
   
@@ -92,8 +84,6 @@ export const useAIStore = defineStore("ai", () => {
     // Действия
     checkServerStatus,
     analyzeText,
-    generateSummary,
-    analyzeAttachment,
 
     // Геттеры
     isServerOnline,

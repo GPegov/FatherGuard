@@ -12,7 +12,12 @@ import fs from "fs/promises";
 import AIService from "./services/aiService.js";
 
 // Создаем экземпляр AIService
+console.log("Инициализация AIService...");
 const aiService = new AIService();
+console.log("AIService инициализирован с параметрами:", {
+  apiUrl: aiService.apiUrl,
+  activeModel: aiService.activeModel
+});
 const app = express();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -130,16 +135,54 @@ async function startServer() {
     // Эндпоинт для проверки статуса AI-сервера
     app.get("/api/status", async (req, res) => {
       try {
+        console.log("Проверка статуса AI-сервера...");
         const response = await fetch("http://localhost:11434/api/tags", {
           timeout: 3000,
         });
         if (response.status === 200) {
-          res.json({ status: "ready" });
+          const data = await response.json();
+          console.log("AI-сервер доступен, доступные модели:", data.models?.length || 0);
+          res.json({ status: "ready", models: data.models || [] });
         } else {
-          res.json({ status: "error" });
+          console.log("AI-сервер вернул статус:", response.status);
+          res.json({ status: "error", code: response.status });
         }
       } catch (error) {
-        res.json({ status: "offline" });
+        console.error("Ошибка проверки статуса AI-сервера:", error.message);
+        res.json({ status: "offline", error: error.message });
+      }
+    });
+
+    // Эндпоинт для проверки функциональности AIService
+    app.get("/api/ai-health", async (req, res) => {
+      try {
+        console.log("Проверка функциональности AIService...");
+        // Проверим, что AIService доступен в app.locals
+        if (!app.locals.aiService) {
+          console.error("AIService не найден в app.locals");
+          return res.status(500).json({ status: "error", message: "AIService not initialized" });
+        }
+        
+        // Простой тестовый запрос
+        const testPrompt = "Ответь кратко: Что такое юридический документ?";
+        console.log("Отправка тестового запроса к AIService...");
+        const result = await app.locals.aiService.queryLocalModel(testPrompt, {
+          temperature: 0.1,
+          format: "json"
+        });
+        
+        console.log("Тестовый запрос успешен, результат:", typeof result);
+        res.json({ 
+          status: "ready", 
+          testResult: typeof result === 'string' ? result.substring(0, 100) : JSON.stringify(result).substring(0, 100)
+        });
+      } catch (error) {
+        console.error("Ошибка проверки функциональности AIService:", error);
+        res.json({ 
+          status: "error", 
+          message: error.message,
+          stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        });
       }
     });
 

@@ -27,6 +27,16 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+
+  "nodemonConfig": {
+  "ignore": [
+    "data/",
+    "data/*",
+    "uploads/",
+    "db.json"
+  ],
+  "ext": "mjs,js,json"
+}
   
 }

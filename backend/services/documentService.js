@@ -20,6 +20,7 @@ class DocumentService {
    */
   async analyzeText(text, instructions = "", strictMode = false) {
     try {
+      console.log("Начало analyzeText");
       console.log('Анализ текста, длина текста:', text ? text.length : 0);
       
       // Проверка входных данных
@@ -62,13 +63,24 @@ class DocumentService {
       // Проверяем доступность Ollama перед вызовом
       try {
         console.log('Проверка доступности Ollama API:', aiService.apiUrl);
-        await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
+        // Используем AbortController для установки таймаута
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
           method: 'GET',
-          timeout: 5000
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         console.log('Ollama API доступен');
       } catch (ollamaError) {
-        console.error('Ollama API недоступен:', ollamaError.message);
+        console.error('Ollama API недоступен:', olлamaError.message);
+        console.error('Stack trace:', olлamaError.stack);
         return {
           success: true,
           data: {
@@ -91,6 +103,13 @@ class DocumentService {
       );
       console.log('Результат анализа текста:', analysisResult);
       
+      // Проверяем, есть ли у результата поле data (новый формат)
+      if (analysisResult && analysisResult.data) {
+        // Новый формат - возвращаем результат как есть
+        return analysisResult;
+      }
+      
+      // Старый формат - оборачиваем в новый формат
       // Убедимся, что все поля присутствуют
       const cleanResult = {
         summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
@@ -133,6 +152,7 @@ class DocumentService {
    */
   async analyzeDocument(document, instructions = "", strictMode = false) {
     try {
+      console.log("Начало analyzeDocument");
       console.log('Анализ документа, ID:', document.id);
       
       // Проверка входных данных
@@ -161,11 +181,15 @@ class DocumentService {
       };
       
       if (document.originalText && typeof document.originalText === 'string' && document.originalText.trim()) {
-        console.log('Анализ основного текста документа');
+        console.log('Анализ основного текста документа, длина:', document.originalText.length);
+        console.log('Текст (первые 200 символов):', document.originalText.substring(0, 200));
         const result = await this.analyzeText(document.originalText, instructions, strictMode);
+        console.log('Результат анализа основного текста:', result);
         if (result.success) {
           mainAnalysis = result.data;
         }
+      } else {
+        console.log('Основной текст документа отсутствует или пуст');
       }
       
       // Анализ вложений
@@ -175,16 +199,35 @@ class DocumentService {
         
         for (const attachment of document.attachments) {
           if (attachment.text && typeof attachment.text === 'string' && attachment.text.trim()) {
-            console.log('Анализ вложения:', attachment.id);
+            console.log('Анализ вложения:', attachment.id, 'длина текста:', attachment.text.length);
+            console.log('Текст вложения (первые 200 символов):', attachment.text.substring(0, 200));
             const result = await this.analyzeAttachment(attachment.text, instructions);
-            if (result.success) {
+            console.log('Результат анализа вложения:', result);
+            // Проверяем, есть ли у результата поле data (новый формат)
+            if (result && result.data) {
               attachmentsAnalysis.push({
                 id: attachment.id,
                 ...result.data
               });
+            } else if (result && result.success && result.success.data) {
+              // Альтернативный формат
+              attachmentsAnalysis.push({
+                id: attachment.id,
+                ...result.success.data
+              });
+            } else {
+              // Старый формат
+              attachmentsAnalysis.push({
+                id: attachment.id,
+                ...result
+              });
             }
+          } else {
+            console.log('Вложение', attachment.id, 'не содержит текста для анализа');
           }
         }
+      } else {
+        console.log('Вложения отсутствуют');
       }
       
       // Комбинируем результаты
@@ -197,7 +240,7 @@ class DocumentService {
         attachments: attachmentsAnalysis
       };
       
-      console.log('Возвращаем результат анализа документа:', combinedResult);
+      console.log('Возвращаем результат анализа документа:', JSON.stringify(combinedResult, null, 2));
       return {
         success: true,
         data: combinedResult,
@@ -229,6 +272,7 @@ class DocumentService {
    */
   async analyzeAttachment(text, instructions = "") {
     try {
+      console.log("Начало analyzeAttachment");
       console.log('Анализ вложения, длина текста:', text ? text.length : 0);
       
       // Проверка входных данных
@@ -272,14 +316,27 @@ class DocumentService {
       const analysisResult = await aiService.analyzeAttachment(trimmedText, instructions);
       console.log('Результат анализа вложения:', analysisResult);
 
-      // Убедимся, что все поля присутствуют
-      const cleanResult = {
-        documentType: analysisResult.documentType || "Неизвестный тип",
-        sentDate: analysisResult.sentDate || "",
-        senderAgency: analysisResult.senderAgency || "",
-        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(analysisResult.keySentences) ? analysisResult.keySentences : []
-      };
+      // Проверяем формат результата
+      let cleanResult;
+      if (analysisResult && analysisResult.data) {
+        // Новый формат
+        cleanResult = {
+          documentType: analysisResult.data.documentType || "Неизвестный тип",
+          sentDate: analysisResult.data.sentDate || "",
+          senderAgency: analysisResult.data.senderAgency || "",
+          summary: analysisResult.data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(analysisResult.data.keySentences) ? analysisResult.data.keySentences : []
+        };
+      } else {
+        // Старый формат
+        cleanResult = {
+          documentType: analysisResult.documentType || "Неизвестный тип",
+          sentDate: analysisResult.sentDate || "",
+          senderAgency: analysisResult.senderAgency || "",
+          summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(analysisResult.keySentences) ? analysisResult.keySentences : []
+        };
+      }
       
       console.log('Возвращаем результат анализа вложения:', cleanResult);
       return {

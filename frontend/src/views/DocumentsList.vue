@@ -69,27 +69,6 @@
       </div>
     </div>
 
-
-
-    <div v-if="showComplaintDialog" class="complaint-dialog" :class="{ closing: !showComplaintDialog && !isAnalyzing }">
-      <div class="dialog-content">
-        <h3>Выберите ведомство для жалобы</h3>
-        <select v-model="selectedComplaintAgency" class="agency-select">
-          <option v-for="agency in complaintAgencies" :key="agency" :value="agency">
-            {{ agency }}
-          </option>
-        </select>
-        <div class="dialog-actions">
-          <button @click="generateComplaint" class="action-btn primary" :disabled="!selectedComplaintAgency">
-            Сформировать жалобу
-          </button>
-          <button @click="showComplaintDialog = false" class="action-btn">
-            Отмена
-          </button>
-        </div>
-      </div>
-    </div>
-
     <NotificationToast 
       v-if="showNotification"
       :message="notificationMessage"
@@ -128,8 +107,6 @@ const isLoading = ref(false)
 const isAnalyzing = ref(false)
 const searchQuery = ref('')
 const selectedAgency = ref('')
-const showComplaintDialog = ref(false)
-const selectedComplaintAgency = ref('')
 const currentDocumentId = ref(null)
 
 // Для удаления документов
@@ -196,9 +173,6 @@ const filteredDocuments = computed(() => {
   })
 })
 
-// Варианты ведомств для жалоб
-const complaintAgencies = computed(() => complaintStore.agenciesOptions)
-
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('ru-RU')
 }
@@ -210,62 +184,6 @@ const applyFilters = () => {
 const resetFilters = () => {
   searchQuery.value = ''
   selectedAgency.value = ''
-}
-
-const analyzeDocument = async (docId) => {
-  isAnalyzing.value = true;
-  currentDocumentId.value = docId;
-  try {
-    // Загружаем данные документа
-    await documentStore.fetchDocumentById(docId);
-    
-    // Показываем диалог выбора ведомства
-    showComplaintDialog.value = true;
-  } catch (error) {
-    console.error('Ошибка загрузки документа:', error);
-    // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при загрузке документа';
-    notificationType.value = 'error';
-    showNotification.value = true;
-  } finally {
-    isAnalyzing.value = false;
-  }
-}
-
-const generateComplaint = async () => {
-  if (!selectedComplaintAgency.value || !currentDocumentId.value) return
-
-  // Скрываем модальное окно сразу после нажатия кнопки
-  showComplaintDialog.value = false
-  
-  // Показываем индикатор загрузки
-  isAnalyzing.value = true
-
-  try {
-    console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value)
-    const result = await complaintStore.generateComplaint(
-      currentDocumentId.value,
-      selectedComplaintAgency.value
-    )
-    console.log('Результат генерации жалобы:', result)
-    
-    // Ждем немного для плавного перехода
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Переходим к подробному просмотру созданной жалобы
-    router.push(`/complaints/${result.id}`)
-    
-  } catch (error) {
-    console.error('Ошибка генерации жалобы:', error)
-    
-    // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при формировании жалобы: ' + (error.message || 'Неизвестная ошибка')
-    notificationType.value = 'error'
-    showNotification.value = true
-  } finally {
-    // Скрываем индикатор загрузки
-    isAnalyzing.value = false
-  }
 }
 </script>
 

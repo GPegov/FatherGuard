@@ -90,102 +90,6 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-  const analyzeDocumentContent = async (documentId) => {
-    try {
-      const id = documentId || currentDocument.value.id;
-      console.log('Анализ содержимого документа, ID:', id);
-      // Правильная передача параметров анализа
-      const { data } = await axios.post(
-        `${API_BASE}/api/documents/${id}/analyze`,
-        {
-          instructions: "",
-          strictMode: false
-        }
-      );
-
-      console.log("Полный ответ модели:", data);
-      
-      return {
-        summary: data.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(data.keySentences) ? 
-          data.keySentences : 
-          [],
-        violations: Array.isArray(data.violations) ?
-          data.violations :
-          [],
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || ""
-      };
-    } catch (error) {
-      console.error("Ошибка анализа документа:", error);
-      // Возвращаем объект с полями по умолчанию в случае ошибки
-      return {
-        summary: "Ошибка анализа документа: " + (error.response?.data?.message || error.message),
-        keySentences: [],
-        violations: [],
-        documentDate: "",
-        senderAgency: ""
-      };
-    }
-  };
-
-  const analyzeAttachments = async () => {
-    console.log(
-      "Анализ вложений, количество:",
-      currentDocument.value.attachments?.length
-    );
-    if (!currentDocument.value.attachments?.length)
-      return currentDocument.value.attachments;
-
-    const analyzedAttachments = [];
-    for (const attachment of currentDocument.value.attachments) {
-      console.log("Анализ вложения:", attachment.id);
-      if (attachment.text) {
-        try {
-          const { data } = await axios.post(
-            `${API_BASE}/api/attachments/analyze`,
-            { text: attachment.text }
-          );
-          console.log("Результат анализа вложения:", data);
-          analyzedAttachments.push({
-            ...attachment,
-            analysis: data,
-            documentDate: data.documentDate || "",
-            senderAgency: data.senderAgency || "",
-            summary: data.summary || "",
-            keySentences: data.keySentences || [],
-          });
-        } catch (error) {
-          console.error("Ошибка анализа вложения:", error);
-          // Даже в случае ошибки добавляем вложение, но с полями по умолчанию
-          analyzedAttachments.push({
-            ...attachment,
-            analysis: {
-              documentType: "Неизвестный тип",
-              sentDate: "",
-              senderAgency: "",
-              summary:
-                "Ошибка анализа вложения: " +
-                (error.response?.data?.message || error.message),
-              keySentences: [],
-            },
-            documentDate: "",
-            senderAgency: "",
-            summary:
-              "Ошибка анализа вложения: " +
-              (error.response?.data?.message || error.message),
-            keySentences: [],
-          });
-        }
-      } else {
-        console.log("Вложение не содержит текста:", attachment.id);
-        analyzedAttachments.push(attachment);
-      }
-    }
-    console.log("Анализ вложений завершен:", analyzedAttachments);
-    return analyzedAttachments;
-  };
-
   const determineTargetAgency = (text) => {
     const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
     if (!violations) return "";
@@ -382,13 +286,49 @@ export const useDocumentStore = defineStore("document", () => {
     try {
       currentDocument.value.analysisStatus = "processing";
 
-      const analysis = await analyzeDocumentContent(currentDocument.value.id);
-      const attachmentsAnalysis = await analyzeAttachments();
+      // Вызываем бэкенд для анализа документа
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+        {
+          instructions: "",
+          strictMode: false
+        }
+      );
 
       currentDocument.value = {
         ...currentDocument.value,
-        ...analysis,
-        attachments: attachmentsAnalysis,
+        summary: data.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(data.keySentences) ? 
+          data.keySentences : 
+          [],
+        violations: Array.isArray(data.violations) ?
+          data.violations :
+          [],
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        attachments: data.attachments ? 
+          currentDocument.value.attachments.map(attachment => {
+            // Найдем соответствующий анализ в результатах
+            const analysis = data.attachments.find(a => a.id === attachment.id);
+            if (analysis) {
+              return {
+                ...attachment,
+                analysis: {
+                  documentType: analysis.documentType || "Документ",
+                  sentDate: analysis.sentDate || "",
+                  senderAgency: analysis.senderAgency || "",
+                  summary: analysis.summary || "",
+                  keySentences: analysis.keySentences || []
+                },
+                documentDate: analysis.sentDate || attachment.documentDate || "",
+                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                summary: analysis.summary || attachment.summary || "",
+                keySentences: analysis.keySentences || attachment.keySentences || []
+              };
+            }
+            return attachment;
+          }) : 
+          currentDocument.value.attachments,
         analysisStatus: "completed",
         lastAnalyzedAt: new Date().toISOString(),
       };
@@ -405,45 +345,7 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-  const regenerateAttachmentAnalysis = async (attachmentId) => {
-    isAnalyzing.value = true;
-    try {
-      const attachment = currentDocument.value.attachments.find(
-        (a) => a.id === attachmentId
-      );
-      if (!attachment || !attachment.text) {
-        throw new Error("Вложение не найдено или не содержит текст");
-      }
-
-      const { data } = await axios.post(`${API_BASE}/api/attachments/analyze`, {
-        text: attachment.text,
-      });
-
-      const updatedAttachment = {
-        ...attachment,
-        analysis: data,
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || "",
-        summary: data.summary || "",
-        keySentences: data.keySentences || [],
-      };
-
-      const index = currentDocument.value.attachments.findIndex(
-        (a) => a.id === attachmentId
-      );
-      if (index !== -1) {
-        currentDocument.value.attachments[index] = updatedAttachment;
-        await saveDocument();
-      }
-
-      return updatedAttachment;
-    } catch (err) {
-      error.value = "Ошибка перегенерации анализа: " + err.message;
-      throw err;
-    } finally {
-      isAnalyzing.value = false;
-    }
-  };
+  
 
   const fetchComplaints = async (documentId) => {
     return handleApiCall(async () => {
@@ -485,7 +387,6 @@ export const useDocumentStore = defineStore("document", () => {
     saveDocument,
     deleteDocument,
     analyzeDocument,
-    regenerateAttachmentAnalysis,
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,

@@ -1,7 +1,9 @@
 import axios from "axios";
+import crypto from "crypto";
 
 class AIService {
   constructor(apiUrl, activeModel) {
+    console.log("Инициализация AIService с параметрами:", { apiUrl, activeModel });
     this.apiUrl = apiUrl || "http://localhost:11434/api/generate";
     this.activeModel = activeModel || "llama3.1/18/8192";
     this.defaultOptions = {
@@ -14,6 +16,11 @@ class AIService {
     this.maxCacheSize = 100; // Cache size limit
     this.cacheTTL = 30 * 60 * 1000; // 30 minutes TTL in milliseconds
     this.maxRetries = 2;
+    console.log("AIService инициализирован с параметрами:", {
+      apiUrl: this.apiUrl,
+      activeModel: this.activeModel,
+      defaultOptions: this.defaultOptions
+    });
     // Explicit method binding
     this.queryLocalModel = this.queryLocalModel.bind(this);
     this.analyzeLegalText = this.analyzeLegalText.bind(this);
@@ -23,7 +30,7 @@ class AIService {
 
   async queryLocalModel(prompt, customOptions = {}) {
     try {
-      console.log("queryLocalModel called");
+      console.log("Начало queryLocalModel");
       console.log("API URL:", this.apiUrl);
       console.log("Model:", this.activeModel);
       console.log("Prompt type:", typeof prompt);
@@ -52,7 +59,7 @@ class AIService {
         ...customOptions,
         strictMode: customOptions.strictMode || false
       };
-      const preparedPrompt = this.preparePrompt(processedPrompt, customOptions.taskType, promptOptions);
+      const preparedPrompt = this.preparePrompt(processedPrompt, customOptions.taskType, customOptions);
 
       console.log("Sending request to AI model:", {
         url: this.apiUrl,
@@ -62,16 +69,17 @@ class AIService {
       });
 
       try {
+        // Подготавливаем параметры напрямую, а не вложенным объектом
         const requestData = {
           model: this.activeModel,
           prompt: typeof preparedPrompt === 'object' ? JSON.stringify(preparedPrompt, null, 2) : preparedPrompt,
           stream: false,
-          options: ollamaOptions,
+          ...ollamaOptions, // Параметры передаем напрямую
         };
 
-        // If format=json, add format to options
+        // If format=json, add format directly to requestData
         if (customOptions.format === "json") {
-          requestData.options.format = "json";
+          requestData.format = "json";
           // Add clear instruction to prompt for JSON return
           requestData.prompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
             "1. RESPOND ONLY IN JSON FORMAT\n" +
@@ -112,7 +120,21 @@ class AIService {
         if (error.code === 'ECONNRESET') {
           throw new Error("Соединение с Ollama было сброшено. Пожалуйста, проверьте стабильность подключения.");
         }
-        throw this.normalizeError(error);
+        if (error.response) {
+          // Server responded with error status
+          console.error("Response error data:", error.response.data);
+          console.error("Response error status:", error.response.status);
+          console.error("Response error headers:", error.response.headers);
+          throw new Error(`AI Model error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error("No response received:", error.request);
+          throw new Error("No response received from AI Model. Please check if the service is running.");
+        } else {
+          // Something else happened
+          console.error("Error message:", error.message);
+          throw new Error(`Error in AI Model request: ${error.message}`);
+        }
       }
     } catch (error) {
       console.error("Unexpected error in queryLocalModel:", error);
@@ -123,6 +145,7 @@ class AIService {
 
   async analyzeLegalText(text, instructions = "", strictMode = false) {
     try {
+      console.log("Начало analyzeLegalText");
       console.log("analyzeLegalText called with text length:", text ? text.length : 0);
       console.log("Instructions:", instructions);
       console.log("Strict mode:", strictMode);
@@ -231,50 +254,70 @@ class AIService {
         this.cacheTimestamps.set(cacheKey, Date.now());
         
         console.log("Analysis completed successfully:", enhancedResult);
-        return enhancedResult;
+        return {
+          success: true,
+          data: enhancedResult,
+          timestamp: new Date().toISOString()
+        };
       } catch (error) {
         console.error("Error in analyzeLegalText:", error);
         console.error("Error stack:", error.stack);
         // Return default object in case of error
         return {
-          summary: "Error analyzing document: " + error.message,
-          keySentences: [],
-          violations: [],
-          documentDate: "",
-          senderAgency: "",
+          success: true,
+          data: {
+            summary: "Error analyzing document: " + error.message,
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: "",
+          },
+          timestamp: new Date().toISOString()
         };
       }
     } catch (error) {
       console.error("Unexpected error in analyzeLegalText:", error);
       console.error("Error stack:", error.stack);
       return {
-        summary: "Unexpected error: " + error.message,
-        keySentences: [],
-        violations: [],
-        documentDate: "",
-        senderAgency: "",
+        success: true,
+        data: {
+          summary: "Unexpected error: " + error.message,
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: "",
+        },
+        timestamp: new Date().toISOString()
       };
     }
   }
 
   safeParseResponse(response) {
+    console.log("Начало safeParseResponse");
+    console.log("Тип ответа:", typeof response);
     // If response is already an object, return it as is
     if (typeof response === "object" && response !== null) {
+      console.log("Ответ уже является объектом");
       return response;
     }
     
     // If response is a string
     if (typeof response === "string") {
+      console.log("Ответ является строкой, попытка парсинга");
       // Attempt 1: Direct parsing of entire string as JSON
       try {
-        return JSON.parse(response);
+        const parsed = JSON.parse(response);
+        console.log("Успешный парсинг JSON");
+        return parsed;
       } catch (directParseError) {
         console.error("Direct JSON parse failed:", directParseError);
         // Attempt 2: Extract JSON from markdown code blocks
         try {
           const jsonMatch = response.match(/```(?:json)?\s*({.*?})\s*```/s);
           if (jsonMatch && jsonMatch[1]) {
-            return JSON.parse(jsonMatch[1]);
+            const parsed = JSON.parse(jsonMatch[1]);
+            console.log("Успешный парсинг JSON из markdown");
+            return parsed;
           }
         } catch (markdownParseError) {
           console.error("Markdown JSON parse failed:", markdownParseError);
@@ -283,14 +326,16 @@ class AIService {
         // Attempt 3: Manual extraction of key fields
         try {
           const summaryMatch = response.match(/"summary"\s*:\s*"([^"]+)"/);
-          const keySentencesMatch = response.match(/"keySentences"\s*:\s*($$[^$$]*$$)/);
-          const violationsMatch = response.match(/"violations"\s*:\s*($$[^$$]*$$)/);
+          const keySentencesMatch = response.match(/"keySentences"\s*:\s*($[^$]*$)/);
+          const violationsMatch = response.match(/"violations"\s*:\s*($[^$]*$)/);
           
-          return {
+          const result = {
             summary: summaryMatch ? summaryMatch[1] : "Failed to extract summary",
             keySentences: keySentencesMatch ? JSON.parse(keySentencesMatch[1]) : [],
             violations: violationsMatch ? JSON.parse(violationsMatch[1]) : []
           };
+          console.log("Успешная ручная распаковка ответа");
+          return result;
         } catch (manualParseError) {
           console.error("Manual JSON parse failed:", manualParseError);
         }
@@ -304,6 +349,7 @@ class AIService {
 
   async analyzeAttachment(text, instructions = "") {
     try {
+      console.log("Начало analyzeAttachment");
       console.log("analyzeAttachment called with text length:", text ? text.length : 0);
       
       if (!text || typeof text !== 'string') {
@@ -326,41 +372,29 @@ class AIService {
       
       console.log("Sending attachment text:", processedText.substring(0, 200) + "...");
       
-      const promptData = this.buildAttachmentAnalysisPrompt(processedText, instructions);
-      
-      const result = await this.queryLocalModel(promptData, {
-        temperature: 0.2,
-        format: "json",
-        taskType: "attachment"
-      });
+      // Анализируем вложение через AI-сервис, используя тот же промпт, что и для основного документа
+      console.log("Вызов analyzeLegalText для анализа вложения");
+      const analysisResult = await this.analyzeLegalText(processedText, instructions, false);
+      console.log("Результат анализа вложения:", analysisResult);
 
-      const parsedResult = this.safeParseResponse(result);
-      
-      if (!parsedResult) {
-        return {
-          documentType: "Failed to parse",
-          sentDate: "",
-          senderAgency: "",
-          summary: "Failed to parse model response",
-          keySentences: [],
-        };
-      }
-
-      return {
-        documentType: parsedResult.documentType || "Unknown",
-        sentDate: parsedResult.sentDate || parsedResult.documentDate || "",
-        senderAgency: parsedResult.senderAgency || parsedResult.agency || "",
-        summary: parsedResult.summary || parsedResult.content || "Failed to generate summary",
-        keySentences: Array.isArray(parsedResult.keySentences) 
-          ? parsedResult.keySentences.filter((p) => p && p.length > 5)
-          : (Array.isArray(parsedResult.content) 
-            ? parsedResult.content.filter((p) => p && p.length > 5)
-            : []),
+      // Формируем результат в формате вложения
+      const attachmentResult = {
+        documentType: "Документ", // Будет определен моделью
+        sentDate: analysisResult.documentDate || "",
+        senderAgency: analysisResult.senderAgency || "",
+        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(analysisResult.keySentences) 
+          ? analysisResult.keySentences.filter((p) => p && p.length > 5)
+          : []
       };
+      
+      console.log("Возвращаем результат анализа вложения:", attachmentResult);
+      return attachmentResult;
+
     } catch (error) {
       console.error("Error in analyzeAttachment:", error);
       return {
-        documentType: "Error",
+        documentType: "Неизвестный тип",
         sentDate: "",
         senderAgency: "",
         summary: "Error analyzing attachment: " + error.message,
@@ -370,41 +404,75 @@ class AIService {
   }
 
   extractDate(text) {
+    console.log("Начало extractDate");
+    console.log("Text length:", text ? text.length : 0);
     // Implementation for date extraction
     const dateRegex = /(\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4})|(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/;
     const match = text.match(dateRegex);
-    return match ? match[0] : "";
+    const result = match ? match[0] : "";
+    console.log("Extracted date:", result);
+    return result;
   }
 
   extractAgency(text) {
+    console.log("Начало extractAgency");
+    console.log("Text length:", text ? text.length : 0);
     // Implementation for agency extraction
     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    return agencies.find((agency) => text.includes(agency)) || "";
+    const result = agencies.find((agency) => text.includes(agency)) || "";
+    console.log("Extracted agency:", result);
+    return result;
   }
 
   buildAnalysisPrompt(text, instructions, strictMode) {
+    console.log("Начало buildAnalysisPrompt");
+    console.log("Text length:", text ? text.length : 0);
+    console.log("Instructions:", instructions);
+    console.log("Strict mode:", strictMode);
     // Implementation for building analysis prompt
-    return {
+    const result = {
       task: "legal_analysis",
       text: text,
       instructions: instructions,
       strictMode: strictMode
     };
+    console.log("Сформированный prompt объект:", result);
+    return result;
   }
 
-  buildAttachmentAnalysisPrompt(text, instructions = "") {
-    // Implementation for building attachment analysis prompt
-    return {
-      task: "attachment_analysis",
-      text: text,
-      instructions: instructions
+  buildComplaintPrompt(analysisData, agency) {
+    console.log("Начало buildComplaintPrompt");
+    console.log("Agency:", agency);
+    console.log("Analysis data:", analysisData);
+    
+    // Создаем структурированные данные для AI
+    const promptData = {
+      task: "generate_complaint",
+      agency: agency,
+      mainDocument: {
+        summary: analysisData.summary,
+        keySentences: analysisData.keySentences?.slice(0, 10) || [], // Ограничиваем количество
+        violations: analysisData.violations || [],
+        documentDate: analysisData.documentDate,
+        senderAgency: analysisData.senderAgency
+      },
+      hasRelatedDocuments: analysisData.attachments && analysisData.attachments.length > 0,
+      relatedDocumentsCount: analysisData.attachments?.length || 0
     };
+
+    console.log("Сформированный prompt объект:", promptData);
+    return promptData;
   }
 
   preparePrompt(prompt, taskType, options) {
+    console.log("Начало preparePrompt");
+    console.log("Тип prompt:", typeof prompt);
+    console.log("Task type:", taskType);
+    console.log("Options:", options);
     // Если prompt является объектом (как в случае с buildAnalysisPrompt), используем его поля
     if (typeof prompt === 'object' && prompt !== null) {
       const { text, instructions, strictMode, task } = prompt;
+      console.log("Prompt является объектом, поля:", { text: text ? text.substring(0, 100) : 'null', instructions, strictMode, task });
       
       // Формируем промпт в зависимости от типа задачи
       let basePrompt = text || "";
@@ -436,72 +504,78 @@ ${instructions}`;
 - documentDate: дата документа
 - senderAgency: ведомство-отправитель`;
           break;
-        case 'summary':
+        case 'generate_complaint':
           basePrompt = `${basePrompt}
 
-СОЗДАЙТЕ КРАТКУЮ СУТЬ ДОКУМЕНТА.`;
-          break;
-        case 'paragraphs':
-          basePrompt = `${basePrompt}
+СОЗДАЙТЕ ОФИЦИАЛЬНУЮ ЖАЛОБУ В ${agency} ОТ ПЕРВОГО ЛИЦА ЗАЯВИТЕЛЯ.
+ОСНОВНЫЕ ТРЕБОВАНИЯ:
+1. ИСПОЛЬЗУЙТЕ ДЕЛОВОЙ СТИЛЬ, СТРОГО ПО СУЩЕСТВУ
+2. УКАЖИТЕ КОНКРЕТНЫЕ НАРУШЕНИЯ ЗАКОНОВ
+3. СДЕЛАЙТЕ ССЫЛКИ НА СТАТЬИ ЗАКОНОВ
+4. ПРЕДЛОЖИТЕ КОНКРЕТНЫЕ ТРЕБОВАНИЯ
+5. НЕ ВКЛЮЧАЙТЕ ПОЛНЫЙ ТЕКСТ ДОКУМЕНТА
 
-ИЗВЛЕЧИТЕ ВАЖНЫЕ ПРЕДЛОЖЕНИЯ ИЗ ДОКУМЕНТА.`;
-          break;
-        case 'violations':
-          basePrompt = `${basePrompt}
-
-ВЫЯВИТЕ ВОЗМОЖНЫЕ НАРУШЕНИЯ В ДОКУМЕНТЕ.`;
-          break;
-        case 'attachment_analysis':
-          basePrompt = `${basePrompt}
-
-ПРОАНАЛИЗИРУЙТЕ ВЛОЖЕНИЕ И ПРЕДОСТАВЬТЕ СТРУКТУРИРОВАННЫЙ ОТВЕТ В ФОРМАТЕ JSON С ПОЛЯМИ:
-- documentType: тип документа
-- sentDate: дата отправки
-- senderAgency: ведомство-отправитель
-- summary: краткая суть
-- keySentences: массив важных предложений`;
+ВЕРНИТЕ РЕЗУЛЬТАТ В ФОРМАТЕ JSON:
+{
+  "content": "текст жалобы"
+}`;
           break;
       }
       
+      console.log("Сформированный prompt (первые 200 символов):", basePrompt.substring(0, 200));
       return basePrompt;
     }
     
     // Если prompt - строка, возвращаем её как есть
+    console.log("Prompt является строкой");
     return prompt;
   }
 
   generateCacheKey(text, instructions) {
-    // Implementation for generating cache key
-    return `${text.substring(0, 100)}_${instructions}`;
+    // Создаем более уникальный ключ, используя хэш от полного текста и инструкций
+    const hash = crypto.createHash('md5');
+    hash.update(text + instructions);
+    return hash.digest('hex');
   }
 
   cleanupExpiredCache() {
+    console.log("Начало cleanupExpiredCache");
     // Implementation for cleaning up expired cache
     const now = Date.now();
+    let cleanedCount = 0;
     for (const [key, timestamp] of this.cacheTimestamps.entries()) {
       if (now - timestamp > this.cacheTTL) {
         this.analysisCache.delete(key);
         this.cacheTimestamps.delete(key);
+        cleanedCount++;
       }
     }
+    console.log("Очищено записей из кэша:", cleanedCount);
   }
 
   clearCache() {
+    console.log("Начало clearCache");
     // Implementation for clearing cache
     this.analysisCache.clear();
     this.cacheTimestamps.clear();
+    console.log("Cache cleared");
   }
 
   getCacheStats() {
+    console.log("Начало getCacheStats");
     // Implementation for getting cache stats
-    return {
+    const stats = {
       size: this.analysisCache.size,
       max_size: this.maxCacheSize,
       ttl: this.cacheTTL
     };
+    console.log("Cache stats:", stats);
+    return stats;
   }
 
   normalizeError(error) {
+    console.log("Начало normalizeError");
+    console.log("Error:", error);
     // Implementation for normalizing error
     return error;
   }

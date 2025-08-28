@@ -14,26 +14,16 @@ export default function documentRoutes({ db, upload }) {
   const router = Router();
 
   // Middleware для проверки JSON только для POST и PUT запросов с JSON телом
+  // Так как express.json() уже применяется в app.mjs, здесь мы просто добавим дополнительную проверку
   router.use((req, res, next) => {
     if ((req.method === 'POST' || req.method === 'PUT') && req.is('application/json')) {
-      express.json({
-        verify: (req, res, buf, encoding) => {
-          try {
-            if (buf.length > 0) {
-              JSON.parse(buf.toString());
-            }
-          } catch (e) {
-            console.error('Invalid JSON:', buf.toString());
-            // Отправляем ошибку и завершаем обработку
-            res.status(400).json({ message: 'Invalid JSON' });
-            // Не выбрасываем ошибку, а просто возвращаемся
-            return;
-          }
-        }
-      })(req, res, next);
-    } else {
-      next();
+      // Если есть тело запроса и оно не является объектом, значит возникла ошибка парсинга
+      if (req.body && typeof req.body !== 'object') {
+        console.error('Invalid JSON body:', req.body);
+        return res.status(400).json({ message: 'Invalid JSON' });
+      }
     }
+    next();
   });
 
   // Извлечение текста из файла
@@ -389,98 +379,7 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  // Анализ документа
-  router.post('/:id/analyze', async (req, res) => {
-    try {
-      console.log('Raw body:', req.body);
-      console.log('Type of strictMode:', typeof req.body.strictMode, req.body.strictMode);
-      console.log(`Получен запрос на анализ документа с ID: ${req.params.id}`);
-      
-      // Используем значения по умолчанию, если параметры не переданы
-      const { 
-        model = process.env.AI_MODEL || "llama3.1/18/8192",
-        instructions = "",
-        strictMode = false 
-      } = req.body;
-      
-      console.log(`Параметры анализа: model=${model}, instructions=${instructions}, strictMode=${strictMode}`);
-      
-      const doc = db.data.documents.find(d => d.id === req.params.id);
-      
-      if (!doc) {
-        console.log(`Документ с ID ${req.params.id} не найден`);
-        return res.status(404).json({ 
-          message: 'Документ не найден',
-          documentId: req.params.id
-        });
-      }
-      
-      console.log(`Найден документ:`, {
-        id: doc.id,
-        hasOriginalText: !!doc.originalText,
-        originalTextLength: doc.originalText ? doc.originalText.length : 0,
-        attachmentsCount: doc.attachments ? doc.attachments.length : 0
-      });
-      
-      // Проверяем, что документ содержит текст или вложения
-      const hasOriginalText = doc.originalText && doc.originalText.trim().length > 0;
-      const hasAttachmentsWithText = doc.attachments && doc.attachments.some(att => att.text && att.text.trim().length > 0);
-      
-      console.log(`Проверка содержимого: hasOriginalText=${hasOriginalText}, hasAttachmentsWithText=${hasAttachmentsWithText}`);
-      
-      if (!hasOriginalText && !hasAttachmentsWithText) {
-        console.log(`Документ не содержит текста для анализа`);
-        return res.status(400).json({ 
-          message: 'Документ должен содержать текст или вложения с текстом для анализа',
-          documentId: req.params.id
-        });
-      }
-      
-      // Обновление статуса
-      doc.analysisStatus = 'processing';
-      doc.updatedAt = new Date().toISOString();
-      await db.write();
-      console.log(`Статус документа обновлен на 'processing'`);
-
-      console.log("Вызов analyzeDocument");
-      const analysisResult = await analyzeDocument(doc, instructions, strictMode);
-      console.log("Результат analyzeDocument:", analysisResult);
-      
-      if (analysisResult.success) {
-        // Обновление документа
-        console.log("Вызов updateDocumentAnalysis");
-        updateDocumentAnalysis(doc, analysisResult.data);
-        await db.write();
-        console.log(`Документ обновлен после анализа`);
-
-        res.json({
-          ...analysisResult.data,
-          modelUsed: model,
-          analyzedAt: doc.lastAnalyzedAt
-        });
-      } else {
-        throw new Error(analysisResult.error || "Неизвестная ошибка анализа");
-      }
-
-    } catch (err) {
-      console.error(`Ошибка анализа документа ${req.params.id}:`, err);
-      
-      // Обновление статуса в случае ошибки
-      const doc = db.data.documents.find(d => d.id === req.params.id);
-      if (doc) {
-        doc.analysisStatus = 'failed';
-        doc.updatedAt = new Date().toISOString();
-        await db.write();
-      }
-      
-      res.status(500).json({
-        message: 'Ошибка при анализе документа',
-        error: err.message,
-        documentId: req.params.id,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-      });
-    }
-  });
+  
 
   // Удаление документа
   router.delete('/:id', async (req, res) => {
@@ -633,9 +532,13 @@ export default function documentRoutes({ db, upload }) {
   // Анализ документа по ID
   router.post('/:id/analyze', async (req, res) => {
     try {
+      console.log("Начало обработки запроса на анализ документа");
       const { id } = req.params;
+      console.log("Параметры запроса:", req.params);
+      
       // Корректная обработка типа для strictMode
-      let { instructions = "", strictMode = false } = req.body;
+      let { instructions = "", strictMode = false, model } = req.body;
+      console.log("Тело запроса:", req.body);
       
       // Преобразуем strictMode в boolean, если он пришел как строка
       if (typeof strictMode === 'string') {
@@ -646,13 +549,15 @@ export default function documentRoutes({ db, upload }) {
       }
       
       console.log(`Получен запрос на анализ документа с ID: ${id}`);
-      
-      // Используем значения по умолчанию, если параметры не переданы
-      const { 
-        model = process.env.AI_MODEL || "llama3.1/18/8192"
-      } = req.body;
-      
       console.log(`Параметры анализа: model=${model}, instructions=${instructions}, strictMode=${strictMode}`);
+      
+      // Проверка наличия БД
+      if (!db || !db.data || !db.data.documents) {
+        console.error("Ошибка: БД не инициализирована правильно");
+        return res.status(500).json({ 
+          message: 'Ошибка сервера: БД не инициализирована' 
+        });
+      }
       
       const doc = db.data.documents.find(d => d.id === id);
       
@@ -704,7 +609,7 @@ export default function documentRoutes({ db, upload }) {
 
         res.json({
           ...analysisResult.data,
-          modelUsed: model,
+          modelUsed: model || process.env.AI_MODEL || "llama3.1/18/8192",
           analyzedAt: doc.lastAnalyzedAt
         });
       } else {
@@ -712,14 +617,21 @@ export default function documentRoutes({ db, upload }) {
       }
     } catch (err) {
       console.error(`Ошибка анализа документа:`, err);
+      console.error("Стек ошибки:", err.stack);
       
       // Обновление статуса документа в случае ошибки
-      const { id } = req.params;
-      const doc = db.data.documents.find(d => d.id === id);
-      if (doc) {
-        doc.analysisStatus = 'failed';
-        doc.updatedAt = new Date().toISOString();
-        await db.write();
+      try {
+        const { id } = req.params;
+        if (db && db.data && db.data.documents) {
+          const doc = db.data.documents.find(d => d.id === id);
+          if (doc) {
+            doc.analysisStatus = 'failed';
+            doc.updatedAt = new Date().toISOString();
+            await db.write();
+          }
+        }
+      } catch (dbError) {
+        console.error("Ошибка при обновлении статуса документа:", dbError);
       }
       
       res.status(500).json({ 

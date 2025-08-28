@@ -498,13 +498,17 @@ class DocumentService {
       // Проверяем доступность Ollama перед вызовом
       try {
         console.log('Проверка доступности Ollama API:', aiService.apiUrl);
-        await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
+        const response = await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
           method: 'GET',
           timeout: 5000
         });
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
         console.log('Ollama API доступен');
       } catch (ollamaError) {
-        console.error('Ollama API недоступен:', ollamaError.message);
+        console.error('Ollama API недоступен:', olлamaError.message);
+        console.error('Stack trace:', olлamaError.stack);
         return {
           success: true,
           data: {
@@ -597,11 +601,15 @@ class DocumentService {
       };
       
       if (document.originalText && typeof document.originalText === 'string' && document.originalText.trim()) {
-        console.log('Анализ основного текста документа');
+        console.log('Анализ основного текста документа, длина:', document.originalText.length);
+        console.log('Текст (первые 200 символов):', document.originalText.substring(0, 200));
         const result = await this.analyzeText(document.originalText, instructions, strictMode);
+        console.log('Результат анализа основного текста:', result);
         if (result.success) {
           mainAnalysis = result.data;
         }
+      } else {
+        console.log('Основной текст документа отсутствует или пуст');
       }
       
       // Анализ вложений
@@ -611,16 +619,22 @@ class DocumentService {
         
         for (const attachment of document.attachments) {
           if (attachment.text && typeof attachment.text === 'string' && attachment.text.trim()) {
-            console.log('Анализ вложения:', attachment.id);
+            console.log('Анализ вложения:', attachment.id, 'длина текста:', attachment.text.length);
+            console.log('Текст вложения (первые 200 символов):', attachment.text.substring(0, 200));
             const result = await this.analyzeAttachment(attachment.text, instructions);
+            console.log('Результат анализа вложения:', result);
             if (result.success) {
               attachmentsAnalysis.push({
                 id: attachment.id,
                 ...result.data
               });
             }
+          } else {
+            console.log('Вложение', attachment.id, 'не содержит текста для анализа');
           }
         }
+      } else {
+        console.log('Вложения отсутствуют');
       }
       
       // Комбинируем результаты
@@ -633,7 +647,7 @@ class DocumentService {
         attachments: attachmentsAnalysis
       };
       
-      console.log('Возвращаем результат анализа документа:', combinedResult);
+      console.log('Возвращаем результат анализа документа:', JSON.stringify(combinedResult, null, 2));
       return {
         success: true,
         data: combinedResult,
@@ -866,16 +880,34 @@ class ComplaintService {
       const prompt = this.buildAIPrompt(mainDocData, relatedDocsData, agency);
       console.log('Отправка запроса к AI с промптом:', prompt.substring(0, 200) + '...');
       
+      // Проверим наличие текста в документе
+      if (!mainDocData.originalText || mainDocData.originalText.trim().length === 0) {
+        console.log('Внимание: основной документ не содержит текста');
+        if (mainDocData.summary) {
+          console.log('Используется summary документа:', mainDocData.summary.substring(0, 100) + '...');
+        }
+      } else {
+        console.log('Текст основного документа (первые 200 символов):', mainDocData.originalText.substring(0, 200) + '...');
+      }
+      
       const response = await aiService.queryLocalModel(prompt, {
         temperature: 0.6,
         taskType: "complaint",
         format: "json"
       });
       
+      console.log('Ответ от AI получен:', typeof response);
+      if (typeof response === 'string') {
+        console.log('Ответ от AI (первые 200 символов):', response.substring(0, 200));
+      } else {
+        console.log('Ответ от AI (объект):', JSON.stringify(response).substring(0, 200));
+      }
+      
       return this.parseAIResponse(response);
       
     } catch (aiError) {
       console.error('Ошибка AI генерации:', aiError);
+      console.error('Стек ошибки:', aiError.stack);
       // Возвращаем запасной вариант
       return {
         content: this.generateFallbackComplaint(mainDocData, agency)
@@ -1182,7 +1214,21 @@ class AIService {
         if (error.code === 'ECONNRESET') {
           throw new Error("Соединение с Ollama было сброшено. Пожалуйста, проверьте стабильность подключения.");
         }
-        throw this.normalizeError(error);
+        if (error.response) {
+          // Server responded with error status
+          console.error("Response error data:", error.response.data);
+          console.error("Response error status:", error.response.status);
+          console.error("Response error headers:", error.response.headers);
+          throw new Error(`AI Model error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error("No response received:", error.request);
+          throw new Error("No response received from AI Model. Please check if the service is running.");
+        } else {
+          // Something else happened
+          console.error("Error message:", error.message);
+          throw new Error(`Error in AI Model request: ${error.message}`);
+        }
       }
     } catch (error) {
       console.error("Unexpected error in queryLocalModel:", error);
@@ -1973,98 +2019,7 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  // Анализ документа
-  router.post('/:id/analyze', async (req, res) => {
-    try {
-      console.log('Raw body:', req.body);
-      console.log('Type of strictMode:', typeof req.body.strictMode, req.body.strictMode);
-      console.log(`Получен запрос на анализ документа с ID: ${req.params.id}`);
-      
-      // Используем значения по умолчанию, если параметры не переданы
-      const { 
-        model = process.env.AI_MODEL || "llama3.1/18/8192",
-        instructions = "",
-        strictMode = false 
-      } = req.body;
-      
-      console.log(`Параметры анализа: model=${model}, instructions=${instructions}, strictMode=${strictMode}`);
-      
-      const doc = db.data.documents.find(d => d.id === req.params.id);
-      
-      if (!doc) {
-        console.log(`Документ с ID ${req.params.id} не найден`);
-        return res.status(404).json({ 
-          message: 'Документ не найден',
-          documentId: req.params.id
-        });
-      }
-      
-      console.log(`Найден документ:`, {
-        id: doc.id,
-        hasOriginalText: !!doc.originalText,
-        originalTextLength: doc.originalText ? doc.originalText.length : 0,
-        attachmentsCount: doc.attachments ? doc.attachments.length : 0
-      });
-      
-      // Проверяем, что документ содержит текст или вложения
-      const hasOriginalText = doc.originalText && doc.originalText.trim().length > 0;
-      const hasAttachmentsWithText = doc.attachments && doc.attachments.some(att => att.text && att.text.trim().length > 0);
-      
-      console.log(`Проверка содержимого: hasOriginalText=${hasOriginalText}, hasAttachmentsWithText=${hasAttachmentsWithText}`);
-      
-      if (!hasOriginalText && !hasAttachmentsWithText) {
-        console.log(`Документ не содержит текста для анализа`);
-        return res.status(400).json({ 
-          message: 'Документ должен содержать текст или вложения с текстом для анализа',
-          documentId: req.params.id
-        });
-      }
-      
-      // Обновление статуса
-      doc.analysisStatus = 'processing';
-      doc.updatedAt = new Date().toISOString();
-      await db.write();
-      console.log(`Статус документа обновлен на 'processing'`);
-
-      console.log("Вызов analyzeDocument");
-      const analysisResult = await analyzeDocument(doc, instructions, strictMode);
-      console.log("Результат analyzeDocument:", analysisResult);
-      
-      if (analysisResult.success) {
-        // Обновление документа
-        console.log("Вызов updateDocumentAnalysis");
-        updateDocumentAnalysis(doc, analysisResult.data);
-        await db.write();
-        console.log(`Документ обновлен после анализа`);
-
-        res.json({
-          ...analysisResult.data,
-          modelUsed: model,
-          analyzedAt: doc.lastAnalyzedAt
-        });
-      } else {
-        throw new Error(analysisResult.error || "Неизвестная ошибка анализа");
-      }
-
-    } catch (err) {
-      console.error(`Ошибка анализа документа ${req.params.id}:`, err);
-      
-      // Обновление статуса в случае ошибки
-      const doc = db.data.documents.find(d => d.id === req.params.id);
-      if (doc) {
-        doc.analysisStatus = 'failed';
-        doc.updatedAt = new Date().toISOString();
-        await db.write();
-      }
-      
-      res.status(500).json({
-        message: 'Ошибка при анализе документа',
-        error: err.message,
-        documentId: req.params.id,
-        stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
-      });
-    }
-  });
+  
 
   // Удаление документа
   router.delete('/:id', async (req, res) => {
@@ -4087,36 +4042,38 @@ export const useDocumentStore = defineStore("document", () => {
   const analyzeDocumentContent = async (documentId) => {
     try {
       const id = documentId || currentDocument.value.id;
-      console.log("Анализ содержимого документа, ID:", id);
-      // Временно упрощаем запрос для тестирования
+      console.log('Анализ содержимого документа, ID:', id);
+      // Правильная передача параметров анализа
       const { data } = await axios.post(
         `${API_BASE}/api/documents/${id}/analyze`,
         {
           instructions: "",
-          strictMode: false,
+          strictMode: false
         }
       );
 
       console.log("Полный ответ модели:", data);
-
+      
       return {
         summary: data.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(data.keySentences) ? data.keySentences : [],
-        violations: Array.isArray(data.violations) ? data.violations : [],
+        keySentences: Array.isArray(data.keySentences) ? 
+          data.keySentences : 
+          [],
+        violations: Array.isArray(data.violations) ?
+          data.violations :
+          [],
         documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || "",
+        senderAgency: data.senderAgency || ""
       };
     } catch (error) {
       console.error("Ошибка анализа документа:", error);
       // Возвращаем объект с полями по умолчанию в случае ошибки
       return {
-        summary:
-          "Ошибка анализа документа: " +
-          (error.response?.data?.message || error.message),
+        summary: "Ошибка анализа документа: " + (error.response?.data?.message || error.message),
         keySentences: [],
         violations: [],
         documentDate: "",
-        senderAgency: "",
+        senderAgency: ""
       };
     }
   };

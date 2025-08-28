@@ -103,60 +103,54 @@ class ComplaintService {
   // Генерация жалобы через AI
   async generateWithAI(mainDocData, relatedDocsData, agency) {
     try {
-      const prompt = this.buildAIPrompt(mainDocData, relatedDocsData, agency);
+      // Подготавливаем данные для анализа
+      const analysisData = {
+        summary: mainDocData.summary,
+        keySentences: mainDocData.keySentences,
+        violations: mainDocData.violations,
+        documentDate: mainDocData.documentDate,
+        senderAgency: mainDocData.senderAgency,
+        attachments: relatedDocsData
+      };
+      
+      // Используем метод из aiService для построения промпта
+      const promptData = aiService.buildComplaintPrompt(analysisData, agency);
+      const prompt = aiService.preparePrompt(promptData, "generate_complaint", { agency });
+      
       console.log('Отправка запроса к AI с промптом:', prompt.substring(0, 200) + '...');
+      
+      // Проверим наличие текста в документе
+      if (!mainDocData.originalText || mainDocData.originalText.trim().length === 0) {
+        console.log('Внимание: основной документ не содержит текста');
+        if (mainDocData.summary) {
+          console.log('Используется summary документа:', mainDocData.summary.substring(0, 100) + '...');
+        }
+      } else {
+        console.log('Текст основного документа (первые 200 символов):', mainDocData.originalText.substring(0, 200) + '...');
+      }
       
       const response = await aiService.queryLocalModel(prompt, {
         temperature: 0.6,
-        taskType: "complaint",
         format: "json"
       });
+      
+      console.log('Ответ от AI получен:', typeof response);
+      if (typeof response === 'string') {
+        console.log('Ответ от AI (первые 200 символов):', response.substring(0, 200));
+      } else {
+        console.log('Ответ от AI (объект):', JSON.stringify(response).substring(0, 200));
+      }
       
       return this.parseAIResponse(response);
       
     } catch (aiError) {
       console.error('Ошибка AI генерации:', aiError);
+      console.error('Стек ошибки:', aiError.stack);
       // Возвращаем запасной вариант
       return {
         content: this.generateFallbackComplaint(mainDocData, agency)
       };
     }
-  }
-
-  // Построение промпта для AI
-  buildAIPrompt(mainDocData, relatedDocsData, agency) {
-    // Создаем структурированные данные для AI
-    const analysisData = {
-      task: "GENERATE_COMPLAINT",
-      agency: agency,
-      mainDocument: {
-        summary: mainDocData.summary,
-        keySentences: mainDocData.keySentences.slice(0, 10), // Ограничиваем количество
-        violations: mainDocData.violations,
-        documentDate: mainDocData.documentDate,
-        senderAgency: mainDocData.senderAgency
-      },
-      hasRelatedDocuments: relatedDocsData.length > 0,
-      relatedDocumentsCount: relatedDocsData.length
-    };
-
-    return `Ты - профессиональный юрист. Создай официальную жалобу в ${agency} от первого лица заявителя.
-
-ОСНОВНЫЕ ДАННЫЕ:
-${JSON.stringify(analysisData, null, 2)}
-
-ИНСТРУКЦИИ:
-1. Создай структурированную жалобу в формате делового письма от первого лица
-2. Используй деловой стиль, строго по существу
-3. Укажи конкретные нарушения законов
-4. Сделай ссылки на статьи законов
-5. Предложи конкретные требования
-6. Не включай полный текст документа
-
-Верни результат в формате JSON:
-{
-  "content": "текст жалобы"
-}`;
   }
 
   // Парсинг ответа AI
