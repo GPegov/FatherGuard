@@ -237,7 +237,7 @@ onMounted(async () => {
       return;
     }
 
-    if (document.value.id) {
+    if (document.value.id && document.value.id !== 'new') {
       console.log('Загрузка документа по ID:', document.value.id);
       await documentStore.fetchDocumentById(document.value.id);
       document.value = {
@@ -287,6 +287,8 @@ const analyzeDocument = async () => {
   error.value = null
 
   try {
+    // Обновляем currentDocument в хранилище перед анализом
+    documentStore.currentDocument = document.value
     const updatedDocument = await documentStore.analyzeDocument()
 
     document.value = {
@@ -325,6 +327,7 @@ const handleSubmit = async () => {
   error.value = null
 
   try {
+    // Обновляем currentDocument в хранилище перед сохранением
     documentStore.currentDocument = document.value
     await documentStore.saveDocument()
     router.push('/documents')

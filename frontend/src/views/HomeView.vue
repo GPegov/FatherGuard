@@ -9,11 +9,11 @@
     ></textarea>
     
     <div class="upload-section">
-      <p>Приложите входящие документы (.txt / .pdf)</p>
+      <p>Приложите входящие документы (.doc / .docx / .txt / .pdf)</p>
       <FileUpload 
         label="Загрузить документы"
         @files-selected="handleFilesSelected"
-        accept=".txt,.pdf"
+        accept=".doc,.docx,.txt,.pdf"
       />
       <div v-if="files.length > 0" class="files-preview">
         <p>Выбранные файлы: {{ files.map(f => f.name).join(', ') }}</p>
@@ -66,7 +66,7 @@ const submitData = async () => {
   try {
     // Инициализируем новый документ с полной структурой
     const newDocument = {
-      id: null, // Будет установлен при сохранении
+      id: null, // Явно устанавливаем ID как null для нового документа
       date: new Date().toISOString().split('T')[0],
       agency: '',
       originalText: userText.value,
@@ -78,30 +78,22 @@ const submitData = async () => {
       comments: userText.value,
       complaints: [],
       analysisStatus: 'pending',
-      lastAnalyzedAt: null
+      lastAnalyzedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      violations: []
     };
 
     // Обновляем документ в хранилище
     documentStore.currentDocument = newDocument;
 
-    // Загружаем файлы (если есть)
-    if (files.value.length > 0) {
-      await documentStore.uploadFiles(files.value);
-      // Предполагаем, что uploadFiles обновляет currentDocument.attachments
-    }
-
-    // Сохраняем документ
-    const savedDoc = await documentStore.saveDocument();
-    
-    if (savedDoc?.id) {
-      router.push({ 
-        name: 'review', 
-        params: { id: savedDoc.id },
-        query: { new: 'true' }  
-      });
-    } else {
-      throw new Error('Документ не был сохранен: отсутствует ID');
-    }
+    // Переходим к предпросмотру без сохранения документа
+    // Передаем временный ID для соответствия маршруту
+    router.push({ 
+      name: 'review', 
+      params: { id: 'new' },
+      query: { new: 'true' }  
+    });
   } catch (error) {
     console.error('Ошибка при создании документа:', error);
     errorMessage.value = error.response?.data?.message || 

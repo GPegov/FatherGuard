@@ -456,6 +456,7 @@ class DocumentService {
    */
   async analyzeText(text, instructions = "", strictMode = false) {
     try {
+      console.log("=== НАЧАЛО ANALYZE TEXT ===");
       console.log('Анализ текста, длина текста:', text ? text.length : 0);
       
       // Проверка входных данных
@@ -498,10 +499,17 @@ class DocumentService {
       // Проверяем доступность Ollama перед вызовом
       try {
         console.log('Проверка доступности Ollama API:', aiService.apiUrl);
+        // Используем AbortController для установки таймаута
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const response = await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
           method: 'GET',
-          timeout: 5000
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
+        
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
@@ -531,6 +539,13 @@ class DocumentService {
       );
       console.log('Результат анализа текста:', analysisResult);
       
+      // Проверяем, есть ли у результата поле data (новый формат)
+      if (analysisResult && analysisResult.data) {
+        // Новый формат - возвращаем результат как есть
+        return analysisResult;
+      }
+      
+      // Старый формат - оборачиваем в новый формат
       // Убедимся, что все поля присутствуют
       const cleanResult = {
         summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
@@ -573,6 +588,7 @@ class DocumentService {
    */
   async analyzeDocument(document, instructions = "", strictMode = false) {
     try {
+      console.log("Начало analyzeDocument");
       console.log('Анализ документа, ID:', document.id);
       
       // Проверка входных данных
@@ -623,10 +639,23 @@ class DocumentService {
             console.log('Текст вложения (первые 200 символов):', attachment.text.substring(0, 200));
             const result = await this.analyzeAttachment(attachment.text, instructions);
             console.log('Результат анализа вложения:', result);
-            if (result.success) {
+            // Проверяем, есть ли у результата поле data (новый формат)
+            if (result && result.data) {
               attachmentsAnalysis.push({
                 id: attachment.id,
                 ...result.data
+              });
+            } else if (result && result.success && result.success.data) {
+              // Альтернативный формат
+              attachmentsAnalysis.push({
+                id: attachment.id,
+                ...result.success.data
+              });
+            } else {
+              // Старый формат
+              attachmentsAnalysis.push({
+                id: attachment.id,
+                ...result
               });
             }
           } else {
@@ -679,6 +708,7 @@ class DocumentService {
    */
   async analyzeAttachment(text, instructions = "") {
     try {
+      console.log("Начало analyzeAttachment");
       console.log('Анализ вложения, длина текста:', text ? text.length : 0);
       
       // Проверка входных данных
@@ -722,14 +752,27 @@ class DocumentService {
       const analysisResult = await aiService.analyzeAttachment(trimmedText, instructions);
       console.log('Результат анализа вложения:', analysisResult);
 
-      // Убедимся, что все поля присутствуют
-      const cleanResult = {
-        documentType: analysisResult.documentType || "Неизвестный тип",
-        sentDate: analysisResult.sentDate || "",
-        senderAgency: analysisResult.senderAgency || "",
-        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(analysisResult.keySentences) ? analysisResult.keySentences : []
-      };
+      // Проверяем формат результата
+      let cleanResult;
+      if (analysisResult && analysisResult.data) {
+        // Новый формат
+        cleanResult = {
+          documentType: analysisResult.data.documentType || "Неизвестный тип",
+          sentDate: analysisResult.data.sentDate || "",
+          senderAgency: analysisResult.data.senderAgency || "",
+          summary: analysisResult.data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(analysisResult.data.keySentences) ? analysisResult.data.keySentences : []
+        };
+      } else {
+        // Старый формат
+        cleanResult = {
+          documentType: analysisResult.documentType || "Неизвестный тип",
+          sentDate: analysisResult.sentDate || "",
+          senderAgency: analysisResult.senderAgency || "",
+          summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(analysisResult.keySentences) ? analysisResult.keySentences : []
+        };
+      }
       
       console.log('Возвращаем результат анализа вложения:', cleanResult);
       return {
@@ -877,8 +920,24 @@ class ComplaintService {
   // Генерация жалобы через AI
   async generateWithAI(mainDocData, relatedDocsData, agency) {
     try {
-      const prompt = this.buildAIPrompt(mainDocData, relatedDocsData, agency);
+      console.log("=== НАЧАЛО GENERATE WITH AI ===");
+      // Подготавливаем данные для анализа
+      const analysisData = {
+        summary: mainDocData.summary,
+        keySentences: mainDocData.keySentences,
+        violations: mainDocData.violations,
+        documentDate: mainDocData.documentDate,
+        senderAgency: mainDocData.senderAgency,
+        attachments: relatedDocsData
+      };
+      
+      // Используем метод из aiService для построения промпта
+      const promptData = aiService.buildComplaintPrompt(analysisData, agency);
+      const prompt = aiService.preparePrompt(promptData, "generate_complaint", { agency });
+      
       console.log('Отправка запроса к AI с промптом:', prompt.substring(0, 200) + '...');
+      console.log('Полная длина промпта:', prompt.length);
+      console.log("=== КОНЕЦ GENERATE WITH AI ===");
       
       // Проверим наличие текста в документе
       if (!mainDocData.originalText || mainDocData.originalText.trim().length === 0) {
@@ -892,7 +951,6 @@ class ComplaintService {
       
       const response = await aiService.queryLocalModel(prompt, {
         temperature: 0.6,
-        taskType: "complaint",
         format: "json"
       });
       
@@ -913,42 +971,6 @@ class ComplaintService {
         content: this.generateFallbackComplaint(mainDocData, agency)
       };
     }
-  }
-
-  // Построение промпта для AI
-  buildAIPrompt(mainDocData, relatedDocsData, agency) {
-    // Создаем структурированные данные для AI
-    const analysisData = {
-      task: "GENERATE_COMPLAINT",
-      agency: agency,
-      mainDocument: {
-        summary: mainDocData.summary,
-        keySentences: mainDocData.keySentences.slice(0, 10), // Ограничиваем количество
-        violations: mainDocData.violations,
-        documentDate: mainDocData.documentDate,
-        senderAgency: mainDocData.senderAgency
-      },
-      hasRelatedDocuments: relatedDocsData.length > 0,
-      relatedDocumentsCount: relatedDocsData.length
-    };
-
-    return `Ты - профессиональный юрист. Создай официальную жалобу в ${agency} от первого лица заявителя.
-
-ОСНОВНЫЕ ДАННЫЕ:
-${JSON.stringify(analysisData, null, 2)}
-
-ИНСТРУКЦИИ:
-1. Создай структурированную жалобу в формате делового письма от первого лица
-2. Используй деловой стиль, строго по существу
-3. Укажи конкретные нарушения законов
-4. Сделай ссылки на статьи законов
-5. Предложи конкретные требования
-6. Не включай полный текст документа
-
-Верни результат в формате JSON:
-{
-  "content": "текст жалобы"
-}`;
   }
 
   // Парсинг ответа AI
@@ -1052,7 +1074,10 @@ ${JSON.stringify(analysisData, null, 2)}
     }
   }
 
-  // Старый метод для обратной совместимости
+  /**
+   * @deprecated Устаревший метод. Используйте generateUnifiedComplaint вместо него.
+   * Сохранен для обратной совместимости.
+   */
   async generateComplaint(complaintData) {
     console.log("Использование старого метода generateComplaint");
     
@@ -1092,6 +1117,11 @@ const complaintService = new ComplaintService();
 
 // Экспортируем методы для обратной совместимости
 export const generateUnifiedComplaint = complaintService.generateUnifiedComplaint.bind(complaintService);
+
+/**
+ * @deprecated Устаревший метод. Используйте generateUnifiedComplaint вместо него.
+ * Экспортируется для обратной совместимости.
+ */
 export const generateComplaint = complaintService.generateComplaint.bind(complaintService);
 
 // Экспортируем класс для тестирования
@@ -1101,9 +1131,11 @@ export { ComplaintService };
 
 // Файл: backend\services\aiService.js
 import axios from "axios";
+import crypto from "crypto";
 
 class AIService {
   constructor(apiUrl, activeModel) {
+    console.log("Инициализация AIService с параметрами:", { apiUrl, activeModel });
     this.apiUrl = apiUrl || "http://localhost:11434/api/generate";
     this.activeModel = activeModel || "llama3.1/18/8192";
     this.defaultOptions = {
@@ -1116,6 +1148,11 @@ class AIService {
     this.maxCacheSize = 100; // Cache size limit
     this.cacheTTL = 30 * 60 * 1000; // 30 minutes TTL in milliseconds
     this.maxRetries = 2;
+    console.log("AIService инициализирован с параметрами:", {
+      apiUrl: this.apiUrl,
+      activeModel: this.activeModel,
+      defaultOptions: this.defaultOptions
+    });
     // Explicit method binding
     this.queryLocalModel = this.queryLocalModel.bind(this);
     this.analyzeLegalText = this.analyzeLegalText.bind(this);
@@ -1125,7 +1162,7 @@ class AIService {
 
   async queryLocalModel(prompt, customOptions = {}) {
     try {
-      console.log("queryLocalModel called");
+      console.log("=== НАЧАЛО QUERY LOCAL MODEL ===");
       console.log("API URL:", this.apiUrl);
       console.log("Model:", this.activeModel);
       console.log("Prompt type:", typeof prompt);
@@ -1154,7 +1191,7 @@ class AIService {
         ...customOptions,
         strictMode: customOptions.strictMode || false
       };
-      const preparedPrompt = this.preparePrompt(processedPrompt, customOptions.taskType, promptOptions);
+      const preparedPrompt = this.preparePrompt(processedPrompt, customOptions.taskType, customOptions);
 
       console.log("Sending request to AI model:", {
         url: this.apiUrl,
@@ -1164,18 +1201,13 @@ class AIService {
       });
 
       try {
-        const requestData = {
-          model: this.activeModel,
-          prompt: typeof preparedPrompt === 'object' ? JSON.stringify(preparedPrompt, null, 2) : preparedPrompt,
-          stream: false,
-          options: ollamaOptions,
-        };
-
-        // If format=json, add format to options
+        // Подготавливаем параметры напрямую, а не вложенным объектом
+        // Всегда отправляем prompt как строку
+        let finalPrompt = typeof preparedPrompt === 'string' ? preparedPrompt : String(preparedPrompt);
+        
+        // If format=json, add clear instruction to prompt for JSON return
         if (customOptions.format === "json") {
-          requestData.options.format = "json";
-          // Add clear instruction to prompt for JSON return
-          requestData.prompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
+          finalPrompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
             "1. RESPOND ONLY IN JSON FORMAT\n" +
             "2. DO NOT ADD ANY ADDITIONAL TEXTS OR COMMENTS\n" +
             "3. DO NOT USE Markdown OR OTHER FORMATS\n" +
@@ -1188,7 +1220,23 @@ class AIService {
             "}";
         }
 
-        console.log("Sending request to Ollama API");
+        const requestData = {
+          model: this.activeModel,
+          prompt: finalPrompt,
+          stream: false,
+          ...ollamaOptions, // Параметры передаем напрямую
+        };
+
+        // If format=json, add format directly to requestData
+        if (customOptions.format === "json") {
+          requestData.format = "json";
+        }
+
+        console.log("=== ОТПРАВКА ЗАПРОСА К OLLAMA API ===");
+        console.log("Request data:", JSON.stringify(requestData, null, 2));
+        console.log("Prompt length:", requestData.prompt.length);
+        console.log("Prompt preview (first 500 chars):", requestData.prompt.substring(0, 500));
+        
         const response = await axios.post(
           this.apiUrl,
           requestData,
@@ -1200,6 +1248,7 @@ class AIService {
           }
         );
         console.log("Response from Ollama API received");
+        console.log("=== КОНЕЦ ОТПРАВКИ ЗАПРОСА К OLLAMA API ===");
 
         console.log("Response from AI model:", response.data);
         const result = this.safeParseResponse(response.data);
@@ -1239,6 +1288,7 @@ class AIService {
 
   async analyzeLegalText(text, instructions = "", strictMode = false) {
     try {
+      console.log("=== НАЧАЛО ANALYZE LEGAL TEXT ===");
       console.log("analyzeLegalText called with text length:", text ? text.length : 0);
       console.log("Instructions:", instructions);
       console.log("Strict mode:", strictMode);
@@ -1285,6 +1335,8 @@ class AIService {
         console.log("Building analysis prompt");
         const promptData = this.buildAnalysisPrompt(processedText, instructions, strictMode);
         console.log("Prompt built, calling queryLocalModel");
+        console.log("Prompt data preview:", typeof promptData === 'string' ? promptData.substring(0, 200) : JSON.stringify(promptData, null, 2));
+        console.log("=== КОНЕЦ ANALYZE LEGAL TEXT ===");
         
         const result = await this.queryLocalModel(promptData, {
           temperature: 0.3,
@@ -1347,50 +1399,72 @@ class AIService {
         this.cacheTimestamps.set(cacheKey, Date.now());
         
         console.log("Analysis completed successfully:", enhancedResult);
-        return enhancedResult;
+        return {
+          success: true,
+          data: enhancedResult,
+          timestamp: new Date().toISOString()
+        };
       } catch (error) {
         console.error("Error in analyzeLegalText:", error);
         console.error("Error stack:", error.stack);
         // Return default object in case of error
         return {
-          summary: "Error analyzing document: " + error.message,
-          keySentences: [],
-          violations: [],
-          documentDate: "",
-          senderAgency: "",
+          success: true,
+          data: {
+            summary: "Error analyzing document: " + error.message,
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: "",
+          },
+          timestamp: new Date().toISOString()
         };
       }
     } catch (error) {
       console.error("Unexpected error in analyzeLegalText:", error);
       console.error("Error stack:", error.stack);
       return {
-        summary: "Unexpected error: " + error.message,
-        keySentences: [],
-        violations: [],
-        documentDate: "",
-        senderAgency: "",
+        success: true,
+        data: {
+          summary: "Unexpected error: " + error.message,
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: "",
+        },
+        timestamp: new Date().toISOString()
       };
     }
   }
 
   safeParseResponse(response) {
+    console.log("=== НАЧАЛО SAFE PARSE RESPONSE ===");
+    console.log("Тип ответа:", typeof response);
+    console.log("Ответ (первые 500 символов):", typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response, null, 2));
     // If response is already an object, return it as is
     if (typeof response === "object" && response !== null) {
+      console.log("Ответ уже является объектом");
+      console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
       return response;
     }
     
     // If response is a string
     if (typeof response === "string") {
+      console.log("Ответ является строкой, попытка парсинга");
       // Attempt 1: Direct parsing of entire string as JSON
       try {
-        return JSON.parse(response);
+        const parsed = JSON.parse(response);
+        console.log("Успешный парсинг JSON");
+        return parsed;
       } catch (directParseError) {
         console.error("Direct JSON parse failed:", directParseError);
         // Attempt 2: Extract JSON from markdown code blocks
         try {
           const jsonMatch = response.match(/```(?:json)?\s*({.*?})\s*```/s);
           if (jsonMatch && jsonMatch[1]) {
-            return JSON.parse(jsonMatch[1]);
+            const parsed = JSON.parse(jsonMatch[1]);
+            console.log("Успешный парсинг JSON из markdown");
+            return parsed;
           }
         } catch (markdownParseError) {
           console.error("Markdown JSON parse failed:", markdownParseError);
@@ -1399,14 +1473,16 @@ class AIService {
         // Attempt 3: Manual extraction of key fields
         try {
           const summaryMatch = response.match(/"summary"\s*:\s*"([^"]+)"/);
-          const keySentencesMatch = response.match(/"keySentences"\s*:\s*($$[^$$]*$$)/);
-          const violationsMatch = response.match(/"violations"\s*:\s*($$[^$$]*$$)/);
+          const keySentencesMatch = response.match(/"keySentences"\s*:\s*($[^$]*$)/);
+          const violationsMatch = response.match(/"violations"\s*:\s*($[^$]*$)/);
           
-          return {
+          const result = {
             summary: summaryMatch ? summaryMatch[1] : "Failed to extract summary",
             keySentences: keySentencesMatch ? JSON.parse(keySentencesMatch[1]) : [],
             violations: violationsMatch ? JSON.parse(violationsMatch[1]) : []
           };
+          console.log("Успешная ручная распаковка ответа");
+          return result;
         } catch (manualParseError) {
           console.error("Manual JSON parse failed:", manualParseError);
         }
@@ -1415,11 +1491,13 @@ class AIService {
     
     // If all parsing attempts failed
     console.error("All parsing attempts failed for response:", response);
+    console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
     return null;
   }
 
   async analyzeAttachment(text, instructions = "") {
     try {
+      console.log("Начало analyzeAttachment");
       console.log("analyzeAttachment called with text length:", text ? text.length : 0);
       
       if (!text || typeof text !== 'string') {
@@ -1442,41 +1520,29 @@ class AIService {
       
       console.log("Sending attachment text:", processedText.substring(0, 200) + "...");
       
-      const promptData = this.buildAttachmentAnalysisPrompt(processedText, instructions);
-      
-      const result = await this.queryLocalModel(promptData, {
-        temperature: 0.2,
-        format: "json",
-        taskType: "attachment"
-      });
+      // Анализируем вложение через AI-сервис, используя тот же промпт, что и для основного документа
+      console.log("Вызов analyzeLegalText для анализа вложения");
+      const analysisResult = await this.analyzeLegalText(processedText, instructions, false);
+      console.log("Результат анализа вложения:", analysisResult);
 
-      const parsedResult = this.safeParseResponse(result);
-      
-      if (!parsedResult) {
-        return {
-          documentType: "Failed to parse",
-          sentDate: "",
-          senderAgency: "",
-          summary: "Failed to parse model response",
-          keySentences: [],
-        };
-      }
-
-      return {
-        documentType: parsedResult.documentType || "Unknown",
-        sentDate: parsedResult.sentDate || parsedResult.documentDate || "",
-        senderAgency: parsedResult.senderAgency || parsedResult.agency || "",
-        summary: parsedResult.summary || parsedResult.content || "Failed to generate summary",
-        keySentences: Array.isArray(parsedResult.keySentences) 
-          ? parsedResult.keySentences.filter((p) => p && p.length > 5)
-          : (Array.isArray(parsedResult.content) 
-            ? parsedResult.content.filter((p) => p && p.length > 5)
-            : []),
+      // Формируем результат в формате вложения
+      const attachmentResult = {
+        documentType: "Документ", // Будет определен моделью
+        sentDate: analysisResult.documentDate || "",
+        senderAgency: analysisResult.senderAgency || "",
+        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(analysisResult.keySentences) 
+          ? analysisResult.keySentences.filter((p) => p && p.length > 5)
+          : []
       };
+      
+      console.log("Возвращаем результат анализа вложения:", attachmentResult);
+      return attachmentResult;
+
     } catch (error) {
       console.error("Error in analyzeAttachment:", error);
       return {
-        documentType: "Error",
+        documentType: "Неизвестный тип",
         sentDate: "",
         senderAgency: "",
         summary: "Error analyzing attachment: " + error.message,
@@ -1486,44 +1552,155 @@ class AIService {
   }
 
   extractDate(text) {
+    console.log("Начало extractDate");
+    console.log("Text length:", text ? text.length : 0);
     // Implementation for date extraction
     const dateRegex = /(\d{1,2}[.\-\/]\d{1,2}[.\-\/]\d{2,4})|(\d{4}[.\-\/]\d{1,2}[.\-\/]\d{1,2})/;
     const match = text.match(dateRegex);
-    return match ? match[0] : "";
+    const result = match ? match[0] : "";
+    console.log("Extracted date:", result);
+    return result;
   }
 
   extractAgency(text) {
+    console.log("Начало extractAgency");
+    console.log("Text length:", text ? text.length : 0);
     // Implementation for agency extraction
     const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    return agencies.find((agency) => text.includes(agency)) || "";
+    const result = agencies.find((agency) => text.includes(agency)) || "";
+    console.log("Extracted agency:", result);
+    return result;
   }
 
   buildAnalysisPrompt(text, instructions, strictMode) {
-    // Implementation for building analysis prompt
-    return {
-      task: "legal_analysis",
-      text: text,
-      instructions: instructions,
-      strictMode: strictMode
-    };
+    console.log("=== НАЧАЛО BUILD ANALYSIS PROMPT ===");
+    console.log("Text length:", text ? text.length : 0);
+    console.log("Instructions:", instructions);
+    console.log("Strict mode:", strictMode);
+    
+    // Формируем строку промпта для анализа документа
+    let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть документа
+- keySentences: массив из 5 самых важных предложений из документа
+- violations: массив выявленных нарушений законодательства (если есть)
+- documentDate: дата документа (если указана)
+- senderAgency: ведомство-отправитель (если указано)
+
+Текст документа для анализа:
+${text || ""}`;
+    
+    // Добавляем инструкции, если они есть
+    if (instructions && instructions.trim()) {
+      prompt = `${prompt}
+
+ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:
+${instructions}`;
+    }
+    
+    // Добавляем указания по режиму строгого анализа
+    if (strictMode) {
+      prompt = `${prompt}
+
+ПРИМЕНЯЙТЕ СТРОГИЙ АНАЛИЗ ДОКУМЕНТА.`;
+    }
+    
+    console.log("Сформированный prompt (первые 200 символов):", prompt.substring(0, 200));
+    console.log("Общая длина prompt:", prompt.length);
+    console.log("=== КОНЕЦ BUILD ANALYSIS PROMPT ===");
+    return prompt;
   }
 
-  buildAttachmentAnalysisPrompt(text, instructions = "") {
-    // Implementation for building attachment analysis prompt
-    return {
-      task: "attachment_analysis",
-      text: text,
-      instructions: instructions
+  buildComplaintPrompt(analysisData, agency) {
+    console.log("=== НАЧАЛО BUILD COMPLAINT PROMPT ===");
+    console.log("Agency:", agency);
+    console.log("Analysis data:", analysisData);
+    
+    // Создаем текстовое представление данных для анализа
+    let textContent = "Краткая суть документа: " + (analysisData.summary || 'не указана') + "\n\n" +
+                      "Важные предложения из документа:\n" +
+                      (Array.isArray(analysisData.keySentences) ? analysisData.keySentences.slice(0, 5).map((s, i) => `${i+1}. ${s}`).join('\n') : 'не указаны') + "\n\n" +
+                      "Выявленные нарушения:\n" +
+                      (Array.isArray(analysisData.violations) && analysisData.violations.length > 0 ? 
+                        analysisData.violations.map((v, i) => `${i+1}. ${v}`).join('\n') : 
+                        'нарушения не выявлены') + "\n\n" +
+                      "Дата документа: " + (analysisData.documentDate || 'не указана') + "\n" +
+                      "Ведомство-отправитель: " + (analysisData.senderAgency || 'не указано');
+
+    // Добавляем информацию о вложениях, если есть
+    if (Array.isArray(analysisData.attachments) && analysisData.attachments.length > 0) {
+      textContent += `
+
+Связанные документы (${analysisData.attachments.length} шт.):`;
+      
+      analysisData.attachments.slice(0, 3).forEach((att, index) => {
+        textContent += `
+
+Документ ${index + 1}:
+Краткая суть: ${att.summary || 'не указана'}
+Дата: ${att.documentDate || 'не указана'}
+Ведомство: ${att.senderAgency || 'не указано'}`;
+      });
+    }
+
+    // Создаем структурированные данные для AI
+    const promptData = {
+      task: "generate_complaint",
+      agency: agency,
+      text: textContent
     };
+
+    console.log("Сформированный prompt объект:", promptData);
+    console.log("Длина текста в prompt:", textContent.length);
+    console.log("Текст prompt (первые 500 символов):", textContent.substring(0, 500));
+    console.log("=== КОНЕЦ BUILD COMPLAINT PROMPT ===");
+    return promptData;
   }
 
   preparePrompt(prompt, taskType, options) {
+    console.log("=== НАЧАЛО PREPARE PROMPT ===");
+    console.log("Тип prompt:", typeof prompt);
+    console.log("Task type:", taskType);
+    console.log("Options:", options);
+    
     // Если prompt является объектом (как в случае с buildAnalysisPrompt), используем его поля
     if (typeof prompt === 'object' && prompt !== null) {
-      const { text, instructions, strictMode, task } = prompt;
+      const { text, instructions, strictMode, task, agency } = prompt;
+      console.log("Prompt является объектом, поля:", { text: text ? text.substring(0, 100) : 'null', instructions, strictMode, task, agency });
       
       // Формируем промпт в зависимости от типа задачи
-      let basePrompt = text || "";
+      let basePrompt = "";
+      
+      // Для анализа документов передаем только текст пользователя
+      if (task === 'legal_analysis') {
+        basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть документа
+- keySentences: массив из 5 самых важных предложений из документа
+- violations: массив выявленных нарушений законодательства (если есть)
+- documentDate: дата документа (если указана)
+- senderAgency: ведомство-отправитель (если указано)
+
+Текст документа для анализа:
+${text || ""}`;
+      }
+      
+      // Для генерации жалоб передаем только текст
+      else if (task === 'generate_complaint') {
+        basePrompt = `Выступи в роли опытного юриста. Создай официальную жалобу в ${agency} от первого лица заявителя.
+ОСНОВНЫЕ ТРЕБОВАНИЯ:
+1. ИСПОЛЬЗУЙТЕ ДЕЛОВОЙ СТИЛЬ, СТРОГО ПО СУЩЕСТВУ
+2. УКАЖИТЕ КОНКРЕТНЫЕ НАРУШЕНИЯ ЗАКОНОВ
+3. СДЕЛАЙТЕ ССЫЛКИ НА СТАТЬИ ЗАКОНОВ
+4. ПРЕДЛОЖИТЕ КОНКРЕТНЫЕ ТРЕБОВАНИЯ
+5. НЕ ВКЛЮЧАЙТЕ ПОЛНЫЙ ТЕКСТ ДОКУМЕНТА
+
+ВЕРНИТЕ РЕЗУЛЬТАТ В ФОРМАТЕ JSON:
+{
+  "content": "текст жалобы"
+}
+
+Текст для анализа и создания жалобы:
+${text || ""}`;
+      }
       
       // Добавляем инструкции, если они есть
       if (instructions && instructions.trim()) {
@@ -1540,84 +1717,64 @@ ${instructions}`;
 ПРИМЕНЯЙТЕ СТРОГИЙ АНАЛИЗ ДОКУМЕНТА.`;
       }
       
-      // Добавляем общие указания по формату ответа в зависимости от типа задачи
-      switch (task) {
-        case 'legal_analysis':
-          basePrompt = `${basePrompt}
-
-ПРОАНАЛИЗИРУЙТЕ ДОКУМЕНТ И ПРЕДОСТАВЬТЕ СТРУКТУРИРОВАННЫЙ ОТВЕТ В ФОРМАТЕ JSON С ПОЛЯМИ:
-- summary: краткая суть документа
-- keySentences: массив важных предложений
-- violations: массив выявленных нарушений
-- documentDate: дата документа
-- senderAgency: ведомство-отправитель`;
-          break;
-        case 'summary':
-          basePrompt = `${basePrompt}
-
-СОЗДАЙТЕ КРАТКУЮ СУТЬ ДОКУМЕНТА.`;
-          break;
-        case 'paragraphs':
-          basePrompt = `${basePrompt}
-
-ИЗВЛЕЧИТЕ ВАЖНЫЕ ПРЕДЛОЖЕНИЯ ИЗ ДОКУМЕНТА.`;
-          break;
-        case 'violations':
-          basePrompt = `${basePrompt}
-
-ВЫЯВИТЕ ВОЗМОЖНЫЕ НАРУШЕНИЯ В ДОКУМЕНТЕ.`;
-          break;
-        case 'attachment_analysis':
-          basePrompt = `${basePrompt}
-
-ПРОАНАЛИЗИРУЙТЕ ВЛОЖЕНИЕ И ПРЕДОСТАВЬТЕ СТРУКТУРИРОВАННЫЙ ОТВЕТ В ФОРМАТЕ JSON С ПОЛЯМИ:
-- documentType: тип документа
-- sentDate: дата отправки
-- senderAgency: ведомство-отправитель
-- summary: краткая суть
-- keySentences: массив важных предложений`;
-          break;
-      }
-      
+      console.log("Сформированный prompt (первые 200 символов):", basePrompt.substring(0, 200));
+      console.log("Общая длина prompt:", basePrompt.length);
+      console.log("=== КОНЕЦ PREPARE PROMPT ===");
       return basePrompt;
     }
     
     // Если prompt - строка, возвращаем её как есть
+    console.log("Prompt является строкой");
+    console.log("Длина prompt:", typeof prompt === 'string' ? prompt.length : 'unknown');
+    console.log("=== КОНЕЦ PREPARE PROMPT ===");
     return prompt;
   }
 
   generateCacheKey(text, instructions) {
-    // Implementation for generating cache key
-    return `${text.substring(0, 100)}_${instructions}`;
+    // Создаем более уникальный ключ, используя хэш от полного текста и инструкций
+    const hash = crypto.createHash('md5');
+    hash.update(text + instructions);
+    return hash.digest('hex');
   }
 
   cleanupExpiredCache() {
+    console.log("Начало cleanupExpiredCache");
     // Implementation for cleaning up expired cache
     const now = Date.now();
+    let cleanedCount = 0;
     for (const [key, timestamp] of this.cacheTimestamps.entries()) {
       if (now - timestamp > this.cacheTTL) {
         this.analysisCache.delete(key);
         this.cacheTimestamps.delete(key);
+        cleanedCount++;
       }
     }
+    console.log("Очищено записей из кэша:", cleanedCount);
   }
 
   clearCache() {
+    console.log("Начало clearCache");
     // Implementation for clearing cache
     this.analysisCache.clear();
     this.cacheTimestamps.clear();
+    console.log("Cache cleared");
   }
 
   getCacheStats() {
+    console.log("Начало getCacheStats");
     // Implementation for getting cache stats
-    return {
+    const stats = {
       size: this.analysisCache.size,
       max_size: this.maxCacheSize,
       ttl: this.cacheTTL
     };
+    console.log("Cache stats:", stats);
+    return stats;
   }
 
   normalizeError(error) {
+    console.log("Начало normalizeError");
+    console.log("Error:", error);
     // Implementation for normalizing error
     return error;
   }
@@ -1644,26 +1801,16 @@ export default function documentRoutes({ db, upload }) {
   const router = Router();
 
   // Middleware для проверки JSON только для POST и PUT запросов с JSON телом
+  // Так как express.json() уже применяется в app.mjs, здесь мы просто добавим дополнительную проверку
   router.use((req, res, next) => {
     if ((req.method === 'POST' || req.method === 'PUT') && req.is('application/json')) {
-      express.json({
-        verify: (req, res, buf, encoding) => {
-          try {
-            if (buf.length > 0) {
-              JSON.parse(buf.toString());
-            }
-          } catch (e) {
-            console.error('Invalid JSON:', buf.toString());
-            // Отправляем ошибку и завершаем обработку
-            res.status(400).json({ message: 'Invalid JSON' });
-            // Не выбрасываем ошибку, а просто возвращаемся
-            return;
-          }
-        }
-      })(req, res, next);
-    } else {
-      next();
+      // Если есть тело запроса и оно не является объектом, значит возникла ошибка парсинга
+      if (req.body && typeof req.body !== 'object') {
+        console.error('Invalid JSON body:', req.body);
+        return res.status(400).json({ message: 'Invalid JSON' });
+      }
     }
+    next();
   });
 
   // Извлечение текста из файла
@@ -2172,9 +2319,13 @@ export default function documentRoutes({ db, upload }) {
   // Анализ документа по ID
   router.post('/:id/analyze', async (req, res) => {
     try {
+      console.log("Начало обработки запроса на анализ документа");
       const { id } = req.params;
+      console.log("Параметры запроса:", req.params);
+      
       // Корректная обработка типа для strictMode
-      let { instructions = "", strictMode = false } = req.body;
+      let { instructions = "", strictMode = false, model } = req.body;
+      console.log("Тело запроса:", req.body);
       
       // Преобразуем strictMode в boolean, если он пришел как строка
       if (typeof strictMode === 'string') {
@@ -2185,13 +2336,15 @@ export default function documentRoutes({ db, upload }) {
       }
       
       console.log(`Получен запрос на анализ документа с ID: ${id}`);
-      
-      // Используем значения по умолчанию, если параметры не переданы
-      const { 
-        model = process.env.AI_MODEL || "llama3.1/18/8192"
-      } = req.body;
-      
       console.log(`Параметры анализа: model=${model}, instructions=${instructions}, strictMode=${strictMode}`);
+      
+      // Проверка наличия БД
+      if (!db || !db.data || !db.data.documents) {
+        console.error("Ошибка: БД не инициализирована правильно");
+        return res.status(500).json({ 
+          message: 'Ошибка сервера: БД не инициализирована' 
+        });
+      }
       
       const doc = db.data.documents.find(d => d.id === id);
       
@@ -2243,7 +2396,7 @@ export default function documentRoutes({ db, upload }) {
 
         res.json({
           ...analysisResult.data,
-          modelUsed: model,
+          modelUsed: model || process.env.AI_MODEL || "llama3.1/18/8192",
           analyzedAt: doc.lastAnalyzedAt
         });
       } else {
@@ -2251,14 +2404,21 @@ export default function documentRoutes({ db, upload }) {
       }
     } catch (err) {
       console.error(`Ошибка анализа документа:`, err);
+      console.error("Стек ошибки:", err.stack);
       
       // Обновление статуса документа в случае ошибки
-      const { id } = req.params;
-      const doc = db.data.documents.find(d => d.id === id);
-      if (doc) {
-        doc.analysisStatus = 'failed';
-        doc.updatedAt = new Date().toISOString();
-        await db.write();
+      try {
+        const { id } = req.params;
+        if (db && db.data && db.data.documents) {
+          const doc = db.data.documents.find(d => d.id === id);
+          if (doc) {
+            doc.analysisStatus = 'failed';
+            doc.updatedAt = new Date().toISOString();
+            await db.write();
+          }
+        }
+      } catch (dbError) {
+        console.error("Ошибка при обновлении статуса документа:", dbError);
       }
       
       res.status(500).json({ 
@@ -2463,11 +2623,11 @@ export default (err, req, res, next) => {
     ></textarea>
     
     <div class="upload-section">
-      <p>Приложите входящие документы (.txt / .pdf)</p>
+      <p>Приложите входящие документы (.doc / .docx / .txt / .pdf)</p>
       <FileUpload 
         label="Загрузить документы"
         @files-selected="handleFilesSelected"
-        accept=".txt,.pdf"
+        accept=".doc,.docx,.txt,.pdf"
       />
       <div v-if="files.length > 0" class="files-preview">
         <p>Выбранные файлы: {{ files.map(f => f.name).join(', ') }}</p>
@@ -2539,13 +2699,14 @@ const submitData = async () => {
     documentStore.currentDocument = newDocument;
 
     // Загружаем файлы (если есть)
+    let savedDoc;
     if (files.value.length > 0) {
-      await documentStore.uploadFiles(files.value);
-      // Предполагаем, что uploadFiles обновляет currentDocument.attachments
+      savedDoc = await documentStore.uploadFiles(files.value);
+      // uploadFiles уже возвращает сохраненный документ, нам не нужно вызывать saveDocument еще раз
+    } else {
+      // Если нет файлов, сохраняем документ обычным способом
+      savedDoc = await documentStore.saveDocument();
     }
-
-    // Сохраняем документ
-    const savedDoc = await documentStore.saveDocument();
     
     if (savedDoc?.id) {
       router.push({ 
@@ -2646,27 +2807,6 @@ const submitData = async () => {
       </div>
     </div>
 
-
-
-    <div v-if="showComplaintDialog" class="complaint-dialog" :class="{ closing: !showComplaintDialog && !isAnalyzing }">
-      <div class="dialog-content">
-        <h3>Выберите ведомство для жалобы</h3>
-        <select v-model="selectedComplaintAgency" class="agency-select">
-          <option v-for="agency in complaintAgencies" :key="agency" :value="agency">
-            {{ agency }}
-          </option>
-        </select>
-        <div class="dialog-actions">
-          <button @click="generateComplaint" class="action-btn primary" :disabled="!selectedComplaintAgency">
-            Сформировать жалобу
-          </button>
-          <button @click="showComplaintDialog = false" class="action-btn">
-            Отмена
-          </button>
-        </div>
-      </div>
-    </div>
-
     <NotificationToast 
       v-if="showNotification"
       :message="notificationMessage"
@@ -2705,8 +2845,6 @@ const isLoading = ref(false)
 const isAnalyzing = ref(false)
 const searchQuery = ref('')
 const selectedAgency = ref('')
-const showComplaintDialog = ref(false)
-const selectedComplaintAgency = ref('')
 const currentDocumentId = ref(null)
 
 // Для удаления документов
@@ -2773,9 +2911,6 @@ const filteredDocuments = computed(() => {
   })
 })
 
-// Варианты ведомств для жалоб
-const complaintAgencies = computed(() => complaintStore.agenciesOptions)
-
 const formatDate = (dateString) => {
   return new Date(dateString).toLocaleDateString('ru-RU')
 }
@@ -2787,62 +2922,6 @@ const applyFilters = () => {
 const resetFilters = () => {
   searchQuery.value = ''
   selectedAgency.value = ''
-}
-
-const analyzeDocument = async (docId) => {
-  isAnalyzing.value = true;
-  currentDocumentId.value = docId;
-  try {
-    // Загружаем данные документа
-    await documentStore.fetchDocumentById(docId);
-    
-    // Показываем диалог выбора ведомства
-    showComplaintDialog.value = true;
-  } catch (error) {
-    console.error('Ошибка загрузки документа:', error);
-    // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при загрузке документа';
-    notificationType.value = 'error';
-    showNotification.value = true;
-  } finally {
-    isAnalyzing.value = false;
-  }
-}
-
-const generateComplaint = async () => {
-  if (!selectedComplaintAgency.value || !currentDocumentId.value) return
-
-  // Скрываем модальное окно сразу после нажатия кнопки
-  showComplaintDialog.value = false
-  
-  // Показываем индикатор загрузки
-  isAnalyzing.value = true
-
-  try {
-    console.log('Генерация жалобы для документа:', currentDocumentId.value, 'в ведомство:', selectedComplaintAgency.value)
-    const result = await complaintStore.generateComplaint(
-      currentDocumentId.value,
-      selectedComplaintAgency.value
-    )
-    console.log('Результат генерации жалобы:', result)
-    
-    // Ждем немного для плавного перехода
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // Переходим к подробному просмотру созданной жалобы
-    router.push(`/complaints/${result.id}`)
-    
-  } catch (error) {
-    console.error('Ошибка генерации жалобы:', error)
-    
-    // Показываем уведомление об ошибке
-    notificationMessage.value = 'Ошибка при формировании жалобы: ' + (error.message || 'Неизвестная ошибка')
-    notificationType.value = 'error'
-    showNotification.value = true
-  } finally {
-    // Скрываем индикатор загрузки
-    isAnalyzing.value = false
-  }
 }
 </script>
 
@@ -2958,16 +3037,6 @@ const generateComplaint = async () => {
             <div class="attachment-header">
               <h3>{{ attachment.name }}</h3>
               <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
-              <button @click="regenerateAttachmentAnalysis(attachment.id)" class="refresh-btn" :disabled="isAnalyzing"
-                title="Переанализировать документ">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-                  <path d="M16 16h5v5" />
-                </svg>
-              </button>
             </div>
 
             <div v-if="attachment.analysis" class="attachment-details">
@@ -3009,9 +3078,6 @@ const generateComplaint = async () => {
             </div>
             <div v-else class="no-analysis">
               <p>Анализ не выполнен</p>
-              <button @click="analyzeAttachment(attachment)" class="analyze-btn" :disabled="isAnalyzing">
-                Анализировать
-              </button>
             </div>
           </div>
         </div>
@@ -3140,53 +3206,6 @@ const removeAttachmentSentence = (attachmentId, index) => {
   }
 };
 
-// Обновленный метод анализа вложения
-const analyzeAttachment = async (attachment) => {
-  if (!attachment.text) return;
-  
-  isAnalyzing.value = true;
-  try {
-    // Вызываем бэкенд для анализа вложения
-    const response = await axios.post('http://localhost:3001/api/attachments/analyze', {
-      text: attachment.text
-    });
-    const analysis = response.data;
-    
-    const index = document.value.attachments.findIndex(a => a.id === attachment.id);
-    if (index !== -1) {
-      document.value.attachments[index] = {
-        ...document.value.attachments[index],
-        analysis,
-        documentDate: analysis.documentDate || "",
-        senderAgency: analysis.senderAgency || "",
-        summary: analysis.summary || "",
-        text: attachment.text,
-        keySentences: analysis.keySentences || []
-      };
-    }
-  } catch (err) {
-    error.value = 'Ошибка анализа вложения: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-};
-
-// Метод для перегенерации анализа
-const regenerateAttachmentAnalysis = async (attachmentId) => {
-  isAnalyzing.value = true;
-  try {
-    const updatedAttachment = await documentStore.regenerateAttachmentAnalysis(attachmentId);
-    const index = document.value.attachments.findIndex(a => a.id === attachmentId);
-    if (index !== -1) {
-      document.value.attachments[index] = updatedAttachment;
-    }
-  } catch (err) {
-    error.value = 'Ошибка перегенерации анализа: ' + err.message;
-  } finally {
-    isAnalyzing.value = false;
-  }
-}
-
 const addSentence = () => {
   document.value.keySentences.push('')
 }
@@ -3200,7 +3219,7 @@ const analyzeDocument = async () => {
   error.value = null
 
   try {
-    const updatedDocument = await documentStore.analyzeDocument(document.value.id)
+    const updatedDocument = await documentStore.analyzeDocument()
 
     document.value = {
       ...updatedDocument
@@ -3966,7 +3985,7 @@ export const useDocumentStore = defineStore("document", () => {
   const isAnalyzing = ref(false);
 
   const currentDocument = ref({
-    id: uuidv4(),
+    id: null, // Не устанавливаем ID сразу
     date: new Date().toISOString().split("T")[0],
     agency: "",
     originalText: "",
@@ -4039,102 +4058,6 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-  const analyzeDocumentContent = async (documentId) => {
-    try {
-      const id = documentId || currentDocument.value.id;
-      console.log('Анализ содержимого документа, ID:', id);
-      // Правильная передача параметров анализа
-      const { data } = await axios.post(
-        `${API_BASE}/api/documents/${id}/analyze`,
-        {
-          instructions: "",
-          strictMode: false
-        }
-      );
-
-      console.log("Полный ответ модели:", data);
-      
-      return {
-        summary: data.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(data.keySentences) ? 
-          data.keySentences : 
-          [],
-        violations: Array.isArray(data.violations) ?
-          data.violations :
-          [],
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || ""
-      };
-    } catch (error) {
-      console.error("Ошибка анализа документа:", error);
-      // Возвращаем объект с полями по умолчанию в случае ошибки
-      return {
-        summary: "Ошибка анализа документа: " + (error.response?.data?.message || error.message),
-        keySentences: [],
-        violations: [],
-        documentDate: "",
-        senderAgency: ""
-      };
-    }
-  };
-
-  const analyzeAttachments = async () => {
-    console.log(
-      "Анализ вложений, количество:",
-      currentDocument.value.attachments?.length
-    );
-    if (!currentDocument.value.attachments?.length)
-      return currentDocument.value.attachments;
-
-    const analyzedAttachments = [];
-    for (const attachment of currentDocument.value.attachments) {
-      console.log("Анализ вложения:", attachment.id);
-      if (attachment.text) {
-        try {
-          const { data } = await axios.post(
-            `${API_BASE}/api/attachments/analyze`,
-            { text: attachment.text }
-          );
-          console.log("Результат анализа вложения:", data);
-          analyzedAttachments.push({
-            ...attachment,
-            analysis: data,
-            documentDate: data.documentDate || "",
-            senderAgency: data.senderAgency || "",
-            summary: data.summary || "",
-            keySentences: data.keySentences || [],
-          });
-        } catch (error) {
-          console.error("Ошибка анализа вложения:", error);
-          // Даже в случае ошибки добавляем вложение, но с полями по умолчанию
-          analyzedAttachments.push({
-            ...attachment,
-            analysis: {
-              documentType: "Неизвестный тип",
-              sentDate: "",
-              senderAgency: "",
-              summary:
-                "Ошибка анализа вложения: " +
-                (error.response?.data?.message || error.message),
-              keySentences: [],
-            },
-            documentDate: "",
-            senderAgency: "",
-            summary:
-              "Ошибка анализа вложения: " +
-              (error.response?.data?.message || error.message),
-            keySentences: [],
-          });
-        }
-      } else {
-        console.log("Вложение не содержит текста:", attachment.id);
-        analyzedAttachments.push(attachment);
-      }
-    }
-    console.log("Анализ вложений завершен:", analyzedAttachments);
-    return analyzedAttachments;
-  };
-
   const determineTargetAgency = (text) => {
     const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
     if (!violations) return "";
@@ -4160,7 +4083,7 @@ export const useDocumentStore = defineStore("document", () => {
 
   const resetCurrentDocument = () => {
     currentDocument.value = {
-      id: uuidv4(),
+      id: null, // Не устанавливаем ID сразу
       date: new Date().toISOString().split("T")[0],
       agency: "",
       originalText: "",
@@ -4187,10 +4110,10 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const fetchDocumentById = async (id) => {
-    console.log("Загрузка документа по ID:", id);
+    
     return handleApiCall(async () => {
       const { data } = await axios.get(`${API_BASE}/api/documents/${id}`);
-      console.log("Загруженный документ:", data);
+      
       // Документ уже в правильной структуре, просто присваиваем
       // Убедимся, что originalText правильно установлен
       currentDocument.value = {
@@ -4231,6 +4154,15 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const saveDocument = async () => {
+    console.log("=== НАЧАЛО SAVE DOCUMENT ===");
+    console.log("Вызов saveDocument из стека:", new Error().stack);
+    console.log("Текущий документ:", currentDocument.value);
+    console.log("ID документа:", currentDocument.value.id);
+    console.log("Тип ID:", typeof currentDocument.value.id);
+    console.log("ID === null:", currentDocument.value.id === null);
+    console.log("ID === undefined:", currentDocument.value.id === undefined);
+    console.log("ID == false:", currentDocument.value.id == false);
+    console.log("Boolean(ID):", Boolean(currentDocument.value.id));
     console.log("Сохранение документа:", currentDocument.value);
     return handleApiCall(async () => {
       // Убедимся, что у документа есть все необходимые поля
@@ -4245,13 +4177,15 @@ export const useDocumentStore = defineStore("document", () => {
 
       let savedDocument;
       if (currentDocument.value.id) {
-        console.log("Обновление существующего документа");
+        console.log("=== ВЕТКА СОХРАНЕНИЯ (PUT) ===");
+        console.log("ID документа для сохранения:", currentDocument.value.id);
         const { data } = await axios.put(
           `${API_BASE}/api/documents/${currentDocument.value.id}`,
           currentDocument.value
         );
         savedDocument = data;
       } else {
+        console.log("=== СОЗДАНИЕ НОВОГО ДОКУМЕНТА (POST) ===");
         console.log("Создание нового документа");
         // Убедимся, что новый документ имеет правильную структуру
         const newDocToSave = {
@@ -4265,6 +4199,7 @@ export const useDocumentStore = defineStore("document", () => {
               ? currentDocument.value.originalText
               : "",
         };
+        console.log("Документ для создания:", newDocToSave);
         const { data } = await axios.post(
           `${API_BASE}/api/documents`,
           newDocToSave
@@ -4284,6 +4219,7 @@ export const useDocumentStore = defineStore("document", () => {
             : currentDocument.value.originalText || "",
       };
       console.log("Документ сохранен:", savedDocument);
+      console.log("=== КОНЕЦ SAVE DOCUMENT ===");
       return savedDocument;
     });
   };
@@ -4300,7 +4236,7 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const analyzeDocument = async (documentId = null) => {
-    console.log("Анализ документа, ID:", documentId);
+    
     // Если передан ID документа, загружаем его
     if (documentId) {
       await fetchDocumentById(documentId);
@@ -4331,13 +4267,49 @@ export const useDocumentStore = defineStore("document", () => {
     try {
       currentDocument.value.analysisStatus = "processing";
 
-      const analysis = await analyzeDocumentContent(currentDocument.value.id);
-      const attachmentsAnalysis = await analyzeAttachments();
+      // Вызываем бэкенд для анализа документа
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+        {
+          instructions: "",
+          strictMode: false
+        }
+      );
 
       currentDocument.value = {
         ...currentDocument.value,
-        ...analysis,
-        attachments: attachmentsAnalysis,
+        summary: data.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(data.keySentences) ? 
+          data.keySentences : 
+          [],
+        violations: Array.isArray(data.violations) ?
+          data.violations :
+          [],
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        attachments: data.attachments ? 
+          currentDocument.value.attachments.map(attachment => {
+            // Найдем соответствующий анализ в результатах
+            const analysis = data.attachments.find(a => a.id === attachment.id);
+            if (analysis) {
+              return {
+                ...attachment,
+                analysis: {
+                  documentType: analysis.documentType || "Документ",
+                  sentDate: analysis.sentDate || "",
+                  senderAgency: analysis.senderAgency || "",
+                  summary: analysis.summary || "",
+                  keySentences: analysis.keySentences || []
+                },
+                documentDate: analysis.sentDate || attachment.documentDate || "",
+                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                summary: analysis.summary || attachment.summary || "",
+                keySentences: analysis.keySentences || attachment.keySentences || []
+              };
+            }
+            return attachment;
+          }) : 
+          currentDocument.value.attachments,
         analysisStatus: "completed",
         lastAnalyzedAt: new Date().toISOString(),
       };
@@ -4354,45 +4326,7 @@ export const useDocumentStore = defineStore("document", () => {
     }
   };
 
-  const regenerateAttachmentAnalysis = async (attachmentId) => {
-    isAnalyzing.value = true;
-    try {
-      const attachment = currentDocument.value.attachments.find(
-        (a) => a.id === attachmentId
-      );
-      if (!attachment || !attachment.text) {
-        throw new Error("Вложение не найдено или не содержит текст");
-      }
-
-      const { data } = await axios.post(`${API_BASE}/api/attachments/analyze`, {
-        text: attachment.text,
-      });
-
-      const updatedAttachment = {
-        ...attachment,
-        analysis: data,
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || "",
-        summary: data.summary || "",
-        keySentences: data.keySentences || [],
-      };
-
-      const index = currentDocument.value.attachments.findIndex(
-        (a) => a.id === attachmentId
-      );
-      if (index !== -1) {
-        currentDocument.value.attachments[index] = updatedAttachment;
-        await saveDocument();
-      }
-
-      return updatedAttachment;
-    } catch (err) {
-      error.value = "Ошибка перегенерации анализа: " + err.message;
-      throw err;
-    } finally {
-      isAnalyzing.value = false;
-    }
-  };
+  
 
   const fetchComplaints = async (documentId) => {
     return handleApiCall(async () => {
@@ -4434,7 +4368,6 @@ export const useDocumentStore = defineStore("document", () => {
     saveDocument,
     deleteDocument,
     analyzeDocument,
-    regenerateAttachmentAnalysis,
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,
@@ -4640,14 +4573,6 @@ export const useAIStore = defineStore("ai", () => {
     }
   };
 
-  const generateSummary = async (text) => {
-    return analyzeText(text);
-  };
-
-  const analyzeAttachment = async (text) => {
-    return analyzeText(text);
-  };
-
   // Геттеры
   const isServerOnline = computed(() => apiStatus.value === "ready");
   
@@ -4669,8 +4594,6 @@ export const useAIStore = defineStore("ai", () => {
     // Действия
     checkServerStatus,
     analyzeText,
-    generateSummary,
-    analyzeAttachment,
 
     // Геттеры
     isServerOnline,

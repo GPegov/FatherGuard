@@ -20,7 +20,7 @@ class DocumentService {
    */
   async analyzeText(text, instructions = "", strictMode = false) {
     try {
-      console.log("Начало analyzeText");
+      console.log("=== НАЧАЛО ANALYZE TEXT ===");
       console.log('Анализ текста, длина текста:', text ? text.length : 0);
       
       // Проверка входных данных

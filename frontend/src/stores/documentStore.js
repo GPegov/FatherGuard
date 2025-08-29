@@ -16,8 +16,23 @@ export const useDocumentStore = defineStore("document", () => {
   const error = ref(null);
   const isAnalyzing = ref(false);
 
+  // Вспомогательная функция для проверки типа ID документа
+  const validateDocumentId = (doc, source = "unknown") => {
+    if (doc && doc.id !== undefined && doc.id !== null) {
+      if (typeof doc.id !== 'string' && typeof doc.id !== 'number') {
+        console.warn(`ВНИМАНИЕ: ID документа имеет неожиданный тип в ${source}:`, {
+          id: doc.id,
+          type: typeof doc.id,
+          value: doc.id
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
   const currentDocument = ref({
-    id: uuidv4(),
+    id: null, // Не устанавливаем ID сразу
     date: new Date().toISOString().split("T")[0],
     agency: "",
     originalText: "",
@@ -115,7 +130,7 @@ export const useDocumentStore = defineStore("document", () => {
 
   const resetCurrentDocument = () => {
     currentDocument.value = {
-      id: uuidv4(),
+      id: null, // Не устанавливаем ID сразу
       date: new Date().toISOString().split("T")[0],
       agency: "",
       originalText: "",
@@ -131,6 +146,9 @@ export const useDocumentStore = defineStore("document", () => {
       updatedAt: new Date().toISOString(),
       violations: [],
     };
+    
+    // Проверяем тип ID после сброса
+    validateDocumentId(currentDocument.value, "resetCurrentDocument");
   };
 
   // Действия
@@ -142,10 +160,10 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const fetchDocumentById = async (id) => {
-    console.log("Загрузка документа по ID:", id);
+    
     return handleApiCall(async () => {
       const { data } = await axios.get(`${API_BASE}/api/documents/${id}`);
-      console.log("Загруженный документ:", data);
+      
       // Документ уже в правильной структуре, просто присваиваем
       // Убедимся, что originalText правильно установлен
       currentDocument.value = {
@@ -173,6 +191,10 @@ export const useDocumentStore = defineStore("document", () => {
       );
 
       console.log("Результат загрузки файлов:", data);
+      
+      // Проверяем тип ID в возвращенных данных
+      validateDocumentId(data, "uploadFiles (response)");
+      
       // Бэкенд возвращает созданный документ в правильной структуре
       currentDocument.value = {
         ...currentDocument.value,
@@ -181,12 +203,20 @@ export const useDocumentStore = defineStore("document", () => {
         originalText:
           data.originalText || currentDocument.value.originalText || "",
       };
+      
+      // Проверяем тип ID после обновления
+      validateDocumentId(currentDocument.value, "uploadFiles (after update)");
+      
       return data;
     });
   };
 
   const saveDocument = async () => {
     console.log("Сохранение документа:", currentDocument.value);
+    
+    // Проверяем тип ID документа
+    validateDocumentId(currentDocument.value, "saveDocument");
+    
     return handleApiCall(async () => {
       // Убедимся, что у документа есть все необходимые поля
       // и актуальная дата обновления
@@ -199,8 +229,9 @@ export const useDocumentStore = defineStore("document", () => {
           : "";
 
       let savedDocument;
-      if (currentDocument.value.id) {
-        console.log("Обновление существующего документа");
+      // Проверяем, является ли ID "истинным" значением для определения PUT/POST
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        
         const { data } = await axios.put(
           `${API_BASE}/api/documents/${currentDocument.value.id}`,
           currentDocument.value
@@ -211,7 +242,7 @@ export const useDocumentStore = defineStore("document", () => {
         // Убедимся, что новый документ имеет правильную структуру
         const newDocToSave = {
           ...currentDocument.value,
-          id: currentDocument.value.id || uuidv4(),
+          id: typeof currentDocument.value.id === 'string' ? currentDocument.value.id : uuidv4(),
           createdAt:
             currentDocument.value.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -238,6 +269,10 @@ export const useDocumentStore = defineStore("document", () => {
             ? savedDocument.originalText
             : currentDocument.value.originalText || "",
       };
+      
+      // Проверяем тип ID после сохранения
+      validateDocumentId(currentDocument.value, "saveDocument (after save)");
+      
       console.log("Документ сохранен:", savedDocument);
       return savedDocument;
     });
@@ -255,19 +290,15 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const analyzeDocument = async (documentId = null) => {
-    console.log("Анализ документа, ID:", documentId);
+    
     // Если передан ID документа, загружаем его
     if (documentId) {
       await fetchDocumentById(documentId);
     }
 
     // Проверяем, есть ли текст для анализа
-    const hasOriginalText =
-      currentDocument.value.originalText &&
-      currentDocument.value.originalText.trim().length > 0;
-    const hasAttachmentsWithText = currentDocument.value.attachments?.some(
-      (att) => att.text && att.text.trim().length > 0
-    );
+    const hasOriginalText = currentDocument.value.originalText && currentDocument.value.originalText.trim().length > 0;
+    const hasAttachmentsWithText = currentDocument.value.attachments?.some((att) => att.text && att.text.trim().length > 0);
 
     console.log("Проверка текста для анализа:", {
       hasOriginalText,
@@ -284,61 +315,107 @@ export const useDocumentStore = defineStore("document", () => {
     error.value = null;
 
     try {
-      currentDocument.value.analysisStatus = "processing";
+      // Проверяем тип ID перед анализом
+      validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
+      
+      // Если у документа есть ID (строка), анализируем его по ID
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        currentDocument.value.analysisStatus = "processing";
 
-      // Вызываем бэкенд для анализа документа
-      const { data } = await axios.post(
-        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
-        {
-          instructions: "",
-          strictMode: false
-        }
-      );
+        // Вызываем бэкенд для анализа документа
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+          {
+            instructions: "",
+            strictMode: false
+          }
+        );
 
-      currentDocument.value = {
-        ...currentDocument.value,
-        summary: data.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(data.keySentences) ? 
-          data.keySentences : 
-          [],
-        violations: Array.isArray(data.violations) ?
-          data.violations :
-          [],
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || "",
-        attachments: data.attachments ? 
-          currentDocument.value.attachments.map(attachment => {
-            // Найдем соответствующий анализ в результатах
-            const analysis = data.attachments.find(a => a.id === attachment.id);
-            if (analysis) {
-              return {
-                ...attachment,
-                analysis: {
-                  documentType: analysis.documentType || "Документ",
-                  sentDate: analysis.sentDate || "",
-                  senderAgency: analysis.senderAgency || "",
-                  summary: analysis.summary || "",
-                  keySentences: analysis.keySentences || []
-                },
-                documentDate: analysis.sentDate || attachment.documentDate || "",
-                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
-                summary: analysis.summary || attachment.summary || "",
-                keySentences: analysis.keySentences || attachment.keySentences || []
-              };
-            }
-            return attachment;
-          }) : 
-          currentDocument.value.attachments,
-        analysisStatus: "completed",
-        lastAnalyzedAt: new Date().toISOString(),
-      };
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          attachments: data.attachments ? 
+            currentDocument.value.attachments.map(attachment => {
+              // Найдем соответствующий анализ в результатах
+              const analysis = data.attachments.find(a => a.id === attachment.id);
+              if (analysis) {
+                return {
+                  ...attachment,
+                  analysis: {
+                    documentType: analysis.documentType || "Документ",
+                    sentDate: analysis.sentDate || "",
+                    senderAgency: analysis.senderAgency || "",
+                    summary: analysis.summary || "",
+                    keySentences: analysis.keySentences || []
+                  },
+                  documentDate: analysis.sentDate || attachment.documentDate || "",
+                  senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                  summary: analysis.summary || attachment.summary || "",
+                  keySentences: analysis.keySentences || attachment.keySentences || []
+                };
+              }
+              return attachment;
+            }) : 
+            currentDocument.value.attachments,
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
 
-      const savedDocument = await saveDocument();
-      return savedDocument;
+        const savedDocument = await saveDocument();
+        return savedDocument;
+      } 
+      // Если у документа нет ID (новый документ), анализируем его напрямую по тексту
+      else {
+        // Подготавливаем данные для анализа
+        const documentData = {
+          originalText: currentDocument.value.originalText || "",
+          attachments: currentDocument.value.attachments || []
+        };
+
+        // Вызываем бэкенд для анализа текста напрямую
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/analyze`,
+          {
+            text: documentData.originalText,
+            instructions: "",
+            strictMode: false
+          }
+        );
+
+        // Обновляем документ результатами анализа
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
+
+        // Возвращаем обновленный документ без сохранения
+        return currentDocument.value;
+      }
     } catch (err) {
       console.error("Ошибка анализа документа:", err);
       currentDocument.value.analysisStatus = "failed";
-      await saveDocument();
+      // Для новых документов не вызываем saveDocument в случае ошибки
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        await saveDocument();
+      }
       throw err;
     } finally {
       isAnalyzing.value = false;

@@ -103,6 +103,7 @@ class ComplaintService {
   // Генерация жалобы через AI
   async generateWithAI(mainDocData, relatedDocsData, agency) {
     try {
+      console.log("=== НАЧАЛО GENERATE WITH AI ===");
       // Подготавливаем данные для анализа
       const analysisData = {
         summary: mainDocData.summary,
@@ -118,6 +119,8 @@ class ComplaintService {
       const prompt = aiService.preparePrompt(promptData, "generate_complaint", { agency });
       
       console.log('Отправка запроса к AI с промптом:', prompt.substring(0, 200) + '...');
+      console.log('Полная длина промпта:', prompt.length);
+      console.log("=== КОНЕЦ GENERATE WITH AI ===");
       
       // Проверим наличие текста в документе
       if (!mainDocData.originalText || mainDocData.originalText.trim().length === 0) {
@@ -254,7 +257,10 @@ class ComplaintService {
     }
   }
 
-  // Старый метод для обратной совместимости
+  /**
+   * @deprecated Устаревший метод. Используйте generateUnifiedComplaint вместо него.
+   * Сохранен для обратной совместимости.
+   */
   async generateComplaint(complaintData) {
     console.log("Использование старого метода generateComplaint");
     
@@ -294,6 +300,11 @@ const complaintService = new ComplaintService();
 
 // Экспортируем методы для обратной совместимости
 export const generateUnifiedComplaint = complaintService.generateUnifiedComplaint.bind(complaintService);
+
+/**
+ * @deprecated Устаревший метод. Используйте generateUnifiedComplaint вместо него.
+ * Экспортируется для обратной совместимости.
+ */
 export const generateComplaint = complaintService.generateComplaint.bind(complaintService);
 
 // Экспортируем класс для тестирования

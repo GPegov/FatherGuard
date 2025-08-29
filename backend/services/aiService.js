@@ -30,7 +30,7 @@ class AIService {
 
   async queryLocalModel(prompt, customOptions = {}) {
     try {
-      console.log("Начало queryLocalModel");
+      console.log("=== НАЧАЛО QUERY LOCAL MODEL ===");
       console.log("API URL:", this.apiUrl);
       console.log("Model:", this.activeModel);
       console.log("Prompt type:", typeof prompt);
@@ -70,18 +70,12 @@ class AIService {
 
       try {
         // Подготавливаем параметры напрямую, а не вложенным объектом
-        const requestData = {
-          model: this.activeModel,
-          prompt: typeof preparedPrompt === 'object' ? JSON.stringify(preparedPrompt, null, 2) : preparedPrompt,
-          stream: false,
-          ...ollamaOptions, // Параметры передаем напрямую
-        };
-
-        // If format=json, add format directly to requestData
+        // Всегда отправляем prompt как строку
+        let finalPrompt = typeof preparedPrompt === 'string' ? preparedPrompt : String(preparedPrompt);
+        
+        // If format=json, add clear instruction to prompt for JSON return
         if (customOptions.format === "json") {
-          requestData.format = "json";
-          // Add clear instruction to prompt for JSON return
-          requestData.prompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
+          finalPrompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
             "1. RESPOND ONLY IN JSON FORMAT\n" +
             "2. DO NOT ADD ANY ADDITIONAL TEXTS OR COMMENTS\n" +
             "3. DO NOT USE Markdown OR OTHER FORMATS\n" +
@@ -94,7 +88,23 @@ class AIService {
             "}";
         }
 
-        console.log("Sending request to Ollama API");
+        const requestData = {
+          model: this.activeModel,
+          prompt: finalPrompt,
+          stream: false,
+          ...ollamaOptions, // Параметры передаем напрямую
+        };
+
+        // If format=json, add format directly to requestData
+        if (customOptions.format === "json") {
+          requestData.format = "json";
+        }
+
+        console.log("=== ОТПРАВКА ЗАПРОСА К OLLAMA API ===");
+        console.log("Request data:", JSON.stringify(requestData, null, 2));
+        console.log("Prompt length:", requestData.prompt.length);
+        console.log("Prompt preview (first 500 chars):", requestData.prompt.substring(0, 500));
+        
         const response = await axios.post(
           this.apiUrl,
           requestData,
@@ -106,6 +116,7 @@ class AIService {
           }
         );
         console.log("Response from Ollama API received");
+        console.log("=== КОНЕЦ ОТПРАВКИ ЗАПРОСА К OLLAMA API ===");
 
         console.log("Response from AI model:", response.data);
         const result = this.safeParseResponse(response.data);
@@ -145,7 +156,7 @@ class AIService {
 
   async analyzeLegalText(text, instructions = "", strictMode = false) {
     try {
-      console.log("Начало analyzeLegalText");
+      console.log("=== НАЧАЛО ANALYZE LEGAL TEXT ===");
       console.log("analyzeLegalText called with text length:", text ? text.length : 0);
       console.log("Instructions:", instructions);
       console.log("Strict mode:", strictMode);
@@ -192,6 +203,8 @@ class AIService {
         console.log("Building analysis prompt");
         const promptData = this.buildAnalysisPrompt(processedText, instructions, strictMode);
         console.log("Prompt built, calling queryLocalModel");
+        console.log("Prompt data preview:", typeof promptData === 'string' ? promptData.substring(0, 200) : JSON.stringify(promptData, null, 2));
+        console.log("=== КОНЕЦ ANALYZE LEGAL TEXT ===");
         
         const result = await this.queryLocalModel(promptData, {
           temperature: 0.3,
@@ -293,11 +306,13 @@ class AIService {
   }
 
   safeParseResponse(response) {
-    console.log("Начало safeParseResponse");
+    console.log("=== НАЧАЛО SAFE PARSE RESPONSE ===");
     console.log("Тип ответа:", typeof response);
+    console.log("Ответ (первые 500 символов):", typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response, null, 2));
     // If response is already an object, return it as is
     if (typeof response === "object" && response !== null) {
       console.log("Ответ уже является объектом");
+      console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
       return response;
     }
     
@@ -344,6 +359,7 @@ class AIService {
     
     // If all parsing attempts failed
     console.error("All parsing attempts failed for response:", response);
+    console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
     return null;
   }
 
@@ -425,57 +441,134 @@ class AIService {
   }
 
   buildAnalysisPrompt(text, instructions, strictMode) {
-    console.log("Начало buildAnalysisPrompt");
+    console.log("=== НАЧАЛО BUILD ANALYSIS PROMPT ===");
     console.log("Text length:", text ? text.length : 0);
     console.log("Instructions:", instructions);
     console.log("Strict mode:", strictMode);
-    // Implementation for building analysis prompt
-    const result = {
-      task: "legal_analysis",
-      text: text,
-      instructions: instructions,
-      strictMode: strictMode
-    };
-    console.log("Сформированный prompt объект:", result);
-    return result;
+    
+    // Формируем строку промпта для анализа документа
+    let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть документа
+- keySentences: массив из 5 самых важных предложений из документа
+- violations: массив выявленных нарушений законодательства (если есть)
+- documentDate: дата документа (если указана)
+- senderAgency: ведомство-отправитель (если указано)
+
+Текст документа для анализа:
+${text || ""}`;
+    
+    // Добавляем инструкции, если они есть
+    if (instructions && instructions.trim()) {
+      prompt = `${prompt}
+
+ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:
+${instructions}`;
+    }
+    
+    // Добавляем указания по режиму строгого анализа
+    if (strictMode) {
+      prompt = `${prompt}
+
+ПРИМЕНЯЙТЕ СТРОГИЙ АНАЛИЗ ДОКУМЕНТА.`;
+    }
+    
+    console.log("Сформированный prompt (первые 200 символов):", prompt.substring(0, 200));
+    console.log("Общая длина prompt:", prompt.length);
+    console.log("=== КОНЕЦ BUILD ANALYSIS PROMPT ===");
+    return prompt;
   }
 
   buildComplaintPrompt(analysisData, agency) {
-    console.log("Начало buildComplaintPrompt");
+    console.log("=== НАЧАЛО BUILD COMPLAINT PROMPT ===");
     console.log("Agency:", agency);
     console.log("Analysis data:", analysisData);
     
+    // Создаем текстовое представление данных для анализа
+    let textContent = "Краткая суть документа: " + (analysisData.summary || 'не указана') + "\n\n" +
+                      "Важные предложения из документа:\n" +
+                      (Array.isArray(analysisData.keySentences) ? analysisData.keySentences.slice(0, 5).map((s, i) => `${i+1}. ${s}`).join('\n') : 'не указаны') + "\n\n" +
+                      "Выявленные нарушения:\n" +
+                      (Array.isArray(analysisData.violations) && analysisData.violations.length > 0 ? 
+                        analysisData.violations.map((v, i) => `${i+1}. ${v}`).join('\n') : 
+                        'нарушения не выявлены') + "\n\n" +
+                      "Дата документа: " + (analysisData.documentDate || 'не указана') + "\n" +
+                      "Ведомство-отправитель: " + (analysisData.senderAgency || 'не указано');
+
+    // Добавляем информацию о вложениях, если есть
+    if (Array.isArray(analysisData.attachments) && analysisData.attachments.length > 0) {
+      textContent += `
+
+Связанные документы (${analysisData.attachments.length} шт.):`;
+      
+      analysisData.attachments.slice(0, 3).forEach((att, index) => {
+        textContent += `
+
+Документ ${index + 1}:
+Краткая суть: ${att.summary || 'не указана'}
+Дата: ${att.documentDate || 'не указана'}
+Ведомство: ${att.senderAgency || 'не указано'}`;
+      });
+    }
+
     // Создаем структурированные данные для AI
     const promptData = {
       task: "generate_complaint",
       agency: agency,
-      mainDocument: {
-        summary: analysisData.summary,
-        keySentences: analysisData.keySentences?.slice(0, 10) || [], // Ограничиваем количество
-        violations: analysisData.violations || [],
-        documentDate: analysisData.documentDate,
-        senderAgency: analysisData.senderAgency
-      },
-      hasRelatedDocuments: analysisData.attachments && analysisData.attachments.length > 0,
-      relatedDocumentsCount: analysisData.attachments?.length || 0
+      text: textContent
     };
 
     console.log("Сформированный prompt объект:", promptData);
+    console.log("Длина текста в prompt:", textContent.length);
+    console.log("Текст prompt (первые 500 символов):", textContent.substring(0, 500));
+    console.log("=== КОНЕЦ BUILD COMPLAINT PROMPT ===");
     return promptData;
   }
 
   preparePrompt(prompt, taskType, options) {
-    console.log("Начало preparePrompt");
+    console.log("=== НАЧАЛО PREPARE PROMPT ===");
     console.log("Тип prompt:", typeof prompt);
     console.log("Task type:", taskType);
     console.log("Options:", options);
+    
     // Если prompt является объектом (как в случае с buildAnalysisPrompt), используем его поля
     if (typeof prompt === 'object' && prompt !== null) {
-      const { text, instructions, strictMode, task } = prompt;
-      console.log("Prompt является объектом, поля:", { text: text ? text.substring(0, 100) : 'null', instructions, strictMode, task });
+      const { text, instructions, strictMode, task, agency } = prompt;
+      console.log("Prompt является объектом, поля:", { text: text ? text.substring(0, 100) : 'null', instructions, strictMode, task, agency });
       
       // Формируем промпт в зависимости от типа задачи
-      let basePrompt = text || "";
+      let basePrompt = "";
+      
+      // Для анализа документов передаем только текст пользователя
+      if (task === 'legal_analysis') {
+        basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть документа
+- keySentences: массив из 5 самых важных предложений из документа
+- violations: массив выявленных нарушений законодательства (если есть)
+- documentDate: дата документа (если указана)
+- senderAgency: ведомство-отправитель (если указано)
+
+Текст документа для анализа:
+${text || ""}`;
+      }
+      
+      // Для генерации жалоб передаем только текст
+      else if (task === 'generate_complaint') {
+        basePrompt = `Выступи в роли опытного юриста. Создай официальную жалобу в ${agency} от первого лица заявителя.
+ОСНОВНЫЕ ТРЕБОВАНИЯ:
+1. ИСПОЛЬЗУЙТЕ ДЕЛОВОЙ СТИЛЬ, СТРОГО ПО СУЩЕСТВУ
+2. УКАЖИТЕ КОНКРЕТНЫЕ НАРУШЕНИЯ ЗАКОНОВ
+3. СДЕЛАЙТЕ ССЫЛКИ НА СТАТЬИ ЗАКОНОВ
+4. ПРЕДЛОЖИТЕ КОНКРЕТНЫЕ ТРЕБОВАНИЯ
+5. НЕ ВКЛЮЧАЙТЕ ПОЛНЫЙ ТЕКСТ ДОКУМЕНТА
+
+ВЕРНИТЕ РЕЗУЛЬТАТ В ФОРМАТЕ JSON:
+{
+  "content": "текст жалобы"
+}
+
+Текст для анализа и создания жалобы:
+${text || ""}`;
+      }
       
       // Добавляем инструкции, если они есть
       if (instructions && instructions.trim()) {
@@ -492,42 +585,16 @@ ${instructions}`;
 ПРИМЕНЯЙТЕ СТРОГИЙ АНАЛИЗ ДОКУМЕНТА.`;
       }
       
-      // Добавляем общие указания по формату ответа в зависимости от типа задачи
-      switch (task) {
-        case 'legal_analysis':
-          basePrompt = `${basePrompt}
-
-ПРОАНАЛИЗИРУЙТЕ ДОКУМЕНТ И ПРЕДОСТАВЬТЕ СТРУКТУРИРОВАННЫЙ ОТВЕТ В ФОРМАТЕ JSON С ПОЛЯМИ:
-- summary: краткая суть документа
-- keySentences: массив важных предложений
-- violations: массив выявленных нарушений
-- documentDate: дата документа
-- senderAgency: ведомство-отправитель`;
-          break;
-        case 'generate_complaint':
-          basePrompt = `${basePrompt}
-
-СОЗДАЙТЕ ОФИЦИАЛЬНУЮ ЖАЛОБУ В ${agency} ОТ ПЕРВОГО ЛИЦА ЗАЯВИТЕЛЯ.
-ОСНОВНЫЕ ТРЕБОВАНИЯ:
-1. ИСПОЛЬЗУЙТЕ ДЕЛОВОЙ СТИЛЬ, СТРОГО ПО СУЩЕСТВУ
-2. УКАЖИТЕ КОНКРЕТНЫЕ НАРУШЕНИЯ ЗАКОНОВ
-3. СДЕЛАЙТЕ ССЫЛКИ НА СТАТЬИ ЗАКОНОВ
-4. ПРЕДЛОЖИТЕ КОНКРЕТНЫЕ ТРЕБОВАНИЯ
-5. НЕ ВКЛЮЧАЙТЕ ПОЛНЫЙ ТЕКСТ ДОКУМЕНТА
-
-ВЕРНИТЕ РЕЗУЛЬТАТ В ФОРМАТЕ JSON:
-{
-  "content": "текст жалобы"
-}`;
-          break;
-      }
-      
       console.log("Сформированный prompt (первые 200 символов):", basePrompt.substring(0, 200));
+      console.log("Общая длина prompt:", basePrompt.length);
+      console.log("=== КОНЕЦ PREPARE PROMPT ===");
       return basePrompt;
     }
     
     // Если prompt - строка, возвращаем её как есть
     console.log("Prompt является строкой");
+    console.log("Длина prompt:", typeof prompt === 'string' ? prompt.length : 'unknown');
+    console.log("=== КОНЕЦ PREPARE PROMPT ===");
     return prompt;
   }
 
