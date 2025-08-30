@@ -309,6 +309,33 @@ class AIService {
     console.log("=== НАЧАЛО SAFE PARSE RESPONSE ===");
     console.log("Тип ответа:", typeof response);
     console.log("Ответ (первые 500 символов):", typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response, null, 2));
+    
+    // If response is an object from Ollama API, extract the actual response
+    if (typeof response === "object" && response !== null && response.response) {
+      console.log("Ответ является объектом Ollama API, извлекаем response");
+      // Check if response.response is already parsed
+      if (typeof response.response === "object") {
+        console.log("response.response уже является объектом");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+        return response.response;
+      }
+      
+      // If response.response is a string, parse it
+      if (typeof response.response === "string") {
+        console.log("response.response является строкой, парсим её");
+        try {
+          const parsed = JSON.parse(response.response);
+          console.log("Успешный парсинг JSON из response.response");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+          return parsed;
+        } catch (parseError) {
+          console.error("Failed to parse response.response:", parseError);
+          // Fall through to string parsing logic
+          response = response.response;
+        }
+      }
+    }
+    
     // If response is already an object, return it as is
     if (typeof response === "object" && response !== null) {
       console.log("Ответ уже является объектом");
@@ -323,6 +350,7 @@ class AIService {
       try {
         const parsed = JSON.parse(response);
         console.log("Успешный парсинг JSON");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
         return parsed;
       } catch (directParseError) {
         console.error("Direct JSON parse failed:", directParseError);
@@ -332,6 +360,7 @@ class AIService {
           if (jsonMatch && jsonMatch[1]) {
             const parsed = JSON.parse(jsonMatch[1]);
             console.log("Успешный парсинг JSON из markdown");
+            console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
             return parsed;
           }
         } catch (markdownParseError) {
@@ -350,6 +379,7 @@ class AIService {
             violations: violationsMatch ? JSON.parse(violationsMatch[1]) : []
           };
           console.log("Успешная ручная распаковка ответа");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
           return result;
         } catch (manualParseError) {
           console.error("Manual JSON parse failed:", manualParseError);

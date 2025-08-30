@@ -202,6 +202,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { v4 as uuidv4 } from 'uuid'
 import { useAIStore } from '@/stores/aiStore'
 import { useDocumentStore } from '@/stores/documentStore'
 
@@ -309,12 +310,23 @@ const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
     // Вызываем бэкенд для генерации краткой сути
-    const response = await axios.post('http://localhost:3001/api/documents/analyze-text', {
+    const response = await axios.post('http://localhost:3001/api/documents/analyze', {
       text: document.value.originalText
     });
     const analysis = response.data;
     
+    // Обновляем все поля анализа
     document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
+    document.value.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : [];
+    document.value.violations = Array.isArray(analysis.violations) ? analysis.violations : [];
+    document.value.documentDate = analysis.documentDate || '';
+    document.value.senderAgency = analysis.senderAgency || '';
+    
+    // Обновляем currentDocument в хранилище
+    documentStore.currentDocument = { ...document.value };
+    
+    // Показываем сообщение о необходимости сохранения
+    console.log('Анализ обновлен. Нажмите "Сохранить" для сохранения изменений');
   } catch (err) {
     error.value = 'Ошибка перегенерации: ' + err.message
   } finally {
@@ -327,6 +339,13 @@ const handleSubmit = async () => {
   error.value = null
 
   try {
+    // Убеждаемся, что ID документа является строкой
+    if (document.value.id && typeof document.value.id !== 'string') {
+      console.log("Предупреждение: ID документа не является строкой:", typeof document.value.id, document.value.id);
+      // Преобразуем ID в строку
+      document.value.id = String(document.value.id);
+    }
+    
     // Обновляем currentDocument в хранилище перед сохранением
     documentStore.currentDocument = document.value
     await documentStore.saveDocument()
