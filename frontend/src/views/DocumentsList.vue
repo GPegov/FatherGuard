@@ -24,11 +24,7 @@
 
 
     <ul v-else class="documents">
-      <li 
-        v-for="doc in filteredDocuments" 
-        :key="doc.id" 
-        class="document-item"
-      >
+      <li v-for="doc in filteredDocuments" :key="doc.id" class="document-item">
         <div class="document-main" @click="viewDocument(doc.id)">
           <div class="document-meta">
             <span class="document-date">{{ formatDate(doc.date) }}</span>
@@ -39,17 +35,10 @@
           </p>
         </div>
         <div class="document-actions">
-          <button 
-            @click.stop="analyzeDocument(doc.id)" 
-            class="analyze-btn" 
-            :disabled="isAnalyzing"
-          >
-            {{ isAnalyzing ? 'Анализ...' : 'Проверить законность' }}
+          <button @click.stop="openComplaintDialog(doc.id)" class="analyze-btn">
+            Проверить законность
           </button>
-          <button 
-            @click.stop="confirmDelete(doc.id)" 
-            class="delete-btn"
-          >
+          <button @click.stop="confirmDelete(doc.id)" class="delete-btn">
             Удалить
           </button>
         </div>
@@ -69,16 +58,41 @@
       </div>
     </div>
 
-    <NotificationToast 
-      v-if="showNotification"
-      :message="notificationMessage"
-      :type="notificationType"
-      :duration="1500"
-      @close="showNotification = false"
-    />
+    <!-- Модальное окно выбора органа для подачи жалобы -->
+    <div v-if="showComplaintDialog" class="complaint-dialog" @click.self="showComplaintDialog = false">
+      <div class="dialog-content">
+        <h3>Выберите орган для подачи жалобы</h3>
+        <div class="agency-selection">
+          <select v-model="selectedComplaintAgency" class="agency-select">
+            <option value="" disabled hidden>Выберите надзорный орган</option>
+            <option v-for="agency in complaintAgencies" :key="agency" :value="agency">
+              {{ agency }}
+            </option>
+          </select>
+        </div>
+        <div class="dialog-actions">
+          <button 
+            @click="generateComplaint" 
+            class="action-btn primary"
+            :disabled="!selectedComplaintAgency || isGeneratingComplaint"
+          >
+            {{ isGeneratingComplaint ? 'Генерация...' : 'Создать жалобу' }}
+          </button>
+          <button 
+            @click="showComplaintDialog = false" 
+            class="action-btn"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <NotificationToast v-if="showNotification" :message="notificationMessage" :type="notificationType" :duration="1500"
+      @close="showNotification = false" />
 
     <!-- Индикатор загрузки -->
-    <div v-if="isAnalyzing" class="loading-overlay">
+    <div v-if="isGeneratingComplaint" class="loading-overlay">
       <div class="loading-content">
         <div class="loading-spinner"></div>
         <div class="loading-text">Генерация жалобы...</div>
@@ -99,19 +113,72 @@ import NotificationToast from '@/components/ui/NotificationToast.vue'
 const documentStore = useDocumentStore()
 const complaintStore = useComplaintStore()
 const router = useRouter()
+
 const showNotification = ref(false)
 const notificationMessage = ref('')
 const notificationType = ref('success')
 
 const isLoading = ref(false)
-const isAnalyzing = ref(false)
 const searchQuery = ref('')
 const selectedAgency = ref('')
-const currentDocumentId = ref(null)
 
 // Для удаления документов
 const showDeleteModal = ref(false)
 const documentToDelete = ref(null)
+
+// Для модального окна жалобы
+const showComplaintDialog = ref(false)
+const selectedComplaintAgency = ref('')
+const currentDocumentId = ref(null)
+const isGeneratingComplaint = ref(false)
+
+// Варианты надзорных органов
+const complaintAgencies = computed(() => complaintStore.agenciesOptions)
+
+// Открытие модального окна для выбора органа
+const openComplaintDialog = (documentId) => {
+  currentDocumentId.value = documentId
+  selectedComplaintAgency.value = ''
+  showComplaintDialog.value = true
+}
+
+// Генерация жалобы
+const generateComplaint = async () => {
+  if (!selectedComplaintAgency.value) return
+
+  isGeneratingComplaint.value = true
+  try {
+    const complaint = await complaintStore.generateComplaint(
+      currentDocumentId.value,
+      selectedComplaintAgency.value
+    )
+
+    // Показываем уведомление
+    notificationMessage.value = 'Жалоба успешно создана'
+    notificationType.value = 'success'
+    showNotification.value = true
+
+    // Закрываем диалог
+    showComplaintDialog.value = false
+
+    // Переходим к подробному просмотру созданной жалобы
+    if (complaint && complaint.id) {
+      router.push(`/complaints/${complaint.id}`)
+    } else {
+      // Если по какой-то причине ID жалобы не доступен, переходим к списку жалоб
+      router.push('/complaints')
+    }
+  } catch (error) {
+    console.error('Ошибка генерации жалобы:', error)
+
+    // Уведомление об ошибке
+    notificationMessage.value = 'Ошибка при создании жалобы'
+    notificationType.value = 'error'
+    showNotification.value = true
+  } finally {
+    isGeneratingComplaint.value = false
+  }
+}
 
 const confirmDelete = (id) => {
   documentToDelete.value = id
@@ -123,14 +190,14 @@ const deleteDocument = async () => {
     try {
       await documentStore.deleteDocument(documentToDelete.value)
       await documentStore.fetchDocuments()
-      
+
       // Показываем уведомление
       notificationMessage.value = 'Документ успешно удалён'
       notificationType.value = 'success'
       showNotification.value = true
     } catch (error) {
       console.error('Ошибка удаления:', error)
-      
+
       // Уведомление об ошибке
       notificationMessage.value = 'Ошибка при удалении документа'
       notificationType.value = 'error'
@@ -437,6 +504,7 @@ h1 {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -446,6 +514,7 @@ h1 {
   from {
     opacity: 1;
   }
+
   to {
     opacity: 0;
   }
@@ -456,6 +525,7 @@ h1 {
     transform: translateY(-20px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -466,11 +536,47 @@ h1 {
   0% {
     transform: rotate(0deg);
   }
+
   100% {
     transform: rotate(360deg);
   }
 }
 
+
+/* Стили для выбора органа */
+.agency-selection {
+  margin-bottom: 20px;
+}
+
+.agency-select {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background-color: white;
+  font-size: 16px;
+  color: #333;
+  appearance: none; /* Убираем стандартные стрелки в некоторых браузерах */
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+
+.agency-select:focus {
+  outline: none;
+  border-color: #42b983;
+  box-shadow: 0 0 0 2px rgba(66, 185, 131, 0.2);
+}
+
+/* Стиль для placeholder в select */
+.agency-select option[disabled] {
+  display: none;
+}
+
+.agency-select option {
+  color: #333;
+}
 
 /* Удаление и модальное окно */
 
@@ -544,6 +650,4 @@ h1 {
   border-radius: 4px;
   cursor: pointer;
 }
-
-
 </style>

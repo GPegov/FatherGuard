@@ -1,9 +1,9 @@
 <template>
   <div class="home-view">
-    <h1>Изложите суть Вашей ситуации:</h1>
+    <h1>Опишите, как именно были нарушены ваши права:</h1>
     <textarea 
       v-model="userText" 
-      placeholder="Подробно опишите вашу ситуацию..."
+      placeholder="В свободной форме изложите детали нарушения..."
       class="text-input"
       rows="15"
     ></textarea>
