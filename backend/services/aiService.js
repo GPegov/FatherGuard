@@ -206,22 +206,23 @@ class AIService {
         console.log("Prompt data preview:", typeof promptData === 'string' ? promptData.substring(0, 200) : JSON.stringify(promptData, null, 2));
         console.log("=== КОНЕЦ ANALYZE LEGAL TEXT ===");
         
-        const result = await this.queryLocalModel(promptData, {
-          temperature: 0.3,
+        // Основной запрос с температурой 0.4 для получения краткой сути, нарушений и другой информации
+        const mainResult = await this.queryLocalModel(promptData, {
+          temperature: 0.4,
           format: "json",
         });
 
-        console.log("Model response received:", typeof result);
-        if (typeof result === 'string') {
-          console.log("Model response (first 200 chars):", result.substring(0, 200));
+        console.log("Main model response received:", typeof mainResult);
+        if (typeof mainResult === 'string') {
+          console.log("Main model response (first 200 chars):", mainResult.substring(0, 200));
         }
 
-        const parsedResult = this.safeParseResponse(result);
-        console.log("Parsed result:", parsedResult);
+        const parsedMainResult = this.safeParseResponse(mainResult);
+        console.log("Parsed main result:", parsedMainResult);
 
         // If parsing failed, return error object
-        if (!parsedResult) {
-          console.log("Failed to parse model response");
+        if (!parsedMainResult) {
+          console.log("Failed to parse main model response");
           return {
             summary: "Failed to parse model response",
             keySentences: [],
@@ -231,18 +232,50 @@ class AIService {
           };
         }
 
-        // Extract data from result
-        const summary = parsedResult.summary || parsedResult.content || "Failed to generate brief summary";
-        const keySentences = Array.isArray(parsedResult.keySentences) 
-          ? parsedResult.keySentences.filter((p) => p && p.length > 5)
-          : (Array.isArray(parsedResult.content) 
-            ? parsedResult.content.filter((p) => p && p.length > 5)
-            : []);
-        const violations = Array.isArray(parsedResult.violations) 
-          ? parsedResult.violations
+        // Извлекаем основную информацию из результата
+        const summary = parsedMainResult.summary || parsedMainResult.content || "Failed to generate brief summary";
+        const violations = Array.isArray(parsedMainResult.violations) 
+          ? parsedMainResult.violations
           : [];
-        const documentDate = parsedResult.documentDate || parsedResult.sentDate || this.extractDate(processedText) || "";
-        const senderAgency = parsedResult.senderAgency || parsedResult.agency || this.extractAgency(processedText) || "";
+        const documentDate = parsedMainResult.documentDate || parsedMainResult.sentDate || this.extractDate(processedText) || "";
+        const senderAgency = parsedMainResult.senderAgency || parsedMainResult.agency || this.extractAgency(processedText) || "";
+
+        // Дополнительный запрос с температурой 0.1 для извлечения важных предложений
+        console.log("=== НАЧАЛО ИЗВЛЕЧЕНИЯ ВАЖНЫХ ПРЕДЛОЖЕНИЙ ===");
+        const keySentencesPrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь массив из 5 самых важных предложений из документа.
+
+Текст документа для анализа:
+${processedText || ""}
+
+Верни только массив предложений в формате JSON:
+[
+  "предложение 1",
+  "предложение 2",
+  "предложение 3",
+  "предложение 4",
+  "предложение 5"
+]`;
+
+        console.log("Key sentences prompt built, calling queryLocalModel with temperature 0.1");
+        const keySentencesResult = await this.queryLocalModel(keySentencesPrompt, {
+          temperature: 0.1,
+          format: "json",
+        });
+
+        console.log("Key sentences model response received:", typeof keySentencesResult);
+        if (typeof keySentencesResult === 'string') {
+          console.log("Key sentences model response (first 200 chars):", keySentencesResult.substring(0, 200));
+        }
+
+        const parsedKeySentencesResult = this.safeParseResponse(keySentencesResult);
+        console.log("Parsed key sentences result:", parsedKeySentencesResult);
+
+        // Извлекаем важные предложения из результата
+        const keySentences = Array.isArray(parsedKeySentencesResult) 
+          ? parsedKeySentencesResult.filter((p) => p && p.length > 5)
+          : (Array.isArray(parsedMainResult.keySentences) 
+            ? parsedMainResult.keySentences.filter((p) => p && p.length > 5)
+            : []);
 
         const enhancedResult = {
           summary,
@@ -478,7 +511,7 @@ class AIService {
     
     // Формируем строку промпта для анализа документа
     let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа
+- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
 - keySentences: массив из 5 самых важных предложений из документа
 - violations: массив выявленных нарушений законодательства (если есть)
 - documentDate: дата документа (если указана)
@@ -571,7 +604,7 @@ ${instructions}`;
       // Для анализа документов передаем только текст пользователя
       if (task === 'legal_analysis') {
         basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа
+- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
 - keySentences: массив из 5 самых важных предложений из документа
 - violations: массив выявленных нарушений законодательства (если есть)
 - documentDate: дата документа (если указана)

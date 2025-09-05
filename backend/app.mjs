@@ -129,6 +129,13 @@ async function startServer() {
       }
     );
 
+    // Подключение роутов для ФССП парсера
+    import("./routes/fsspRoutes.js").then(
+      ({ default: fsspRoutes }) => {
+        app.use("/api/fssp", fsspRoutes);
+      }
+    );
+
     // Делаем aiService доступным в приложении
     app.locals.aiService = aiService;
 

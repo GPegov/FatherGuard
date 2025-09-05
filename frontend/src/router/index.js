@@ -41,6 +41,11 @@ const router = createRouter({
       name: 'ComplaintDetail',
       component: () => import('@/views/ComplaintDetail.vue'),
       props: true
+    },
+    {
+      path: '/fssp',
+      name: 'FSSPData',
+      component: () => import('@/views/FSSPDataView.vue'),
     }
   ],
 });

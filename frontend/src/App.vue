@@ -12,6 +12,7 @@
           <router-link to="/" class="nav-link" exact-active-class="active">Главная</router-link>
           <router-link to="/documents" class="nav-link" exact-active-class="active">Документы</router-link>
           <router-link to="/complaints" class="nav-link" exact-active-class="active">Жалобы</router-link>
+          <router-link to="/fssp" class="nav-link" exact-active-class="active">Отделения ФССП</router-link>
         </div>
       </nav>
     </header>
