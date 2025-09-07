@@ -2,13 +2,20 @@
   <div class="fssp-container">
     <div class="header">
       <h1>Отделения Федеральной службы Судебных Приставов</h1>
-      <button 
-        @click="startParsing" 
-        :disabled="isParsing" 
-        class="parse-button"
-      >
-        {{ isParsing ? 'Парсинг выполняется...' : 'Запустить парсинг данных' }}
-      </button>
+      <div class="controls">
+        <select v-model="selectedRegion" @change="loadData" class="region-select">
+          <option v-for="region in availableRegions" :key="region" :value="region">
+            {{ region }}
+          </option>
+        </select>
+        <button 
+          @click="startParsing" 
+          :disabled="isParsing" 
+          class="parse-button"
+        >
+          {{ isParsing ? 'Парсинг выполняется...' : 'Запустить парсинг данных' }}
+        </button>
+      </div>
     </div>
 
     <div v-if="parsingResult" class="parsing-result">
@@ -80,11 +87,25 @@ export default {
     const isParsing = ref(false);
     const fsspData = ref(null);
     const parsingResult = ref(null);
+    const selectedRegion = ref('Свердловская область');
+    const availableRegions = ref([]);
 
-    // Загрузка данных при монтировании компонента
+    // Загрузка списка доступных регионов
+    const loadRegions = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/fssp/regions');
+        if (response.data.success) {
+          availableRegions.value = response.data.regions;
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки списка регионов:', error);
+      }
+    };
+
+    // Загрузка данных по выбранному региону
     const loadData = async () => {
       try {
-        const response = await axios.get('http://localhost:3001/api/fssp/data');
+        const response = await axios.get(`http://localhost:3001/api/fssp/data?region=${encodeURIComponent(selectedRegion.value)}`);
         if (response.data.success) {
           fsspData.value = response.data.data;
         }
@@ -93,13 +114,15 @@ export default {
       }
     };
 
-    // Запуск парсинга
+    // Запуск парсинга по выбранному региону
     const startParsing = async () => {
       isParsing.value = true;
       parsingResult.value = null;
       
       try {
-        const response = await axios.post('http://localhost:3001/api/fssp/parse');
+        const response = await axios.post('http://localhost:3001/api/fssp/parse', {
+          region: selectedRegion.value
+        });
         parsingResult.value = response.data;
         
         // После успешного парсинга перезагружаем данные
@@ -125,8 +148,9 @@ export default {
     };
 
     // Загрузка данных при монтировании
-    onMounted(() => {
-      loadData();
+    onMounted(async () => {
+      await loadRegions();
+      await loadData();
     });
 
     return {
@@ -134,7 +158,10 @@ export default {
       fsspData,
       parsingResult,
       startParsing,
-      formatDate
+      formatDate,
+      selectedRegion,
+      availableRegions,
+      loadData
     };
   }
 };
@@ -161,6 +188,21 @@ export default {
   color: #333;
 }
 
+.controls {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+}
+
+.region-select {
+  padding: 12px 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 16px;
+  background-color: white;
+  min-width: 250px;
+}
+
 .parse-button {
   background-color: #4CAF50;
   color: white;
@@ -170,6 +212,7 @@ export default {
   border-radius: 6px;
   cursor: pointer;
   transition: background-color 0.3s;
+  white-space: nowrap;
 }
 
 .parse-button:hover:not(:disabled) {
@@ -289,6 +332,14 @@ export default {
   .header {
     flex-direction: column;
     align-items: stretch;
+  }
+  
+  .controls {
+    flex-direction: column;
+  }
+  
+  .region-select {
+    min-width: auto;
   }
   
   .parse-button {

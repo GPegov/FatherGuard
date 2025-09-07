@@ -23,7 +23,7 @@ const app = express();
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // 1. Инициализация файла базы данных
-const dbPath = join(__dirname, "db.json");
+const dbPath = join(__dirname, "dataBase", "db.json");
 
 // 2. Функция для гарантированной инициализации DB
 async function initDB() {

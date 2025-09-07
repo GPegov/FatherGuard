@@ -2,24 +2,31 @@ import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import fsspRegions from "./fsspRegions.js";
+import transliterate from "./transliterate.js";
 
 // Получаем __dirname в ES модуле
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class FSSPParser {
-  constructor() {
-    this.dataFilePath = path.join(__dirname, "..", "..", "fssp_data.json");
+  constructor(regionName = "Свердловская область") {
+    this.regionName = regionName;
+    this.regionCode = fsspRegions[regionName] || 66; // По умолчанию Свердловская область
+    this.baseUrl = `https://r${this.regionCode}.fssp.gov.ru/contacts`;
+    this.fileName = `${this.regionCode}_${transliterate(regionName)}.json`;
+    this.dataFilePath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB", this.fileName);
   }
 
-  // Получение данных по Свердловской области с использованием Puppeteer
-  async getSverdlovskData() {
+  // Получение данных по региону с использованием Puppeteer
+  async getRegionData() {
     let browser = null;
 
     try {
       console.log(
-        "Запуск браузера для получения данных по Свердловской области..."
+        `Запуск браузера для получения данных по региону: ${this.regionName} (${this.regionCode})`
       );
+      console.log(`URL для парсинга: ${this.baseUrl}`);
 
       // Запускаем браузер
       browser = await puppeteer.launch({
@@ -35,14 +42,22 @@ class FSSPParser {
       );
 
       // Переходим на страницу контактов
-      console.log("Переход на страницу контактов...");
-      await page.goto("https://r66.fssp.gov.ru/contacts", {
+      console.log(`Переход на страницу контактов: ${this.baseUrl}`);
+      await page.goto(this.baseUrl, {
         waitUntil: "networkidle2",
         timeout: 30000,
       });
 
       // Ждем загрузки контента
       await new Promise((resolve) => setTimeout(resolve, 5000));
+
+      // Проверяем URL страницы
+      const currentPageUrl = page.url();
+      console.log(`Текущий URL страницы: ${currentPageUrl}`);
+
+      // Проверяем статус ответа
+      const response = await page.goto(this.baseUrl, { waitUntil: 'domcontentloaded' });
+      console.log(`Статус ответа: ${response.status()}`);
 
       // Извлекаем данные с помощью JavaScript в контексте страницы
       const rawData = await page.evaluate(() => {
@@ -57,32 +72,9 @@ class FSSPParser {
           console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
 
           if (rows.length > 1) {
-            // Проверяем, является ли первая строка заголовком таблицы
-            let hasHeaderRow = false;
-            const firstRow = rows[0];
-            const headerCells = firstRow.querySelectorAll("th, td");
-            let firstRowText = "";
-            
-            // Собираем текст из всех ячеек первой строки
-            headerCells.forEach(cell => {
-              firstRowText += " " + cell.textContent.toLowerCase();
-            });
-            firstRowText = firstRowText.trim();
-            
-            // Проверяем, содержит ли первая строка характерные слова заголовка
-            hasHeaderRow = (
-              firstRowText.includes("№") &&
-              (firstRowText.includes("наименование") || firstRowText.includes("структурного") || firstRowText.includes("подразделения")) &&
-              firstRowText.includes("адрес") &&
-              (firstRowText.includes("почты") || firstRowText.includes("почта")) &&
-              firstRowText.includes("телефон")
-            );
-
-            // Обрабатываем строки таблицы, пропуская заголовок, если он есть
-            const startIndex = hasHeaderRow ? 1 : 0;
-            for (let rowIndex = startIndex; rowIndex < rows.length; rowIndex++) {
-              const row = rows[rowIndex];
-              const cells = row.querySelectorAll("td");
+            // Обрабатываем строки таблицы
+            rows.forEach((row, rowIndex) => {
+              const cells = row.querySelectorAll("td, th");
               
               // Структура таблицы на сайте:
               // 0 - порядковый номер (не нужен)
@@ -95,16 +87,42 @@ class FSSPParser {
                 const address = cells[2].textContent.trim();
                 const phone = cells[4].textContent.trim();
 
-                // Проверяем, что строка содержит данные
-                if (departmentName || address || phone) {
-                  departments.push({
-                    name: departmentName || "Отделение ФССП",
-                    address: address || "Адрес не указан",
-                    phone: phone || "Телефон не указан",
-                  });
+                // Проверяем, является ли строка заголовочной
+                // Проверяем первые 5 строк на наличие стоп-слов
+                let isHeaderRow = false;
+                if (rowIndex < 5) {
+                  const rowText = row.textContent.toLowerCase();
+                  const stopWords = ["наименование", "структурного", "подразделения", "адрес", "почты", "почта", "телефон"];
+                  
+                  // Проверяем, содержит ли строка хотя бы одно из стоп-слов
+                  for (const word of stopWords) {
+                    if (rowText.includes(word)) {
+                      isHeaderRow = true;
+                      break;
+                    }
+                  }
+                }
+
+                // Проверяем, что строка содержит данные и не является заголовочной
+                if ((departmentName || address || phone) && !isHeaderRow) {
+                  // Дополнительная проверка на заголовочные данные
+                  const isHeaderData = (
+                    departmentName.includes("Наименование структурного подразделения") ||
+                    address.includes("Почтовый адрес") ||
+                    phone.includes("Телефон для получения справочной информации")
+                  );
+
+                  // Добавляем только если это не заголовочные данные
+                  if (!isHeaderData) {
+                    departments.push({
+                      name: departmentName || "Отделение ФССП",
+                      address: address || "Адрес не указан",
+                      phone: phone || "Телефон не указан",
+                    });
+                  }
                 }
               }
-            }
+            });
           }
         });
 
@@ -119,14 +137,14 @@ class FSSPParser {
       return regionData;
     } catch (error) {
       console.error(
-        "Ошибка при получении данных по Свердловской области:",
+        `Ошибка при получении данных по региону ${this.regionName}:`,
         error.message
       );
 
       // В случае ошибки возвращаем тестовые данные
       return {
-        region: "Свердловская область",
-        cities: this.getTestSverdlovskData(),
+        region: this.regionName,
+        cities: this.getTestRegionData(),
       };
     } finally {
       // Закрываем браузер
@@ -294,31 +312,21 @@ class FSSPParser {
 
 
 
-  // Тестовые данные для Свердловской области
-  getTestSverdlovskData() {
+  // Тестовые данные для региона
+  getTestRegionData() {
     return [
       {
-        name: "г. Екатеринбург",
+        name: `г. ${this.regionName.split(" ")[0]}`,
         departments: [
           {
-            name: "Управление ФССП по г. Екатеринбургу",
-            address: "г. Екатеринбург, ул. Ленина, д. 25",
-            phone: "+7 (343) 282-22-22",
+            name: `Управление ФССП по г. ${this.regionName.split(" ")[0]}`,
+            address: `г. ${this.regionName.split(" ")[0]}, ул. Ленина, д. 25`,
+            phone: "+7 (xxx) xxx-xx-xx",
           },
           {
-            name: "Отделение ФССП по Железнодорожному району",
-            address: "г. Екатеринбург, ул. Малышева, д. 95",
-            phone: "+7 (343) 282-23-23",
-          },
-        ],
-      },
-      {
-        name: "г. Нижний Тагил",
-        departments: [
-          {
-            name: "Отделение ФССП по г. Нижний Тагил",
-            address: "г. Нижний Тагил, ул. Комсомольская, д. 34",
-            phone: "+7 (3435) 22-22-22",
+            name: `Отделение ФССП по Центральному району`,
+            address: `г. ${this.regionName.split(" ")[0]}, ул. Мира, д. 10`,
+            phone: "+7 (xxx) xxx-xx-xx",
           },
         ],
       },
@@ -328,10 +336,10 @@ class FSSPParser {
   // Основной метод для запуска парсинга
   async parseAllData() {
     try {
-      console.log("Запуск парсера данных ФССП России (Свердловская область)");
+      console.log(`Запуск парсера данных ФССП России (${this.regionName})`);
 
-      // Получаем данные только по Свердловской области
-      const regionData = await this.getSverdlovskData();
+      // Получаем данные по региону
+      const regionData = await this.getRegionData();
 
       const regionsData = [regionData];
 
@@ -376,6 +384,41 @@ class FSSPParser {
         timestamp: new Date().toISOString(),
         regions: data,
       };
+
+      // Если файл не существует, создаем его с начальной структурой
+      if (!fs.existsSync(this.dataFilePath)) {
+        // Создаем папку, если она не существует
+        const dbDir = path.dirname(this.dataFilePath);
+        if (!fs.existsSync(dbDir)) {
+          fs.mkdirSync(dbDir, { recursive: true });
+        }
+        
+        // Создаем файл с начальной структурой
+        fs.writeFileSync(
+          this.dataFilePath,
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            regions: []
+          }, null, 2),
+          "utf8"
+        );
+        console.log(`Создан файл базы данных для региона "${this.regionName}": ${this.fileName}`);
+      }
+
+      // Создаем резервную копию текущего файла, если он существует
+      if (fs.existsSync(this.dataFilePath)) {
+        // Формируем имя файла для резервной копии с суффиксом _backup
+        const backupFileName = this.fileName.replace('.json', '_backup.json');
+        const backupPath = path.join(__dirname, "..", "dataBase", "backup", backupFileName);
+        // Создаем папку backup, если она не существует
+        const backupDir = path.dirname(backupPath);
+        if (!fs.existsSync(backupDir)) {
+          fs.mkdirSync(backupDir, { recursive: true });
+        }
+        
+        fs.copyFileSync(this.dataFilePath, backupPath);
+        console.log(`Резервная копия создана: ${backupPath}`);
+      }
 
       fs.writeFileSync(
         this.dataFilePath,
