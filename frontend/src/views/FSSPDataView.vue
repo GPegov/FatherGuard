@@ -3,11 +3,12 @@
     <div class="header">
       <h1>Отделения Федеральной службы Судебных Приставов</h1>
       <div class="controls">
-        <select v-model="selectedRegion" @change="loadData" class="region-select">
-          <option v-for="region in availableRegions" :key="region" :value="region">
-            {{ region }}
-          </option>
-        </select>
+        <RegionAutocomplete
+          :regions="availableRegions"
+          v-model="selectedRegion"
+          @regionSelected="loadData"
+          class="region-autocomplete"
+        />
         <button 
           @click="startParsing" 
           :disabled="isParsing" 
@@ -80,9 +81,13 @@
 <script>
 import { ref, onMounted } from 'vue';
 import axios from 'axios';
+import RegionAutocomplete from '@/components/RegionAutocomplete.vue';
 
 export default {
   name: 'FSSPDataView',
+  components: {
+    RegionAutocomplete
+  },
   setup() {
     const isParsing = ref(false);
     const fsspData = ref(null);
@@ -95,7 +100,12 @@ export default {
       try {
         const response = await axios.get('http://localhost:3001/api/fssp/regions');
         if (response.data.success) {
+          // Сохраняем полные данные регионов (имя и код)
           availableRegions.value = response.data.regions;
+          // Устанавливаем имя региона по умолчанию
+          if (!selectedRegion.value && response.data.regions.length > 0) {
+            selectedRegion.value = response.data.regions.find(r => r.code === 66)?.name || response.data.regions[0].name;
+          }
         }
       } catch (error) {
         console.error('Ошибка загрузки списка регионов:', error);
@@ -192,16 +202,15 @@ export default {
   display: flex;
   gap: 15px;
   align-items: center;
+  width: 100%;
 }
 
-.region-select {
-  padding: 12px 15px;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  font-size: 16px;
-  background-color: white;
+.region-autocomplete {
+  flex: 1;
   min-width: 250px;
 }
+
+
 
 .parse-button {
   background-color: #4CAF50;
@@ -338,7 +347,7 @@ export default {
     flex-direction: column;
   }
   
-  .region-select {
+  .region-autocomplete {
     min-width: auto;
   }
   

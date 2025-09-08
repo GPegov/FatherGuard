@@ -44,13 +44,18 @@ router.get('/data', async (req, res) => {
   }
 });
 
-// Получение списка доступных регионов
+// Получение списка доступных регионов с кодами
 router.get('/regions', async (req, res) => {
   try {
     console.log('Получение списка доступных регионов');
-    // Получаем список регионов из объекта fsspRegions
-    const regions = Object.keys((await import('../services/fsspRegions.js')).default);
-    res.json({ success: true, regions });
+    // Получаем список регионов с кодами из объекта fsspRegions
+    const fsspRegions = (await import('../services/fsspRegions.js')).default;
+    const regions = Object.keys(fsspRegions);
+    const regionsWithCodes = regions.map(region => ({
+      name: region,
+      code: fsspRegions[region]
+    }));
+    res.json({ success: true, regions: regionsWithCodes });
   } catch (error) {
     console.error('Ошибка в endpoint /regions:', error);
     res.status(500).json({ 

@@ -41,6 +41,173 @@ export default defineConfig({
 
 ====================
 
+// Файл: simple-debug.js
+// simple-debug.js
+import axios from 'axios';
+
+async function simpleDebug() {
+  try {
+    console.log('Получение данных со страницы контактов ФССП...');
+    const response = await axios.get('https://fssp.gov.ru/contacts');
+    
+    // Выведем информацию о response
+    console.log('Status:', response.status);
+    console.log('Status text:', response.statusText);
+    console.log('Content type:', response.headers['content-type']);
+    console.log('Data length:', response.data.length);
+    
+    // Проверим, содержит ли данные определенные ключевые слова
+    if (response.data.includes('контакт')) {
+      console.log('Найдено упоминание "контакт"');
+    }
+    if (response.data.includes('отделение')) {
+      console.log('Найдено упоминание "отделение"');
+    }
+    
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+  }
+}
+
+simpleDebug();
+
+====================
+
+// Файл: diagnose.js
+// diagnose.js
+import axios from 'axios';
+
+async function diagnose() {
+  try {
+    console.log('Проверка доступности сайта ФССП...');
+    const response = await axios.get('https://fssp.gov.ru/contacts', {
+      timeout: 10000 // 10 секунд таймаут
+    });
+    
+    console.log('Статус:', response.status);
+    console.log('Длина ответа:', response.data.length);
+    console.log('Первые 200 символов:');
+    console.log(response.data.substring(0, 200));
+    
+    // Проверим, содержит ли ответ ключевые элементы
+    if (response.data.includes('контакт') || response.data.includes('отделение')) {
+      console.log('Найдены ключевые слова');
+    } else {
+      console.log('Ключевые слова не найдены');
+    }
+    
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+    if (error.code) {
+      console.error('Код ошибки:', error.code);
+    }
+  }
+}
+
+diagnose();
+
+====================
+
+// Файл: debug-html.js
+// debug-html.js
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+
+async function debugHTML() {
+  try {
+    console.log('Получение HTML страницы контактов ФССП...');
+    const response = await axios.get('https://fssp.gov.ru/contacts');
+    const $ = cheerio.load(response.data);
+    
+    console.log('Длина полученных данных:', response.data.length);
+    console.log('Первые 500 символов ответа:');
+    console.log(response.data.substring(0, 500));
+    
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+  }
+}
+
+debugHTML();
+
+====================
+
+// Файл: check-redirect.js
+// check-redirect.js
+import axios from 'axios';
+
+async function checkRedirect() {
+  try {
+    console.log('Проверка перенаправлений...');
+    const response = await axios.get('https://fssp.gov.ru/contacts', {
+      maxRedirects: 0,
+      validateStatus: function (status) {
+        return status < 400; // Разрешаем перенаправления
+      }
+    });
+    
+    console.log('Final URL:', response.request.res.responseUrl || response.config.url);
+    console.log('Status:', response.status);
+    
+  } catch (error) {
+    if (error.response) {
+      console.log('Status:', error.response.status);
+      console.log('Headers:', error.response.headers);
+    } else {
+      console.error('Ошибка:', error.message);
+    }
+  }
+}
+
+checkRedirect();
+
+====================
+
+// Файл: check-html-structure.js
+// check-html-structure.js
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+
+async function checkHTMLStructure() {
+  try {
+    console.log('Получение страницы https://r66.fssp.gov.ru/contacts');
+    const response = await axios.get('https://r66.fssp.gov.ru/contacts');
+    const $ = cheerio.load(response.data);
+    
+    console.log('Проверка наличия ключевых элементов:');
+    console.log('- .contacts-item:', $('.contacts-item').length);
+    console.log('- .contacts-department:', $('.contacts-department').length);
+    console.log('- .contacts-department-title:', $('.contacts-department-title').length);
+    console.log('- .contacts-department-address:', $('.contacts-department-address').length);
+    console.log('- .contacts-department-phone:', $('.contacts-department-phone').length);
+    
+    // Попробуем найти таблицу
+    console.log('\nПоиск таблиц:');
+    console.log('- table:', $('table').length);
+    console.log('- tr:', $('tr').length);
+    console.log('- td:', $('td').length);
+    
+    // Покажем структуру первых нескольких строк таблицы
+    if ($('table').length > 0) {
+      console.log('\nСтруктура таблицы:');
+      $('table').first().find('tr').slice(0, 5).each((index, element) => {
+        console.log(`Строка ${index + 1}:`);
+        $(element).find('td').each((tdIndex, tdElement) => {
+          const text = $(tdElement).text().trim();
+          console.log(`  Колонка ${tdIndex + 1}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
+        });
+      });
+    }
+    
+  } catch (error) {
+    console.error('Ошибка:', error.message);
+  }
+}
+
+checkHTMLStructure();
+
+====================
+
 // Файл: frontend\vite.config.js
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, loadEnv } from 'vite'
@@ -106,95 +273,674 @@ export default defineConfig(({ mode }) => {
 
 ====================
 
-// Файл: backend\test-analyze-text.js
-import axios from 'axios';
+// Файл: backend\verifyFiles.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import fsspRegions from "./services/fsspRegions.js";
+import transliterate from "./services/transliterate.js";
 
-// Тестовый текст для анализа
-const testText = `
-Уведомление о взыскании задолженности
-Федеральная служба судебных приставов по Омской области
-Отдел судебных приставов по Московскому району г. Омска
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-Взыскатель: Иванов И.И.
-Адрес: г. Омск, ул. Ленина, д. 10, кв. 5
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
 
-Должник: Петров П.П.
-Адрес: г. Омск, ул. Советская, д. 15, кв. 20
+console.log("Проверка файлов баз данных для всех регионов...");
 
-На основании исполнительного листа от 15.03.2024 года № 1234567890
-о взыскании с Петрова П.П. в пользу Иванова И.И. задолженности 
-в размере 50 000 рублей плюс 3% годовых и судебные расходы 5 000 рублей.
+// Получаем список всех регионов
+const regions = Object.keys(fsspRegions);
 
-Взыскано: 55 000 рублей
-Остаток долга: 0 рублей
+let missingFiles = 0;
+let totalFiles = 0;
 
-Дата взыскания: 20.04.2024
-Подпись: ___________
-Печать: Федеральная служба судебных приставов
-`;
-
-// Дополнительные инструкции
-const instructions = "Обрати особое внимание на дату взыскания и сумму. Проверь, соответствует ли она законодательству.";
-
-// Строгий режим анализа
-const strictMode = true;
-
-// URL для тестирования
-const url = 'http://localhost:3000/api/documents/analyze-text';
-
-async function testAnalyzeText() {
-  try {
-    console.log('Отправка запроса на анализ текста...');
-    
-    const response = await axios.post(url, {
-      text: testText,
-      instructions: instructions,
-      strictMode: strictMode
-    }, {
-      headers: {
-        'Content-Type': 'application/json'
+regions.forEach(region => {
+  const fileName = `${transliterate(region)}.json`;
+  const filePath = path.join(dbPath, fileName);
+  
+  totalFiles++;
+  
+  // Проверяем, существует ли файл
+  if (fs.existsSync(filePath)) {
+    // Проверяем содержимое файла
+    try {
+      const fileContent = fs.readFileSync(filePath, "utf8");
+      const parsedContent = JSON.parse(fileContent);
+      
+      // Проверяем структуру файла
+      if (parsedContent.timestamp && parsedContent.regions) {
+        // console.log(`✓ Файл для региона "${region}" корректен: ${fileName}`);
+      } else {
+        console.log(`✗ Файл для региона "${region}" имеет неправильную структуру: ${fileName}`);
       }
-    });
-    
-    console.log('Ответ от сервера:');
-    console.log(JSON.stringify(response.data, null, 2));
-  } catch (error) {
-    console.error('Ошибка при тестировании:');
-    if (error.response) {
-      console.error('Статус:', error.response.status);
-      console.error('Данные:', error.response.data);
-    } else {
-      console.error('Сообщение:', error.message);
+    } catch (error) {
+      console.log(`✗ Ошибка при чтении файла для региона "${region}": ${fileName} - ${error.message}`);
     }
+  } else {
+    console.log(`✗ Файл для региона "${region}" отсутствует: ${fileName}`);
+    missingFiles++;
   }
-}
+});
 
-// Запуск теста
-testAnalyzeText();
+console.log(`\nПроверка завершена. Всего регионов: ${regions.length}, Отсутствующих файлов: ${missingFiles}`);
+
+if (missingFiles === 0) {
+  console.log("✓ Все файлы баз данных регионов присутствуют и имеют правильную структуру.");
+} else {
+  console.log(`✗ Требуется создать ${missingFiles} файлов.`);
+}
 
 ====================
 
-// Файл: backend\test-ai.js
-import aiService from './services/aiService.js';
+// Файл: backend\testFsspParserNew.js
+import FSSPParser from "./services/fsspParser.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
-async function test() {
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function testParser() {
   try {
-    console.log("Testing AI connection...");
-    const result = await aiService.analyzeLegalText(
-      "Арендодатель запрещает держать животных в квартире"
-    );
-    console.log("✅ Success:", JSON.stringify(result, null, 2));
-  } catch (error) {
-    console.error("❌ Error:", error.message);
-    if (error.response) {
-      console.error("Response data:", error.response.data);
+    console.log("Тестирование FSSPParser с новым форматом имен файлов...");
+    
+    // Создаем экземпляр парсера для тестового региона
+    const parser = new FSSPParser("Свердловская область");
+    
+    console.log(`Регион: ${parser.regionName}`);
+    console.log(`Код региона: ${parser.regionCode}`);
+    console.log(`URL: ${parser.baseUrl}`);
+    console.log(`Имя файла: ${parser.fileName}`);
+    console.log(`Путь к файлу: ${parser.dataFilePath}`);
+    
+    // Проверяем существование файла
+    console.log("Проверка существования файла...");
+    console.log(`Файл существует: ${fs.existsSync(parser.dataFilePath)}`);
+    
+    // Создаем тестовые данные
+    const testData = [{
+      region: "Свердловская область",
+      cities: [
+        {
+          name: "Екатеринбург",
+          departments: [
+            {
+              name: "Управление ФССП по г. Екатеринбургу",
+              address: "г. Екатеринбург, ул. Ленина, д. 25",
+              phone: "+7 (343) 123-45-67"
+            }
+          ]
+        }
+      ]
+    }];
+    
+    // Сохраняем тестовые данные
+    console.log("Сохранение тестовых данных...");
+    await parser.saveToFile(testData);
+    console.log("Тестовые данные успешно сохранены.");
+    
+    // Проверяем, что файл был создан
+    console.log(`Файл существует после сохранения: ${fs.existsSync(parser.dataFilePath)}`);
+    
+    // Проверяем содержимое файла
+    if (fs.existsSync(parser.dataFilePath)) {
+      const fileContent = fs.readFileSync(parser.dataFilePath, "utf8");
+      const parsedContent = JSON.parse(fileContent);
+      console.log("Содержимое файла:");
+      console.log(`  Временная метка: ${parsedContent.timestamp}`);
+      console.log(`  Количество регионов: ${parsedContent.regions.length}`);
     }
-  } finally {
-    process.exit();
+    
+    // Проверяем существование резервной копии
+    const backupPath = path.join(__dirname, "dataBase", "backup", parser.fileName);
+    console.log(`Резервная копия существует: ${fs.existsSync(backupPath)}`);
+    
+  } catch (error) {
+    console.error("Ошибка при тестировании FSSPParser:", error);
   }
 }
 
-test();
+testParser();
+
+====================
+
+// Файл: backend\testFsspParser.js
+import FSSPParser from "./services/fsspParser.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+async function testParser() {
+  try {
+    console.log("Тестирование FSSPParser...");
+    
+    // Создаем экземпляр парсера для тестового региона
+    const parser = new FSSPParser("Свердловская область");
+    
+    console.log(`Регион: ${parser.regionName}`);
+    console.log(`Код региона: ${parser.regionCode}`);
+    console.log(`URL: ${parser.baseUrl}`);
+    console.log(`Имя файла: ${parser.fileName}`);
+    console.log(`Путь к файлу: ${parser.dataFilePath}`);
+    
+    // Проверяем существование файла
+    console.log("Проверка существования файла...");
+    console.log(`Файл существует: ${fs.existsSync(parser.dataFilePath)}`);
+    
+    // Создаем тестовые данные
+    const testData = [{
+      region: "Свердловская область",
+      cities: [
+        {
+          name: "Екатеринбург",
+          departments: [
+            {
+              name: "Управление ФССП по г. Екатеринбургу",
+              address: "г. Екатеринбург, ул. Ленина, д. 25",
+              phone: "+7 (343) 123-45-67"
+            }
+          ]
+        }
+      ]
+    }];
+    
+    // Сохраняем тестовые данные
+    console.log("Сохранение тестовых данных...");
+    await parser.saveToFile(testData);
+    console.log("Тестовые данные успешно сохранены.");
+    
+    // Проверяем, что файл был создан
+    console.log(`Файл существует после сохранения: ${fs.existsSync(parser.dataFilePath)}`);
+    
+    // Проверяем содержимое файла
+    if (fs.existsSync(parser.dataFilePath)) {
+      const fileContent = fs.readFileSync(parser.dataFilePath, "utf8");
+      const parsedContent = JSON.parse(fileContent);
+      console.log("Содержимое файла:");
+      console.log(`  Временная метка: ${parsedContent.timestamp}`);
+      console.log(`  Количество регионов: ${parsedContent.regions.length}`);
+    }
+    
+    // Проверяем существование резервной копии
+    const backupPath = path.join(__dirname, "dataBase", "backup", parser.fileName);
+    console.log(`Резервная копия существует: ${fs.existsSync(backupPath)}`);
+    
+  } catch (error) {
+    console.error("Ошибка при тестировании FSSPParser:", error);
+  }
+}
+
+testParser();
+
+====================
+
+// Файл: backend\renameFsspFiles.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import transliterate from "./services/transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
+
+// Получаем список файлов в папке
+const files = fs.readdirSync(dbPath);
+
+console.log("Начинаем переименование файлов...");
+
+files.forEach(file => {
+  // Проверяем, что это .json файл
+  if (path.extname(file) === ".json") {
+    // Получаем имя файла без расширения
+    const fileNameWithoutExt = path.basename(file, ".json");
+    
+    // Проверяем, содержит ли имя файла символ "ь"
+    if (fileNameWithoutExt.includes("ь") || fileNameWithoutExt.includes("Ь")) {
+      // Создаем новое имя файла без символа "ь"
+      const newFileNameWithoutExt = fileNameWithoutExt.replace(/[ьЬ]/g, "");
+      const newFileName = `${newFileNameWithoutExt}.json`;
+      
+      // Полные пути к старому и новому файлам
+      const oldFilePath = path.join(dbPath, file);
+      const newFilePath = path.join(dbPath, newFileName);
+      
+      // Переименовываем файл
+      fs.renameSync(oldFilePath, newFilePath);
+      console.log(`Файл "${file}" переименован в "${newFileName}"`);
+    }
+  }
+});
+
+console.log("Переименование файлов завершено.");
+
+====================
+
+// Файл: backend\renameFilesWithCodes.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import fsspRegions from "./services/fsspRegions.js";
+import transliterate from "./services/transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
+
+// Создаем карту соответствия названий регионов их кодам
+const regionCodeMap = {};
+Object.keys(fsspRegions).forEach(region => {
+  const code = fsspRegions[region];
+  const transliteratedName = transliterate(region);
+  regionCodeMap[transliteratedName] = code;
+});
+
+console.log("Переименование файлов в папке fsspDepartmentsDB...");
+
+// Получаем список файлов в папке
+const files = fs.readdirSync(dbPath);
+
+let renamedFiles = 0;
+
+files.forEach(file => {
+  // Проверяем, что это .json файл
+  if (path.extname(file) === ".json") {
+    // Получаем имя файла без расширения
+    const fileNameWithoutExt = path.basename(file, ".json");
+    
+    // Проверяем, есть ли такой регион в нашем списке
+    if (regionCodeMap[fileNameWithoutExt]) {
+      const regionCode = regionCodeMap[fileNameWithoutExt];
+      const newFileName = `${regionCode}_${fileNameWithoutExt}.json`;
+      const oldFilePath = path.join(dbPath, file);
+      const newFilePath = path.join(dbPath, newFileName);
+      
+      // Переименовываем файл
+      fs.renameSync(oldFilePath, newFilePath);
+      console.log(`Файл "${file}" переименован в "${newFileName}"`);
+      renamedFiles++;
+    } else {
+      console.log(`Не найден код для региона с названием файла: ${fileNameWithoutExt}`);
+    }
+  }
+});
+
+console.log(`Переименование файлов завершено. Переименовано файлов: ${renamedFiles}`);
+
+====================
+
+// Файл: backend\fixEncoding.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import fsspRegions from "./services/fsspRegions.js";
+import transliterate from "./services/transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
+
+// Получаем список файлов в папке
+const files = fs.readdirSync(dbPath);
+
+console.log("Проверка файлов с неправильной кодировкой...");
+
+// Получаем список всех регионов и их транслитерированных названий
+const regions = Object.keys(fsspRegions);
+const expectedFileNames = regions.map(region => `${transliterate(region)}.json`);
+
+// Находим файлы с неправильной кодировкой (они не соответствуют ожидаемым названиям)
+const filesWithWrongEncoding = files.filter(file => {
+  // Пропускаем файлы с правильными названиями
+  if (expectedFileNames.includes(file)) {
+    return false;
+  }
+  
+  // Проверяем, что это .json файл
+  return path.extname(file) === ".json";
+});
+
+console.log(`Найдено ${filesWithWrongEncoding.length} файлов с неправильной кодировкой:`);
+filesWithWrongEncoding.forEach(file => console.log(`  - ${file}`));
+
+// Пытаемся определить регионы для файлов с неправильной кодировкой
+if (filesWithWrongEncoding.length > 0) {
+  console.log("\nПопытка определить регионы для файлов с неправильной кодировкой...");
+  
+  // Для каждого региона проверяем, может ли он соответствовать одному из файлов с неправильной кодировкой
+  regions.forEach(region => {
+    const expectedFileName = `${transliterate(region)}.json`;
+    
+    // Если файл с ожидаемым названием уже существует, пропускаем
+    if (files.includes(expectedFileName)) {
+      return;
+    }
+    
+    // Проверяем, может ли какой-то файл с неправильной кодировкой соответствовать этому региону
+    filesWithWrongEncoding.forEach(wrongFile => {
+      // Сравниваем длину названий
+      if (wrongFile.length === expectedFileName.length) {
+        console.log(`Возможно, файл "${wrongFile}" соответствует региону "${region}" (ожидаемое имя: "${expectedFileName}")`);
+        
+        // Переименовываем файл
+        const oldPath = path.join(dbPath, wrongFile);
+        const newPath = path.join(dbPath, expectedFileName);
+        
+        try {
+          fs.renameSync(oldPath, newPath);
+          console.log(`  Файл переименован: "${wrongFile}" -> "${expectedFileName}"`);
+        } catch (error) {
+          console.error(`  Ошибка при переименовании файла: ${error.message}`);
+        }
+      }
+    });
+  });
+}
+
+console.log("Проверка файлов завершена.");
+
+====================
+
+// Файл: backend\find-data-sources.js
+import axios from 'axios';
+
+async function findDataSources() {
+  try {
+    console.log('Поиск источников данных на странице ФССП по Свердловской области...');
+    
+    const url = 'https://r66.fssp.gov.ru/contacts';
+    
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      timeout: 15000
+    });
+    
+    // Ищем в содержимом ссылки на возможные источники данных
+    const dataPattern = /\/(api|json|data|ajax|xhr)/gi;
+    const matches = response.data.match(dataPattern);
+    
+    if (matches) {
+      console.log('Найдены возможные источники данных:');
+      console.log(matches);
+    } else {
+      console.log('Явные источники данных не найдены');
+    }
+    
+    // Ищем URL, которые могут содержать данные
+    // Используем более простой подход для поиска URL
+    const urls = [];
+    const urlMatches = response.data.match(/https?:\/\/[^\s"'>]+/gi);
+    
+    if (urlMatches) {
+      console.log(`\nНайдено ${urlMatches.length} URL в содержимом страницы`);
+      // Фильтруем URL, которые могут содержать данные
+      const dataUrls = urlMatches.filter(url => 
+        url.includes('contacts') || 
+        url.includes('department') || 
+        url.includes('api') || 
+        url.includes('json') ||
+        url.includes('data')
+      );
+      
+      if (dataUrls.length > 0) {
+        console.log('Потенциальные источники данных:');
+        dataUrls.slice(0, 10).forEach(url => console.log('  -', url));
+      }
+    }
+    
+    // Проверим, есть ли в коде упоминания XHR или fetch
+    if (response.data.includes('XMLHttpRequest') || response.data.includes('fetch')) {
+      console.log('\nНайдены упоминания XMLHttpRequest или fetch - данные загружаются динамически');
+    }
+    
+  } catch (error) {
+    console.error('Ошибка при поиске источников данных:', error.message);
+  }
+}
+
+findDataSources();
+
+====================
+
+// Файл: backend\createMissingFiles.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import transliterate from "./services/transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Список отсутствующих регионов
+const missingRegions = [
+  "Республика Адыгея",
+  "Республика Алтай",
+  "Кабардино-Балкарская Республика",
+  "Республика Коми",
+  "Республика Тыва",
+  "Приморский край",
+  "Хабаровский край",
+  "Брянская область",
+  "Иркутская область",
+  "Кировская область"
+];
+
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
+
+console.log("Создание недостающих файлов баз данных для регионов...");
+
+missingRegions.forEach(region => {
+  const fileName = `${transliterate(region)}.json`;
+  const filePath = path.join(dbPath, fileName);
+  
+  // Проверяем, существует ли файл
+  if (!fs.existsSync(filePath)) {
+    // Создаем файл с начальной структурой
+    const initialData = {
+      timestamp: new Date().toISOString(),
+      regions: []
+    };
+    
+    fs.writeFileSync(filePath, JSON.stringify(initialData, null, 2), "utf8");
+    console.log(`Создан файл базы данных для региона "${region}": ${fileName}`);
+  } else {
+    console.log(`Файл для региона "${region}" уже существует: ${fileName}`);
+  }
+});
+
+console.log("Создание недостающих файлов завершено.");
+
+====================
+
+// Файл: backend\createAllMissingFiles.js
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import fsspRegions from "./services/fsspRegions.js";
+import transliterate from "./services/transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Путь к папке с базами данных регионов
+const dbPath = path.join(__dirname, "dataBase", "fsspDepartmentsDB");
+
+console.log("Создание недостающих файлов баз данных для регионов...");
+
+// Получаем список всех регионов
+const regions = Object.keys(fsspRegions);
+
+let createdFiles = 0;
+
+regions.forEach(region => {
+  const fileName = `${transliterate(region)}.json`;
+  const filePath = path.join(dbPath, fileName);
+  
+  // Проверяем, существует ли файл
+  if (!fs.existsSync(filePath)) {
+    // Создаем файл с начальной структурой
+    const initialData = {
+      timestamp: new Date().toISOString(),
+      regions: []
+    };
+    
+    fs.writeFileSync(filePath, JSON.stringify(initialData, null, 2), "utf8");
+    console.log(`Создан файл базы данных для региона "${region}": ${fileName}`);
+    createdFiles++;
+  }
+});
+
+console.log(`Создание недостающих файлов завершено. Создано файлов: ${createdFiles}`);
+
+====================
+
+// Файл: backend\check-page-content.js
+import axios from 'axios';
+
+async function checkPageContent() {
+  try {
+    console.log('Проверка содержимого страницы ФССП по Свердловской области...');
+    
+    const url = 'https://r66.fssp.gov.ru/contacts';
+    
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      timeout: 15000
+    });
+    
+    console.log('Статус ответа:', response.status);
+    console.log('Длина содержимого:', response.data.length);
+    
+    // Покажем начало и конец содержимого для анализа
+    console.log('\nНачало содержимого (первые 500 символов):');
+    console.log(response.data.substring(0, 500));
+    
+    console.log('\nКонец содержимого (последние 500 символов):');
+    console.log(response.data.substring(response.data.length - 500));
+    
+    // Проверим, содержит ли страница ссылки на другие ресурсы
+    if (response.data.includes('ajax') || response.data.includes('json') || response.data.includes('api')) {
+      console.log('\nСтраница может загружать данные через AJAX/API');
+    }
+    
+    // Проверим, есть ли в содержимом таблицы в виде текста
+    if (response.data.includes('<table') || response.data.includes('tbody') || response.data.includes('tr>')) {
+      console.log('\nВ содержимом найдены элементы таблиц');
+    }
+    
+  } catch (error) {
+    console.error('Ошибка при проверке страницы:', error.message);
+    if (error.response) {
+      console.error('Статус ошибки:', error.response.status);
+    }
+  }
+}
+
+checkPageContent();
+
+====================
+
+// Файл: backend\analyze-fssp.js
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+
+async function analyzePageStructure() {
+  try {
+    console.log('Анализ структуры страницы ФССП по Свердловской области...');
+    
+    const url = 'https://r66.fssp.gov.ru/contacts';
+    
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      },
+      timeout: 15000
+    });
+    
+    const $ = cheerio.load(response.data);
+    
+    console.log('Статус ответа:', response.status);
+    console.log('Длина содержимого:', response.data.length);
+    
+    // Проверим кодировку
+    const contentType = response.headers['content-type'];
+    console.log('Content-Type:', contentType);
+    
+    // Найдем все таблицы
+    const tables = $('table');
+    console.log('Найдено таблиц:', tables.length);
+    
+    tables.each((index, table) => {
+      console.log(`\n--- Таблица ${index + 1} ---`);
+      const rows = $(table).find('tr');
+      console.log('Строк в таблице:', rows.length);
+      
+      if (rows.length > 0) {
+        // Покажем заголовок таблицы
+        const headerRow = $(rows[0]);
+        const headerCells = headerRow.find('th, td');
+        console.log('Заголовки:');
+        headerCells.each((cellIndex, cell) => {
+          console.log(`  ${cellIndex + 1}: ${$(cell).text().trim()}`);
+        });
+        
+        // Покажем несколько строк данных
+        console.log('Примеры строк данных:');
+        const sampleRows = Math.min(3, rows.length);
+        for (let i = 1; i <= sampleRows; i++) {
+          if (rows[i]) {
+            const cells = $(rows[i]).find('td');
+            console.log(`  Строка ${i}:`);
+            cells.each((cellIndex, cell) => {
+              console.log(`    Ячейка ${cellIndex + 1}: ${$(cell).text().trim()}`);
+            });
+          }
+        }
+      }
+    });
+    
+    // Попробуем найти другие элементы с контактной информацией
+    console.log('\n--- Поиск других элементов ---');
+    const contactElements = $('.contacts, .contact, .department, .office');
+    console.log('Найдено элементов с классами contacts/contact/department/office:', contactElements.length);
+    
+    // Попробуем найти элементы с текстом, содержащим "отделение"
+    const departmentElements = $('*:contains("отделение")');
+    console.log('Найдено элементов с текстом "отделение":', departmentElements.length);
+    
+  } catch (error) {
+    console.error('Ошибка при анализе страницы:', error.message);
+    if (error.response) {
+      console.error('Статус ошибки:', error.response.status);
+      console.error('Заголовки ответа:', error.response.headers);
+    }
+  }
+}
+
+analyzePageStructure();
 
 ====================
 
@@ -323,6 +1069,7 @@ app.mount('#app')
           <router-link to="/" class="nav-link" exact-active-class="active">Главная</router-link>
           <router-link to="/documents" class="nav-link" exact-active-class="active">Документы</router-link>
           <router-link to="/complaints" class="nav-link" exact-active-class="active">Жалобы</router-link>
+          <router-link to="/fssp" class="nav-link" exact-active-class="active">Отделения ФССП</router-link>
         </div>
       </nav>
     </header>
@@ -376,6 +1123,33 @@ watch(
 
 ====================
 
+// Файл: backend\services\transliterate.js
+// Функция транслитерации русских названий в латиницу
+const transliterate = (text) => {
+  const translitMap = {
+    'А': 'A', 'Б': 'B', 'В': 'V', 'Г': 'G', 'Д': 'D', 'Е': 'E', 'Ё': 'Yo', 'Ж': 'Zh', 'З': 'Z',
+    'И': 'I', 'Й': 'Y', 'К': 'K', 'Л': 'L', 'М': 'M', 'Н': 'N', 'О': 'O', 'П': 'P', 'Р': 'R',
+    'С': 'S', 'Т': 'T', 'У': 'U', 'Ф': 'F', 'Х': 'Kh', 'Ц': 'Ts', 'Ч': 'Ch', 'Ш': 'Sh', 'Щ': 'Shch',
+    'Ъ': '', 'Ы': 'Y', 'Ь': '', 'Э': 'E', 'Ю': 'Yu', 'Я': 'Ya',
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh', 'з': 'z',
+    'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o', 'п': 'p', 'р': 'r',
+    'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'kh', 'ц': 'ts', 'ч': 'ch', 'ш': 'sh', 'щ': 'shch',
+    'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu', 'я': 'ya', ' ': '_', '(': '', ')': ''
+  };
+
+  // Транслитерируем текст
+  let transliterated = text.split('').map(char => translitMap[char] || char).join('');
+  
+  // Удаляем символы "ь" и "Ь" из результата
+  transliterated = transliterated.replace(/[ьЬ]/g, '');
+  
+  return transliterated;
+};
+
+export default transliterate;
+
+====================
+
 // Файл: backend\services\pdfService.js
 import pdf from 'pdf-parse';
 
@@ -425,6 +1199,555 @@ export async function checkModelAvailability() {
     return false;
   }
 }
+
+====================
+
+// Файл: backend\services\fsspRegions.js
+// Коды регионов РФ для ФССП
+const fsspRegions = {
+  "Республика Адыгея": 1,
+  "Республика Башкортостан": 2,
+  "Республика Бурятия": 3,
+  "Республика Алтай": 4,
+  "Республика Дагестан": 5,
+  "Республика Ингушетия": 6,
+  "Кабардино-Балкарская Республика": 7,
+  "Республика Калмыкия": 8,
+  "Карачаево-Черкесская Республика": 9,
+  "Республика Карелия": 10,
+  "Республика Коми": 11,
+  "Республика Марий Эл": 12,
+  "Республика Мордовия": 13,
+  "Республика Саха (Якутия)": 14,
+  "Республика Северная Осетия-Алания": 15,
+  "Республика Татарстан": 16,
+  "Республика Тыва": 17,
+  "Удмуртская Республика": 18,
+  "Республика Хакасия": 19,
+  "Чеченская Республика": 20,
+  "Чувашская Республика": 21,
+  "Алтайский край": 22,
+  "Краснодарский край": 23,
+  "Красноярский край": 24,
+  "Приморский край": 25,
+  "Ставропольский край": 26,
+  "Хабаровский край": 27,
+  "Амурская область": 28,
+  "Архангельская область": 29,
+  "Астраханская область": 30,
+  "Белгородская область": 31,
+  "Брянская область": 32,
+  "Владимирская область": 33,
+  "Волгоградская область": 34,
+  "Вологодская область": 35,
+  "Воронежская область": 36,
+  "Ивановская область": 37,
+  "Иркутская область": 38,
+  "Калининградская область": 39,
+  "Калужская область": 40,
+  "Камчатский край": 41,
+  "Кемеровская область": 42,
+  "Кировская область": 43,
+  "Костромская область": 44,
+  "Курганская область": 45,
+  "Курская область": 46,
+  "Ленинградская область": 47,
+  "Липецкая область": 48,
+  "Магаданская область": 49,
+  "Московская область": 50,
+  "Мурманская область": 51,
+  "Нижегородская область": 52,
+  "Новгородская область": 53,
+  "Новосибирская область": 54,
+  "Омская область": 55,
+  "Оренбургская область": 56,
+  "Орловская область": 57,
+  "Пензенская область": 58,
+  "Пермский край": 59,
+  "Псковская область": 60,
+  "Ростовская область": 61,
+  "Рязанская область": 62,
+  "Самарская область": 63,
+  "Саратовская область": 64,
+  "Сахалинская область": 65,
+  "Свердловская область": 66,
+  "Смоленская область": 67,
+  "Тамбовская область": 68,
+  "Тверская область": 69,
+  "Томская область": 70,
+  "Тульская область": 71,
+  "Тюменская область": 72,
+  "Ульяновская область": 73,
+  "Челябинская область": 74,
+  "Забайкальский край": 75,
+  "Ярославская область": 76,
+  "Москва": 77,
+  "Санкт-Петербург": 78,
+  "Еврейская автономная область": 79,
+  "Ненецкий автономный округ": 83,
+  "Ханты-Мансийский автономный округ - Югра": 86,
+  "Чукотский автономный округ": 87,
+  "Ямало-Ненецкий автономный округ": 89,
+  "Республика Крым": 91,
+  "Севастополь": 92,
+  "Байконур": 99
+};
+
+export default fsspRegions;
+
+====================
+
+// Файл: backend\services\fsspParser.js
+import puppeteer from "puppeteer";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import fsspRegions from "./fsspRegions.js";
+import transliterate from "./transliterate.js";
+
+// Получаем __dirname в ES модуле
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+class FSSPParser {
+  constructor(regionName = "Свердловская область") {
+    this.regionName = regionName;
+    this.regionCode = fsspRegions[regionName] || 66; // По умолчанию Свердловская область
+    this.baseUrl = `https://r${this.regionCode}.fssp.gov.ru/contacts`;
+    this.fileName = `${this.regionCode}_${transliterate(regionName)}.json`;
+    this.dataFilePath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB", this.fileName);
+  }
+
+  // Получение данных по региону с использованием Puppeteer
+  async getRegionData() {
+    let browser = null;
+
+    try {
+      console.log(
+        `Запуск браузера для получения данных по региону: ${this.regionName} (${this.regionCode})`
+      );
+      console.log(`URL для парсинга: ${this.baseUrl}`);
+
+      // Запускаем браузер
+      browser = await puppeteer.launch({
+        headless: true, // В продакшене используем headless режим
+        args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      });
+
+      const page = await browser.newPage();
+
+      // Устанавливаем User-Agent
+      await page.setUserAgent(
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+      );
+
+      // Переходим на страницу контактов
+      console.log(`Переход на страницу контактов: ${this.baseUrl}`);
+      const response = await page.goto(this.baseUrl, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+
+      // Проверяем статус ответа
+      console.log(`Статус ответа: ${response.status()}`);
+
+      // Ждем загрузки контента (уменьшаем время ожидания)
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Проверяем URL страницы
+      const currentPageUrl = page.url();
+      console.log(`Текущий URL страницы: ${currentPageUrl}`);
+
+      // Извлекаем данные с помощью JavaScript в контексте страницы
+      const rawData = await page.evaluate(() => {
+        const departments = [];
+
+        // Ищем таблицы с отделениями
+        const tables = document.querySelectorAll("table");
+        console.log("Найдено таблиц:", tables.length);
+
+        tables.forEach((table, tableIndex) => {
+          const rows = table.querySelectorAll("tr");
+          console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+
+          if (rows.length > 1) {
+            // Обрабатываем строки таблицы
+            rows.forEach((row, rowIndex) => {
+              const cells = row.querySelectorAll("td, th");
+              
+              // Структура таблицы на сайте:
+              // 0 - порядковый номер (не нужен)
+              // 1 - название отделения
+              // 2 - адрес отделения
+              // 3 - email отделения
+              // 4 - телефон отделения
+              if (cells.length >= 5) {
+                const departmentName = cells[1].textContent.trim();
+                const address = cells[2].textContent.trim();
+                const phone = cells[4].textContent.trim();
+
+                // Проверяем, является ли строка заголовочной
+                // Проверяем первые 5 строк на наличие стоп-слов
+                let isHeaderRow = false;
+                if (rowIndex < 5) {
+                  const rowText = row.textContent.toLowerCase();
+                  const stopWords = ["наименование", "структурного", "подразделения", "адрес", "почты", "почта", "телефон"];
+                  
+                  // Проверяем, содержит ли строка хотя бы одно из стоп-слов
+                  for (const word of stopWords) {
+                    if (rowText.includes(word)) {
+                      isHeaderRow = true;
+                      break;
+                    }
+                  }
+                }
+
+                // Проверяем, что строка содержит данные и не является заголовочной
+                if ((departmentName || address || phone) && !isHeaderRow) {
+                  // Дополнительная проверка на заголовочные данные
+                  const isHeaderData = (
+                    departmentName.includes("Наименование структурного подразделения") ||
+                    address.includes("Почтовый адрес") ||
+                    phone.includes("Телефон для получения справочной информации")
+                  );
+
+                  // Добавляем только если это не заголовочные данные
+                  if (!isHeaderData) {
+                    departments.push({
+                      name: departmentName || "Отделение ФССП",
+                      address: address || "Адрес не указан",
+                      phone: phone || "Телефон не указан",
+                    });
+                  }
+                }
+              }
+            });
+          }
+        });
+
+        return departments;
+      });
+
+      console.log(`Получено ${rawData.length} отделений`);
+
+      // Группируем отделения по городам
+      const regionData = await this.groupDepartmentsByCity(rawData);
+
+      return regionData;
+    } catch (error) {
+      console.error(
+        `Ошибка при получении данных по региону ${this.regionName}:`,
+        error.message
+      );
+
+      // В случае ошибки возвращаем тестовые данные
+      return {
+        region: this.regionName,
+        cities: this.getTestRegionData(),
+      };
+    } finally {
+      // Закрываем браузер
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  // Группировка отделений по городам
+  async groupDepartmentsByCity(departments) {
+    try {
+      console.log(
+        "Группировка отделений по городам с помощью упрощенного метода..."
+      );
+
+      const regionData = {
+        region: "Свердловская область",
+        cities: [],
+      };
+
+      // Карта для группировки отделений по городам
+      const cityMap = new Map();
+
+      // Обрабатываем каждое отделение
+      for (const department of departments) {
+        // Используем упрощенный метод извлечения города
+        const cityName = this.extractCityFromAddress(department.address);
+
+        // Добавляем отделение в соответствующий город
+        if (!cityMap.has(cityName)) {
+          cityMap.set(cityName, {
+            name: cityName,
+            departments: [],
+          });
+        }
+
+        cityMap.get(cityName).departments.push(department);
+      }
+
+      // Преобразуем карту в массив городов
+      regionData.cities = Array.from(cityMap.values());
+
+      console.log(
+        `Отделения сгруппированы по ${regionData.cities.length} городам`
+      );
+      return regionData;
+    } catch (error) {
+      console.error(
+        "Ошибка при группировке отделений по городам:",
+        error.message
+      );
+      // Возвращаем все отделения в Екатеринбург
+      return {
+        region: "Свердловская область",
+        cities: [
+          {
+            name: "Екатеринбург",
+            departments: departments,
+          },
+        ],
+      };
+    }
+  }
+
+  // ПРОСТОЙ И НАДЁЖНЫЙ метод извлечения города
+  extractCityFromAddress(addressData) {
+  // Приводим к строке и нормализуем пробелы
+  let address = addressData.toString().replace(/\s+/g, ' ').trim();
+
+  // Удаляем почтовый индекс в начале (6 цифр)
+  address = address.replace(/^\d{6}\s*/, '');
+
+  // Известные города Свердловской области
+  const knownCities = [
+    'Екатеринбург', 'Нижний Тагил', 'Каменск-Уральский', 'Первоуральск',
+    'Верхняя Пышма', 'Верхняя Салда', 'Алапаевск', 'Артёмовский','Артемовский', 
+    'Асбест', 'Березовский', 'Богданович', 'Верхотурье', 'Ивдель', 'Ирбит', 'Карпинск',
+    'Качканар', 'Кировград', 'Краснотурьинск', 'Красноуральск', 'Красноуфимск',
+    'Кушва', 'Невьянск', 'Нижние Серги', 'Нижняя Тура', 'Новая Ляля',
+    'Новоуральск', 'Полевской', 'Ревда', 'Реж', 'Североуральск', 'Серов',
+    'Среднеуральск', 'Сухой Лог', 'Сысерть', 'Тавда', 'Талица', 'Туринск',
+    'Туринская Слобода', 'Гари', 'Арти', 'Белоярский', 'Камышлов', 'Лесной',
+    'Таборы', 'Тугулым', 'Шаля'
+  ];
+
+  // Сортируем по длине (сначала самые длинные — важно!)
+  const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
+
+  // Паттерны, указывающие на улицу, дом и т.п.
+  const streetIndicators = [
+    'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
+    'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
+    'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
+  ];
+
+  // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
+  const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+  if (prefixMatch) {
+    let cityPart = prefixMatch[1].trim();
+
+    // Обрезаем всё, что идёт после улицы/дома
+    for (const indicator of streetIndicators) {
+      const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\s*${escaped}.*`, 'i');
+      cityPart = cityPart.replace(regex, '');
+    }
+
+    // Убираем лишние символы в конце
+    cityPart = cityPart.replace(/[.,;].*$/, '').trim();
+
+    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
+    for (const city of sortedCities) {
+      if (cityPart.startsWith(city)) {
+        return city;
+      }
+    }
+  }
+
+  // 2. Если префикс не найден — ищем любой известный город в строке
+  for (const city of sortedCities) {
+    const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
+
+    if (regex.test(address)) {
+      // Проверяем, не является ли это частью названия улицы
+      const isStreetName = streetIndicators.some(indicator => {
+        const escapedIndicator = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
+        const streetPatterns = [
+          new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
+          new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
+          new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
+        ];
+        return streetPatterns.some(pattern => pattern.test(addressData));
+      });
+
+      if (!isStreetName) {
+        return city;
+      }
+    }
+  }
+
+  // 3. Если ничего не помогло — попробуем "грязный" поиск по частичному совпадению
+  // (на случай опечаток или нестандартных форматов)
+  const lowerAddress = address.toLowerCase();
+  for (const city of sortedCities) {
+    const cityLower = city.toLowerCase();
+    if (lowerAddress.includes(cityLower)) {
+      // Проверяем, не входит ли в название улицы
+      const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
+      const isLikelyStreet = streetPatterns.some(p => {
+        return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
+      });
+
+      if (!isLikelyStreet) {
+        return city;
+      }
+    }
+  }
+
+  // Если всё провалилось
+  return "Город не определен";
+}
+
+
+
+  // Тестовые данные для региона
+  getTestRegionData() {
+    return [
+      {
+        name: `г. ${this.regionName.split(" ")[0]}`,
+        departments: [
+          {
+            name: `Управление ФССП по г. ${this.regionName.split(" ")[0]}`,
+            address: `г. ${this.regionName.split(" ")[0]}, ул. Ленина, д. 25`,
+            phone: "+7 (xxx) xxx-xx-xx",
+          },
+          {
+            name: `Отделение ФССП по Центральному району`,
+            address: `г. ${this.regionName.split(" ")[0]}, ул. Мира, д. 10`,
+            phone: "+7 (xxx) xxx-xx-xx",
+          },
+        ],
+      },
+    ];
+  }
+
+  // Основной метод для запуска парсинга
+  async parseAllData() {
+    try {
+      console.log(`Запуск парсера данных ФССП России (${this.regionName})`);
+
+      // Получаем данные по региону
+      const regionData = await this.getRegionData();
+
+      const regionsData = [regionData];
+
+      // Сохраняем данные в файл
+      await this.saveToFile(regionsData);
+
+      console.log("Парсинг завершен успешно!");
+
+      // Подсчитываем статистику
+      let totalDepartments = 0;
+      let totalCities = 0;
+
+      regionsData.forEach((region) => {
+        totalCities += region.cities.length;
+        region.cities.forEach((city) => {
+          totalDepartments += city.departments.length;
+        });
+      });
+
+      return {
+        success: true,
+        message: "Парсинг завершен успешно",
+        statistics: {
+          regions: regionsData.length,
+          cities: totalCities,
+          departments: totalDepartments,
+        },
+      };
+    } catch (error) {
+      console.error("Ошибка при парсинге данных:", error.message);
+      return {
+        success: false,
+        message: `Ошибка при парсинге данных: ${error.message}`,
+      };
+    }
+  }
+
+  // Сохранение данных в JSON файл
+  async saveToFile(data) {
+    try {
+      const dataToSave = {
+        timestamp: new Date().toISOString(),
+        regions: data,
+      };
+
+      // Если файл не существует, создаем его с начальной структурой
+      if (!fs.existsSync(this.dataFilePath)) {
+        // Создаем папку, если она не существует
+        const dbDir = path.dirname(this.dataFilePath);
+        if (!fs.existsSync(dbDir)) {
+          fs.mkdirSync(dbDir, { recursive: true });
+        }
+        
+        // Создаем файл с начальной структурой
+        fs.writeFileSync(
+          this.dataFilePath,
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            regions: []
+          }, null, 2),
+          "utf8"
+        );
+        console.log(`Создан файл базы данных для региона "${this.regionName}": ${this.fileName}`);
+      }
+
+      // Создаем резервную копию текущего файла, если он существует
+      if (fs.existsSync(this.dataFilePath)) {
+        // Формируем имя файла для резервной копии с суффиксом _backup
+        const backupFileName = this.fileName.replace('.json', '_backup.json');
+        const backupPath = path.join(__dirname, "..", "dataBase", "backup", backupFileName);
+        // Создаем папку backup, если она не существует
+        const backupDir = path.dirname(backupPath);
+        if (!fs.existsSync(backupDir)) {
+          fs.mkdirSync(backupDir, { recursive: true });
+        }
+        
+        fs.copyFileSync(this.dataFilePath, backupPath);
+        console.log(`Резервная копия создана: ${backupPath}`);
+      }
+
+      fs.writeFileSync(
+        this.dataFilePath,
+        JSON.stringify(dataToSave, null, 2),
+        "utf8"
+      );
+      console.log(`Данные сохранены в файл: ${this.dataFilePath}`);
+    } catch (error) {
+      console.error("Ошибка при сохранении данных в файл:", error.message);
+      throw error;
+    }
+  }
+
+  // Получение данных из файла
+  async getData() {
+    try {
+      if (fs.existsSync(this.dataFilePath)) {
+        const data = fs.readFileSync(this.dataFilePath, "utf8");
+        return JSON.parse(data);
+      }
+      return null;
+    } catch (error) {
+      console.error("Ошибка при чтении данных из файла:", error.message);
+      return null;
+    }
+  }
+}
+
+export default FSSPParser;
+
 
 ====================
 
@@ -811,6 +2134,53 @@ export { DocumentService };
 
 // Экспортируем экземпляр сервиса для прямого использования
 export default documentService;
+
+====================
+
+// Файл: backend\services\createRegionFiles.js
+import fsspRegions from "./fsspRegions.js";
+import transliterate from "./transliterate.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Создаем пустые файлы для всех регионов
+const createRegionFiles = () => {
+  const dbPath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB");
+  
+  // Проверяем, существует ли папка, если нет - создаем
+  if (!fs.existsSync(dbPath)) {
+    fs.mkdirSync(dbPath, { recursive: true });
+  }
+  
+  // Создаем пустой файл для каждого региона
+  Object.keys(fsspRegions).forEach(regionName => {
+    const fileName = `${transliterate(regionName)}.json`;
+    const filePath = path.join(dbPath, fileName);
+    
+    // Если файл не существует, создаем его с пустой структурой
+    if (!fs.existsSync(filePath)) {
+      const emptyData = {
+        timestamp: new Date().toISOString(),
+        regions: [{
+          region: regionName,
+          cities: []
+        }]
+      };
+      
+      fs.writeFileSync(filePath, JSON.stringify(emptyData, null, 2), "utf8");
+      console.log(`Создан файл для региона ${regionName}: ${fileName}`);
+    }
+  });
+  
+  console.log("Все файлы регионов созданы успешно!");
+};
+
+// Запускаем создание файлов
+createRegionFiles();
 
 ====================
 
@@ -1338,22 +2708,23 @@ class AIService {
         console.log("Prompt data preview:", typeof promptData === 'string' ? promptData.substring(0, 200) : JSON.stringify(promptData, null, 2));
         console.log("=== КОНЕЦ ANALYZE LEGAL TEXT ===");
         
-        const result = await this.queryLocalModel(promptData, {
-          temperature: 0.3,
+        // Основной запрос с температурой 0.4 для получения краткой сути, нарушений и другой информации
+        const mainResult = await this.queryLocalModel(promptData, {
+          temperature: 0.4,
           format: "json",
         });
 
-        console.log("Model response received:", typeof result);
-        if (typeof result === 'string') {
-          console.log("Model response (first 200 chars):", result.substring(0, 200));
+        console.log("Main model response received:", typeof mainResult);
+        if (typeof mainResult === 'string') {
+          console.log("Main model response (first 200 chars):", mainResult.substring(0, 200));
         }
 
-        const parsedResult = this.safeParseResponse(result);
-        console.log("Parsed result:", parsedResult);
+        const parsedMainResult = this.safeParseResponse(mainResult);
+        console.log("Parsed main result:", parsedMainResult);
 
         // If parsing failed, return error object
-        if (!parsedResult) {
-          console.log("Failed to parse model response");
+        if (!parsedMainResult) {
+          console.log("Failed to parse main model response");
           return {
             summary: "Failed to parse model response",
             keySentences: [],
@@ -1363,18 +2734,50 @@ class AIService {
           };
         }
 
-        // Extract data from result
-        const summary = parsedResult.summary || parsedResult.content || "Failed to generate brief summary";
-        const keySentences = Array.isArray(parsedResult.keySentences) 
-          ? parsedResult.keySentences.filter((p) => p && p.length > 5)
-          : (Array.isArray(parsedResult.content) 
-            ? parsedResult.content.filter((p) => p && p.length > 5)
-            : []);
-        const violations = Array.isArray(parsedResult.violations) 
-          ? parsedResult.violations
+        // Извлекаем основную информацию из результата
+        const summary = parsedMainResult.summary || parsedMainResult.content || "Failed to generate brief summary";
+        const violations = Array.isArray(parsedMainResult.violations) 
+          ? parsedMainResult.violations
           : [];
-        const documentDate = parsedResult.documentDate || parsedResult.sentDate || this.extractDate(processedText) || "";
-        const senderAgency = parsedResult.senderAgency || parsedResult.agency || this.extractAgency(processedText) || "";
+        const documentDate = parsedMainResult.documentDate || parsedMainResult.sentDate || this.extractDate(processedText) || "";
+        const senderAgency = parsedMainResult.senderAgency || parsedMainResult.agency || this.extractAgency(processedText) || "";
+
+        // Дополнительный запрос с температурой 0.1 для извлечения важных предложений
+        console.log("=== НАЧАЛО ИЗВЛЕЧЕНИЯ ВАЖНЫХ ПРЕДЛОЖЕНИЙ ===");
+        const keySentencesPrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь массив из 5 самых важных предложений из документа.
+
+Текст документа для анализа:
+${processedText || ""}
+
+Верни только массив предложений в формате JSON:
+[
+  "предложение 1",
+  "предложение 2",
+  "предложение 3",
+  "предложение 4",
+  "предложение 5"
+]`;
+
+        console.log("Key sentences prompt built, calling queryLocalModel with temperature 0.1");
+        const keySentencesResult = await this.queryLocalModel(keySentencesPrompt, {
+          temperature: 0.1,
+          format: "json",
+        });
+
+        console.log("Key sentences model response received:", typeof keySentencesResult);
+        if (typeof keySentencesResult === 'string') {
+          console.log("Key sentences model response (first 200 chars):", keySentencesResult.substring(0, 200));
+        }
+
+        const parsedKeySentencesResult = this.safeParseResponse(keySentencesResult);
+        console.log("Parsed key sentences result:", parsedKeySentencesResult);
+
+        // Извлекаем важные предложения из результата
+        const keySentences = Array.isArray(parsedKeySentencesResult) 
+          ? parsedKeySentencesResult.filter((p) => p && p.length > 5)
+          : (Array.isArray(parsedMainResult.keySentences) 
+            ? parsedMainResult.keySentences.filter((p) => p && p.length > 5)
+            : []);
 
         const enhancedResult = {
           summary,
@@ -1441,6 +2844,33 @@ class AIService {
     console.log("=== НАЧАЛО SAFE PARSE RESPONSE ===");
     console.log("Тип ответа:", typeof response);
     console.log("Ответ (первые 500 символов):", typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response, null, 2));
+    
+    // If response is an object from Ollama API, extract the actual response
+    if (typeof response === "object" && response !== null && response.response) {
+      console.log("Ответ является объектом Ollama API, извлекаем response");
+      // Check if response.response is already parsed
+      if (typeof response.response === "object") {
+        console.log("response.response уже является объектом");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+        return response.response;
+      }
+      
+      // If response.response is a string, parse it
+      if (typeof response.response === "string") {
+        console.log("response.response является строкой, парсим её");
+        try {
+          const parsed = JSON.parse(response.response);
+          console.log("Успешный парсинг JSON из response.response");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+          return parsed;
+        } catch (parseError) {
+          console.error("Failed to parse response.response:", parseError);
+          // Fall through to string parsing logic
+          response = response.response;
+        }
+      }
+    }
+    
     // If response is already an object, return it as is
     if (typeof response === "object" && response !== null) {
       console.log("Ответ уже является объектом");
@@ -1455,6 +2885,7 @@ class AIService {
       try {
         const parsed = JSON.parse(response);
         console.log("Успешный парсинг JSON");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
         return parsed;
       } catch (directParseError) {
         console.error("Direct JSON parse failed:", directParseError);
@@ -1464,6 +2895,7 @@ class AIService {
           if (jsonMatch && jsonMatch[1]) {
             const parsed = JSON.parse(jsonMatch[1]);
             console.log("Успешный парсинг JSON из markdown");
+            console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
             return parsed;
           }
         } catch (markdownParseError) {
@@ -1482,6 +2914,7 @@ class AIService {
             violations: violationsMatch ? JSON.parse(violationsMatch[1]) : []
           };
           console.log("Успешная ручная распаковка ответа");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
           return result;
         } catch (manualParseError) {
           console.error("Manual JSON parse failed:", manualParseError);
@@ -1580,7 +3013,7 @@ class AIService {
     
     // Формируем строку промпта для анализа документа
     let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа
+- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
 - keySentences: массив из 5 самых важных предложений из документа
 - violations: массив выявленных нарушений законодательства (если есть)
 - documentDate: дата документа (если указана)
@@ -1673,7 +3106,7 @@ ${instructions}`;
       // Для анализа документов передаем только текст пользователя
       if (task === 'legal_analysis') {
         basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа
+- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
 - keySentences: массив из 5 самых важных предложений из документа
 - violations: массив выявленных нарушений законодательства (если есть)
 - documentDate: дата документа (если указана)
@@ -1781,6 +3214,79 @@ ${instructions}`;
 }
 
 export default AIService;
+
+====================
+
+// Файл: backend\routes\fsspRoutes.js
+import { Router } from 'express';
+import FSSPParser from '../services/fsspParser.js';
+
+const router = Router();
+
+// Запуск парсинга данных ФССП по региону
+router.post('/parse', async (req, res) => {
+  try {
+    const { region } = req.body || {};
+    console.log(`Запуск парсинга данных ФССП по запросу API для региона: ${region || 'по умолчанию'}`);
+    const fsspParser = new FSSPParser(region);
+    const result = await fsspParser.parseAllData();
+    res.json(result);
+  } catch (error) {
+    console.error('Ошибка в endpoint /parse:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Внутренняя ошибка сервера',
+      error: error.message 
+    });
+  }
+});
+
+// Получение данных ФССП по региону
+router.get('/data', async (req, res) => {
+  try {
+    const { region } = req.query || {};
+    console.log(`Получение данных ФССП для региона: ${region || 'по умолчанию'}`);
+    const fsspParser = new FSSPParser(region);
+    const data = await fsspParser.getData();
+    
+    if (data) {
+      res.json({ success: true, data });
+    } else {
+      res.json({ success: false, message: 'Данные не найдены' });
+    }
+  } catch (error) {
+    console.error('Ошибка в endpoint /data:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Внутренняя ошибка сервера',
+      error: error.message 
+    });
+  }
+});
+
+// Получение списка доступных регионов с кодами
+router.get('/regions', async (req, res) => {
+  try {
+    console.log('Получение списка доступных регионов');
+    // Получаем список регионов с кодами из объекта fsspRegions
+    const fsspRegions = (await import('../services/fsspRegions.js')).default;
+    const regions = Object.keys(fsspRegions);
+    const regionsWithCodes = regions.map(region => ({
+      name: region,
+      code: fsspRegions[region]
+    }));
+    res.json({ success: true, regions: regionsWithCodes });
+  } catch (error) {
+    console.error('Ошибка в endpoint /regions:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Внутренняя ошибка сервера',
+      error: error.message 
+    });
+  }
+});
+
+export default router;
 
 ====================
 
@@ -2614,10 +4120,10 @@ export default (err, req, res, next) => {
 // Файл: frontend\src\views\HomeView.vue
 <template>
   <div class="home-view">
-    <h1>Изложите суть Вашей ситуации:</h1>
+    <h1>Опишите, как именно были нарушены ваши права:</h1>
     <textarea 
       v-model="userText" 
-      placeholder="Подробно опишите вашу ситуацию..."
+      placeholder="В свободной форме изложите детали нарушения..."
       class="text-input"
       rows="15"
     ></textarea>
@@ -2680,7 +4186,7 @@ const submitData = async () => {
   try {
     // Инициализируем новый документ с полной структурой
     const newDocument = {
-      id: null, // Будет установлен при сохранении
+      id: null, // Явно устанавливаем ID как null для нового документа
       date: new Date().toISOString().split('T')[0],
       agency: '',
       originalText: userText.value,
@@ -2692,31 +4198,22 @@ const submitData = async () => {
       comments: userText.value,
       complaints: [],
       analysisStatus: 'pending',
-      lastAnalyzedAt: null
+      lastAnalyzedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      violations: []
     };
 
     // Обновляем документ в хранилище
     documentStore.currentDocument = newDocument;
 
-    // Загружаем файлы (если есть)
-    let savedDoc;
-    if (files.value.length > 0) {
-      savedDoc = await documentStore.uploadFiles(files.value);
-      // uploadFiles уже возвращает сохраненный документ, нам не нужно вызывать saveDocument еще раз
-    } else {
-      // Если нет файлов, сохраняем документ обычным способом
-      savedDoc = await documentStore.saveDocument();
-    }
-    
-    if (savedDoc?.id) {
-      router.push({ 
-        name: 'review', 
-        params: { id: savedDoc.id },
-        query: { new: 'true' }  
-      });
-    } else {
-      throw new Error('Документ не был сохранен: отсутствует ID');
-    }
+    // Переходим к предпросмотру без сохранения документа
+    // Передаем временный ID для соответствия маршруту
+    router.push({ 
+      name: 'review', 
+      params: { id: 'new' },
+      query: { new: 'true' }  
+    });
   } catch (error) {
     console.error('Ошибка при создании документа:', error);
     errorMessage.value = error.response?.data?.message || 
@@ -2727,6 +4224,190 @@ const submitData = async () => {
     documentStore.currentDocument.analysisStatus = 'failed';
   } finally {
     isLoading.value = false;
+  }
+};
+</script>
+
+
+
+====================
+
+// Файл: frontend\src\views\FSSPDataView.vue
+<template>
+  <div class="fssp-container">
+    <div class="header">
+      <h1>Отделения Федеральной службы Судебных Приставов</h1>
+      <div class="controls">
+        <RegionAutocomplete
+          :regions="availableRegions"
+          v-model="selectedRegion"
+          @regionSelected="loadData"
+          class="region-autocomplete"
+        />
+        <button 
+          @click="startParsing" 
+          :disabled="isParsing" 
+          class="parse-button"
+        >
+          {{ isParsing ? 'Парсинг выполняется...' : 'Запустить парсинг данных' }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="parsingResult" class="parsing-result">
+      <h2>Результаты последнего парсинга</h2>
+      <div v-if="parsingResult.success" class="success-message">
+        <p>✅ {{ parsingResult.message }}</p>
+        <div v-if="parsingResult.statistics" class="statistics">
+          <p><strong>Статистика:</strong></p>
+          <ul>
+            <li>Регионов: {{ parsingResult.statistics.regions }}</li>
+            <li>Городов: {{ parsingResult.statistics.cities }}</li>
+            <li>Отделений: {{ parsingResult.statistics.departments }}</li>
+          </ul>
+        </div>
+      </div>
+      <div v-else class="error-message">
+        <p>❌ {{ parsingResult.message }}</p>
+      </div>
+    </div>
+
+    <div v-if="fsspData" class="data-container">
+      <h2>Данные отделений ФССП</h2>
+      <p class="last-update">Последнее обновление: {{ formatDate(fsspData.timestamp) }}</p>
+      
+      <div class="regions-list">
+        <div 
+          v-for="region in fsspData.regions" 
+          :key="region.region" 
+          class="region-card"
+        >
+          <h3 class="region-name">{{ region.region }}</h3>
+          <div class="cities-list">
+            <div 
+              v-for="city in region.cities" 
+              :key="city.name" 
+              class="city-card"
+            >
+              <h4 class="city-name">{{ city.name }}</h4>
+              <div class="departments-list">
+                <div 
+                  v-for="(dept, index) in city.departments" 
+                  :key="index" 
+                  class="department-card"
+                >
+                  <h5 class="department-name">{{ dept.name }}</h5>
+                  <p class="department-address">📍 {{ dept.address }}</p>
+                  <p class="department-phone">📞 {{ dept.phone }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="no-data">
+      <p>Данные пока не загружены. Нажмите кнопку "Запустить парсинг данных" для получения информации.</p>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted } from 'vue';
+import axios from 'axios';
+import RegionAutocomplete from '@/components/RegionAutocomplete.vue';
+
+export default {
+  name: 'FSSPDataView',
+  components: {
+    RegionAutocomplete
+  },
+  setup() {
+    const isParsing = ref(false);
+    const fsspData = ref(null);
+    const parsingResult = ref(null);
+    const selectedRegion = ref('Свердловская область');
+    const availableRegions = ref([]);
+
+    // Загрузка списка доступных регионов
+    const loadRegions = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/fssp/regions');
+        if (response.data.success) {
+          // Сохраняем полные данные регионов (имя и код)
+          availableRegions.value = response.data.regions;
+          // Устанавливаем имя региона по умолчанию
+          if (!selectedRegion.value && response.data.regions.length > 0) {
+            selectedRegion.value = response.data.regions.find(r => r.code === 66)?.name || response.data.regions[0].name;
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки списка регионов:', error);
+      }
+    };
+
+    // Загрузка данных по выбранному региону
+    const loadData = async () => {
+      try {
+        const response = await axios.get(`http://localhost:3001/api/fssp/data?region=${encodeURIComponent(selectedRegion.value)}`);
+        if (response.data.success) {
+          fsspData.value = response.data.data;
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки данных ФССП:', error);
+      }
+    };
+
+    // Запуск парсинга по выбранному региону
+    const startParsing = async () => {
+      isParsing.value = true;
+      parsingResult.value = null;
+      
+      try {
+        const response = await axios.post('http://localhost:3001/api/fssp/parse', {
+          region: selectedRegion.value
+        });
+        parsingResult.value = response.data;
+        
+        // После успешного парсинга перезагружаем данные
+        if (response.data.success) {
+          await loadData();
+        }
+      } catch (error) {
+        parsingResult.value = {
+          success: false,
+          message: 'Ошибка при запуске парсинга: ' + (error.response?.data?.message || error.message)
+        };
+        console.error('Ошибка при запуске парсинга:', error);
+      } finally {
+        isParsing.value = false;
+      }
+    };
+
+    // Форматирование даты
+    const formatDate = (dateString) => {
+      if (!dateString) return 'Неизвестно';
+      const date = new Date(dateString);
+      return date.toLocaleString('ru-RU');
+    };
+
+    // Загрузка данных при монтировании
+    onMounted(async () => {
+      await loadRegions();
+      await loadData();
+    });
+
+    return {
+      isParsing,
+      fsspData,
+      parsingResult,
+      startParsing,
+      formatDate,
+      selectedRegion,
+      availableRegions,
+      loadData
+    };
   }
 };
 </script>
@@ -2762,11 +4443,7 @@ const submitData = async () => {
 
 
     <ul v-else class="documents">
-      <li 
-        v-for="doc in filteredDocuments" 
-        :key="doc.id" 
-        class="document-item"
-      >
+      <li v-for="doc in filteredDocuments" :key="doc.id" class="document-item">
         <div class="document-main" @click="viewDocument(doc.id)">
           <div class="document-meta">
             <span class="document-date">{{ formatDate(doc.date) }}</span>
@@ -2777,17 +4454,10 @@ const submitData = async () => {
           </p>
         </div>
         <div class="document-actions">
-          <button 
-            @click.stop="analyzeDocument(doc.id)" 
-            class="analyze-btn" 
-            :disabled="isAnalyzing"
-          >
-            {{ isAnalyzing ? 'Анализ...' : 'Проверить законность' }}
+          <button @click.stop="openComplaintDialog(doc.id)" class="analyze-btn">
+            Проверить законность
           </button>
-          <button 
-            @click.stop="confirmDelete(doc.id)" 
-            class="delete-btn"
-          >
+          <button @click.stop="confirmDelete(doc.id)" class="delete-btn">
             Удалить
           </button>
         </div>
@@ -2807,16 +4477,41 @@ const submitData = async () => {
       </div>
     </div>
 
-    <NotificationToast 
-      v-if="showNotification"
-      :message="notificationMessage"
-      :type="notificationType"
-      :duration="1500"
-      @close="showNotification = false"
-    />
+    <!-- Модальное окно выбора органа для подачи жалобы -->
+    <div v-if="showComplaintDialog" class="complaint-dialog" @click.self="showComplaintDialog = false">
+      <div class="dialog-content">
+        <h3>Выберите орган для подачи жалобы</h3>
+        <div class="agency-selection">
+          <select v-model="selectedComplaintAgency" class="agency-select">
+            <option value="" disabled hidden>Выберите надзорный орган</option>
+            <option v-for="agency in complaintAgencies" :key="agency" :value="agency">
+              {{ agency }}
+            </option>
+          </select>
+        </div>
+        <div class="dialog-actions">
+          <button 
+            @click="generateComplaint" 
+            class="action-btn primary"
+            :disabled="!selectedComplaintAgency || isGeneratingComplaint"
+          >
+            {{ isGeneratingComplaint ? 'Генерация...' : 'Создать жалобу' }}
+          </button>
+          <button 
+            @click="showComplaintDialog = false" 
+            class="action-btn"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <NotificationToast v-if="showNotification" :message="notificationMessage" :type="notificationType" :duration="1500"
+      @close="showNotification = false" />
 
     <!-- Индикатор загрузки -->
-    <div v-if="isAnalyzing" class="loading-overlay">
+    <div v-if="isGeneratingComplaint" class="loading-overlay">
       <div class="loading-content">
         <div class="loading-spinner"></div>
         <div class="loading-text">Генерация жалобы...</div>
@@ -2837,19 +4532,72 @@ import NotificationToast from '@/components/ui/NotificationToast.vue'
 const documentStore = useDocumentStore()
 const complaintStore = useComplaintStore()
 const router = useRouter()
+
 const showNotification = ref(false)
 const notificationMessage = ref('')
 const notificationType = ref('success')
 
 const isLoading = ref(false)
-const isAnalyzing = ref(false)
 const searchQuery = ref('')
 const selectedAgency = ref('')
-const currentDocumentId = ref(null)
 
 // Для удаления документов
 const showDeleteModal = ref(false)
 const documentToDelete = ref(null)
+
+// Для модального окна жалобы
+const showComplaintDialog = ref(false)
+const selectedComplaintAgency = ref('')
+const currentDocumentId = ref(null)
+const isGeneratingComplaint = ref(false)
+
+// Варианты надзорных органов
+const complaintAgencies = computed(() => complaintStore.agenciesOptions)
+
+// Открытие модального окна для выбора органа
+const openComplaintDialog = (documentId) => {
+  currentDocumentId.value = documentId
+  selectedComplaintAgency.value = ''
+  showComplaintDialog.value = true
+}
+
+// Генерация жалобы
+const generateComplaint = async () => {
+  if (!selectedComplaintAgency.value) return
+
+  isGeneratingComplaint.value = true
+  try {
+    const complaint = await complaintStore.generateComplaint(
+      currentDocumentId.value,
+      selectedComplaintAgency.value
+    )
+
+    // Показываем уведомление
+    notificationMessage.value = 'Жалоба успешно создана'
+    notificationType.value = 'success'
+    showNotification.value = true
+
+    // Закрываем диалог
+    showComplaintDialog.value = false
+
+    // Переходим к подробному просмотру созданной жалобы
+    if (complaint && complaint.id) {
+      router.push(`/complaints/${complaint.id}`)
+    } else {
+      // Если по какой-то причине ID жалобы не доступен, переходим к списку жалоб
+      router.push('/complaints')
+    }
+  } catch (error) {
+    console.error('Ошибка генерации жалобы:', error)
+
+    // Уведомление об ошибке
+    notificationMessage.value = 'Ошибка при создании жалобы'
+    notificationType.value = 'error'
+    showNotification.value = true
+  } finally {
+    isGeneratingComplaint.value = false
+  }
+}
 
 const confirmDelete = (id) => {
   documentToDelete.value = id
@@ -2861,14 +4609,14 @@ const deleteDocument = async () => {
     try {
       await documentStore.deleteDocument(documentToDelete.value)
       await documentStore.fetchDocuments()
-      
+
       // Показываем уведомление
       notificationMessage.value = 'Документ успешно удалён'
       notificationType.value = 'success'
       showNotification.value = true
     } catch (error) {
       console.error('Ошибка удаления:', error)
-      
+
       // Уведомление об ошибке
       notificationMessage.value = 'Ошибка при удалении документа'
       notificationType.value = 'error'
@@ -3134,6 +4882,7 @@ const resetFilters = () => {
 import { ref, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from 'axios'
+import { v4 as uuidv4 } from 'uuid'
 import { useAIStore } from '@/stores/aiStore'
 import { useDocumentStore } from '@/stores/documentStore'
 
@@ -3169,7 +4918,7 @@ onMounted(async () => {
       return;
     }
 
-    if (document.value.id) {
+    if (document.value.id && document.value.id !== 'new') {
       console.log('Загрузка документа по ID:', document.value.id);
       await documentStore.fetchDocumentById(document.value.id);
       document.value = {
@@ -3219,6 +4968,8 @@ const analyzeDocument = async () => {
   error.value = null
 
   try {
+    // Обновляем currentDocument в хранилище перед анализом
+    documentStore.currentDocument = document.value
     const updatedDocument = await documentStore.analyzeDocument()
 
     document.value = {
@@ -3239,12 +4990,23 @@ const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
     // Вызываем бэкенд для генерации краткой сути
-    const response = await axios.post('http://localhost:3001/api/documents/analyze-text', {
+    const response = await axios.post('http://localhost:3001/api/documents/analyze', {
       text: document.value.originalText
     });
     const analysis = response.data;
     
+    // Обновляем все поля анализа
     document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
+    document.value.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : [];
+    document.value.violations = Array.isArray(analysis.violations) ? analysis.violations : [];
+    document.value.documentDate = analysis.documentDate || '';
+    document.value.senderAgency = analysis.senderAgency || '';
+    
+    // Обновляем currentDocument в хранилище
+    documentStore.currentDocument = { ...document.value };
+    
+    // Показываем сообщение о необходимости сохранения
+    console.log('Анализ обновлен. Нажмите "Сохранить" для сохранения изменений');
   } catch (err) {
     error.value = 'Ошибка перегенерации: ' + err.message
   } finally {
@@ -3257,6 +5019,14 @@ const handleSubmit = async () => {
   error.value = null
 
   try {
+    // Убеждаемся, что ID документа является строкой
+    if (document.value.id && typeof document.value.id !== 'string') {
+      console.log("Предупреждение: ID документа не является строкой:", typeof document.value.id, document.value.id);
+      // Преобразуем ID в строку
+      document.value.id = String(document.value.id);
+    }
+    
+    // Обновляем currentDocument в хранилище перед сохранением
     documentStore.currentDocument = document.value
     await documentStore.saveDocument()
     router.push('/documents')
@@ -3984,6 +5754,21 @@ export const useDocumentStore = defineStore("document", () => {
   const error = ref(null);
   const isAnalyzing = ref(false);
 
+  // Вспомогательная функция для проверки типа ID документа
+  const validateDocumentId = (doc, source = "unknown") => {
+    if (doc && doc.id !== undefined && doc.id !== null) {
+      if (typeof doc.id !== 'string' && typeof doc.id !== 'number') {
+        console.warn(`ВНИМАНИЕ: ID документа имеет неожиданный тип в ${source}:`, {
+          id: doc.id,
+          type: typeof doc.id,
+          value: doc.id
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
   const currentDocument = ref({
     id: null, // Не устанавливаем ID сразу
     date: new Date().toISOString().split("T")[0],
@@ -4099,6 +5884,9 @@ export const useDocumentStore = defineStore("document", () => {
       updatedAt: new Date().toISOString(),
       violations: [],
     };
+    
+    // Проверяем тип ID после сброса
+    validateDocumentId(currentDocument.value, "resetCurrentDocument");
   };
 
   // Действия
@@ -4141,6 +5929,10 @@ export const useDocumentStore = defineStore("document", () => {
       );
 
       console.log("Результат загрузки файлов:", data);
+      
+      // Проверяем тип ID в возвращенных данных
+      validateDocumentId(data, "uploadFiles (response)");
+      
       // Бэкенд возвращает созданный документ в правильной структуре
       currentDocument.value = {
         ...currentDocument.value,
@@ -4149,21 +5941,20 @@ export const useDocumentStore = defineStore("document", () => {
         originalText:
           data.originalText || currentDocument.value.originalText || "",
       };
+      
+      // Проверяем тип ID после обновления
+      validateDocumentId(currentDocument.value, "uploadFiles (after update)");
+      
       return data;
     });
   };
 
   const saveDocument = async () => {
-    console.log("=== НАЧАЛО SAVE DOCUMENT ===");
-    console.log("Вызов saveDocument из стека:", new Error().stack);
-    console.log("Текущий документ:", currentDocument.value);
-    console.log("ID документа:", currentDocument.value.id);
-    console.log("Тип ID:", typeof currentDocument.value.id);
-    console.log("ID === null:", currentDocument.value.id === null);
-    console.log("ID === undefined:", currentDocument.value.id === undefined);
-    console.log("ID == false:", currentDocument.value.id == false);
-    console.log("Boolean(ID):", Boolean(currentDocument.value.id));
     console.log("Сохранение документа:", currentDocument.value);
+    
+    // Проверяем тип ID документа
+    validateDocumentId(currentDocument.value, "saveDocument");
+    
     return handleApiCall(async () => {
       // Убедимся, что у документа есть все необходимые поля
       // и актуальная дата обновления
@@ -4176,21 +5967,20 @@ export const useDocumentStore = defineStore("document", () => {
           : "";
 
       let savedDocument;
-      if (currentDocument.value.id) {
-        console.log("=== ВЕТКА СОХРАНЕНИЯ (PUT) ===");
-        console.log("ID документа для сохранения:", currentDocument.value.id);
+      // Проверяем, является ли ID "истинным" значением для определения PUT/POST
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        
         const { data } = await axios.put(
           `${API_BASE}/api/documents/${currentDocument.value.id}`,
           currentDocument.value
         );
         savedDocument = data;
       } else {
-        console.log("=== СОЗДАНИЕ НОВОГО ДОКУМЕНТА (POST) ===");
         console.log("Создание нового документа");
         // Убедимся, что новый документ имеет правильную структуру
         const newDocToSave = {
           ...currentDocument.value,
-          id: currentDocument.value.id || uuidv4(),
+          id: typeof currentDocument.value.id === 'string' ? currentDocument.value.id : uuidv4(),
           createdAt:
             currentDocument.value.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -4199,7 +5989,6 @@ export const useDocumentStore = defineStore("document", () => {
               ? currentDocument.value.originalText
               : "",
         };
-        console.log("Документ для создания:", newDocToSave);
         const { data } = await axios.post(
           `${API_BASE}/api/documents`,
           newDocToSave
@@ -4218,8 +6007,11 @@ export const useDocumentStore = defineStore("document", () => {
             ? savedDocument.originalText
             : currentDocument.value.originalText || "",
       };
+      
+      // Проверяем тип ID после сохранения
+      validateDocumentId(currentDocument.value, "saveDocument (after save)");
+      
       console.log("Документ сохранен:", savedDocument);
-      console.log("=== КОНЕЦ SAVE DOCUMENT ===");
       return savedDocument;
     });
   };
@@ -4243,12 +6035,8 @@ export const useDocumentStore = defineStore("document", () => {
     }
 
     // Проверяем, есть ли текст для анализа
-    const hasOriginalText =
-      currentDocument.value.originalText &&
-      currentDocument.value.originalText.trim().length > 0;
-    const hasAttachmentsWithText = currentDocument.value.attachments?.some(
-      (att) => att.text && att.text.trim().length > 0
-    );
+    const hasOriginalText = currentDocument.value.originalText && currentDocument.value.originalText.trim().length > 0;
+    const hasAttachmentsWithText = currentDocument.value.attachments?.some((att) => att.text && att.text.trim().length > 0);
 
     console.log("Проверка текста для анализа:", {
       hasOriginalText,
@@ -4265,61 +6053,107 @@ export const useDocumentStore = defineStore("document", () => {
     error.value = null;
 
     try {
-      currentDocument.value.analysisStatus = "processing";
+      // Проверяем тип ID перед анализом
+      validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
+      
+      // Если у документа есть ID (строка), анализируем его по ID
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        currentDocument.value.analysisStatus = "processing";
 
-      // Вызываем бэкенд для анализа документа
-      const { data } = await axios.post(
-        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
-        {
-          instructions: "",
-          strictMode: false
-        }
-      );
+        // Вызываем бэкенд для анализа документа
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+          {
+            instructions: "",
+            strictMode: false
+          }
+        );
 
-      currentDocument.value = {
-        ...currentDocument.value,
-        summary: data.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(data.keySentences) ? 
-          data.keySentences : 
-          [],
-        violations: Array.isArray(data.violations) ?
-          data.violations :
-          [],
-        documentDate: data.documentDate || "",
-        senderAgency: data.senderAgency || "",
-        attachments: data.attachments ? 
-          currentDocument.value.attachments.map(attachment => {
-            // Найдем соответствующий анализ в результатах
-            const analysis = data.attachments.find(a => a.id === attachment.id);
-            if (analysis) {
-              return {
-                ...attachment,
-                analysis: {
-                  documentType: analysis.documentType || "Документ",
-                  sentDate: analysis.sentDate || "",
-                  senderAgency: analysis.senderAgency || "",
-                  summary: analysis.summary || "",
-                  keySentences: analysis.keySentences || []
-                },
-                documentDate: analysis.sentDate || attachment.documentDate || "",
-                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
-                summary: analysis.summary || attachment.summary || "",
-                keySentences: analysis.keySentences || attachment.keySentences || []
-              };
-            }
-            return attachment;
-          }) : 
-          currentDocument.value.attachments,
-        analysisStatus: "completed",
-        lastAnalyzedAt: new Date().toISOString(),
-      };
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          attachments: data.attachments ? 
+            currentDocument.value.attachments.map(attachment => {
+              // Найдем соответствующий анализ в результатах
+              const analysis = data.attachments.find(a => a.id === attachment.id);
+              if (analysis) {
+                return {
+                  ...attachment,
+                  analysis: {
+                    documentType: analysis.documentType || "Документ",
+                    sentDate: analysis.sentDate || "",
+                    senderAgency: analysis.senderAgency || "",
+                    summary: analysis.summary || "",
+                    keySentences: analysis.keySentences || []
+                  },
+                  documentDate: analysis.sentDate || attachment.documentDate || "",
+                  senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                  summary: analysis.summary || attachment.summary || "",
+                  keySentences: analysis.keySentences || attachment.keySentences || []
+                };
+              }
+              return attachment;
+            }) : 
+            currentDocument.value.attachments,
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
 
-      const savedDocument = await saveDocument();
-      return savedDocument;
+        const savedDocument = await saveDocument();
+        return savedDocument;
+      } 
+      // Если у документа нет ID (новый документ), анализируем его напрямую по тексту
+      else {
+        // Подготавливаем данные для анализа
+        const documentData = {
+          originalText: currentDocument.value.originalText || "",
+          attachments: currentDocument.value.attachments || []
+        };
+
+        // Вызываем бэкенд для анализа текста напрямую
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/analyze`,
+          {
+            text: documentData.originalText,
+            instructions: "",
+            strictMode: false
+          }
+        );
+
+        // Обновляем документ результатами анализа
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
+
+        // Возвращаем обновленный документ без сохранения
+        return currentDocument.value;
+      }
     } catch (err) {
       console.error("Ошибка анализа документа:", err);
       currentDocument.value.analysisStatus = "failed";
-      await saveDocument();
+      // Для новых документов не вызываем saveDocument в случае ошибки
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        await saveDocument();
+      }
       throw err;
     } finally {
       isAnalyzing.value = false;
@@ -4647,6 +6481,11 @@ const router = createRouter({
       name: 'ComplaintDetail',
       component: () => import('@/views/ComplaintDetail.vue'),
       props: true
+    },
+    {
+      path: '/fssp',
+      name: 'FSSPData',
+      component: () => import('@/views/FSSPDataView.vue'),
     }
   ],
 });
@@ -4686,6 +6525,185 @@ export const useDocumentAnalysis = () => {
     analyzeTextWithLLM
   };
 };
+
+====================
+
+// Файл: frontend\src\components\RegionAutocomplete.vue
+<template>
+  <div class="autocomplete-wrapper">
+    <div class="input-with-code">
+      <input
+        ref="inputRef"
+        v-model="searchTerm"
+        type="text"
+        placeholder="Начните вводить регион..."
+        class="autocomplete-input"
+        @input="onInput"
+        @focus="onFocus"
+        @blur="onBlur"
+        @keydown.down.prevent="onArrowDown"
+        @keydown.up.prevent="onArrowUp"
+        @keydown.enter.prevent="onEnter"
+        @keydown.esc="onEscape"
+      />
+      <div v-if="selectedRegionCode" class="region-code">
+        {{ selectedRegionCode }}
+      </div>
+    </div>
+    <div v-if="showSuggestions" class="suggestions-container">
+      <ul v-if="filteredRegions.length > 0" class="suggestions-list">
+        <li
+          v-for="(region, index) in filteredRegions"
+          :key="region.name"
+          :class="['suggestion-item', { 'selected': index === selectedIndex }]"
+          @click="selectRegion(region)"
+          @mouseenter="selectedIndex = index"
+        >
+          <div class="region-name">{{ region.name }}</div>
+          <div class="region-code-small">{{ region.code }}</div>
+        </li>
+      </ul>
+      <div v-else class="no-suggestions">
+        Регионы не найдены
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, computed, watch } from 'vue';
+
+export default {
+  name: 'RegionAutocomplete',
+  props: {
+    regions: {
+      type: Array,
+      required: true
+    },
+    modelValue: {
+      type: String,
+      default: ''
+    }
+  },
+  emits: ['update:modelValue', 'regionSelected'],
+  setup(props, { emit }) {
+    const inputRef = ref(null);
+    const searchTerm = ref(props.modelValue || '');
+    const showSuggestions = ref(false);
+    const selectedIndex = ref(-1);
+
+    // Фильтрация регионов по введенному тексту
+    const filteredRegions = computed(() => {
+      if (!searchTerm.value) {
+        return props.regions.slice(0, 10); // Показываем первые 10 регионов если поле пустое
+      }
+      
+      const term = searchTerm.value.toLowerCase();
+      return props.regions
+        .filter(region => region.name.toLowerCase().includes(term))
+        .slice(0, 10); // Ограничиваем 10 результатами
+    });
+
+    // Получение кода выбранного региона
+    const selectedRegionCode = computed(() => {
+      if (!searchTerm.value) return '';
+      const region = props.regions.find(r => r.name === searchTerm.value);
+      return region ? region.code : '';
+    });
+
+    // Обработчики событий
+    const onInput = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+      emit('update:modelValue', searchTerm.value);
+    };
+
+    const onFocus = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+    };
+
+    const onBlur = () => {
+      // Небольшая задержка для возможности клика по suggestion
+      setTimeout(() => {
+        showSuggestions.value = false;
+        selectedIndex.value = -1;
+      }, 200);
+    };
+
+    const onArrowDown = () => {
+      if (!showSuggestions.value) {
+        showSuggestions.value = true;
+      }
+      
+      if (filteredRegions.value.length > 0) {
+        selectedIndex.value = (selectedIndex.value + 1) % filteredRegions.value.length;
+      }
+    };
+
+    const onArrowUp = () => {
+      if (!showSuggestions.value) {
+        showSuggestions.value = true;
+      }
+      
+      if (filteredRegions.value.length > 0) {
+        selectedIndex.value = selectedIndex.value <= 0 
+          ? filteredRegions.value.length - 1 
+          : selectedIndex.value - 1;
+      }
+    };
+
+    const onEnter = () => {
+      if (showSuggestions.value && selectedIndex.value >= 0) {
+        selectRegion(filteredRegions.value[selectedIndex.value]);
+      } else if (filteredRegions.value.length > 0) {
+        // Если ничего не выбрано, выбираем первый элемент
+        selectRegion(filteredRegions.value[0]);
+      }
+    };
+
+    const onEscape = () => {
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+    };
+
+    const selectRegion = (region) => {
+      searchTerm.value = region.name;
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+      emit('update:modelValue', region.name);
+      emit('regionSelected', region.name);
+      inputRef.value?.blur();
+    };
+
+    // Следим за изменением внешнего значения
+    watch(() => props.modelValue, (newVal) => {
+      if (newVal !== searchTerm.value) {
+        searchTerm.value = newVal || '';
+      }
+    });
+
+    return {
+      inputRef,
+      searchTerm,
+      showSuggestions,
+      selectedIndex,
+      filteredRegions,
+      selectedRegionCode,
+      onInput,
+      onFocus,
+      onBlur,
+      onArrowDown,
+      onArrowUp,
+      onEnter,
+      onEscape,
+      selectRegion
+    };
+  }
+};
+</script>
+
+
 
 ====================
 

@@ -43,21 +43,20 @@ class FSSPParser {
 
       // Переходим на страницу контактов
       console.log(`Переход на страницу контактов: ${this.baseUrl}`);
-      await page.goto(this.baseUrl, {
+      const response = await page.goto(this.baseUrl, {
         waitUntil: "networkidle2",
         timeout: 30000,
       });
 
-      // Ждем загрузки контента
-      await new Promise((resolve) => setTimeout(resolve, 5000));
+      // Проверяем статус ответа
+      console.log(`Статус ответа: ${response.status()}`);
+
+      // Ждем загрузки контента (уменьшаем время ожидания)
+      await new Promise((resolve) => setTimeout(resolve, 2000));
 
       // Проверяем URL страницы
       const currentPageUrl = page.url();
       console.log(`Текущий URL страницы: ${currentPageUrl}`);
-
-      // Проверяем статус ответа
-      const response = await page.goto(this.baseUrl, { waitUntil: 'domcontentloaded' });
-      console.log(`Статус ответа: ${response.status()}`);
 
       // Извлекаем данные с помощью JavaScript в контексте страницы
       const rawData = await page.evaluate(() => {
@@ -140,6 +139,7 @@ class FSSPParser {
         `Ошибка при получении данных по региону ${this.regionName}:`,
         error.message
       );
+      console.error("Стек ошибки:", error.stack);
 
       // В случае ошибки возвращаем тестовые данные
       return {
@@ -162,7 +162,7 @@ class FSSPParser {
       );
 
       const regionData = {
-        region: "Свердловская область",
+        region: this.regionName,
         cities: [],
       };
 
@@ -199,10 +199,10 @@ class FSSPParser {
       );
       // Возвращаем все отделения в Екатеринбург
       return {
-        region: "Свердловская область",
+        region: this.regionName,
         cities: [
           {
-            name: "Екатеринбург",
+            name: `г. ${this.regionName.split(" ")[0]}`,
             departments: departments,
           },
         ],
@@ -212,105 +212,111 @@ class FSSPParser {
 
   // ПРОСТОЙ И НАДЁЖНЫЙ метод извлечения города
   extractCityFromAddress(addressData) {
-  // Приводим к строке и нормализуем пробелы
-  let address = addressData.toString().replace(/\s+/g, ' ').trim();
+    // Приводим к строке и нормализуем пробелы
+    let address = addressData.toString().replace(/\s+/g, ' ').trim();
 
-  // Удаляем почтовый индекс в начале (6 цифр)
-  address = address.replace(/^\d{6}\s*/, '');
+    // Удаляем почтовый индекс в начале (6 цифр)
+    address = address.replace(/^\d{6}\s*/, '');
 
-  // Известные города Свердловской области
-  const knownCities = [
-    'Екатеринбург', 'Нижний Тагил', 'Каменск-Уральский', 'Первоуральск',
-    'Верхняя Пышма', 'Верхняя Салда', 'Алапаевск', 'Артёмовский','Артемовский', 
-    'Асбест', 'Березовский', 'Богданович', 'Верхотурье', 'Ивдель', 'Ирбит', 'Карпинск',
-    'Качканар', 'Кировград', 'Краснотурьинск', 'Красноуральск', 'Красноуфимск',
-    'Кушва', 'Невьянск', 'Нижние Серги', 'Нижняя Тура', 'Новая Ляля',
-    'Новоуральск', 'Полевской', 'Ревда', 'Реж', 'Североуральск', 'Серов',
-    'Среднеуральск', 'Сухой Лог', 'Сысерть', 'Тавда', 'Талица', 'Туринск',
-    'Туринская Слобода', 'Гари', 'Арти', 'Белоярский', 'Камышлов', 'Лесной',
-    'Таборы', 'Тугулым', 'Шаля'
-  ];
+    // Загружаем известные города для текущего региона
+    const knownCitiesData = this.loadKnownCitiesForRegion();
+    const knownCities = knownCitiesData.cities || [];
 
-  // Сортируем по длине (сначала самые длинные — важно!)
-  const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
+    // Сортируем по длине (сначала самые длинные — важно!)
+    const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
 
-  // Паттерны, указывающие на улицу, дом и т.п.
-  const streetIndicators = [
-    'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
-    'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
-    'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
-  ];
+    // Паттерны, указывающие на улицу, дом и т.п.
+    const streetIndicators = [
+      'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
+      'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
+      'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
+    ];
 
-  // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
-  const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
-  if (prefixMatch) {
-    let cityPart = prefixMatch[1].trim();
+    // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
+    const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+    if (prefixMatch) {
+      let cityPart = prefixMatch[1].trim();
 
-    // Обрезаем всё, что идёт после улицы/дома
-    for (const indicator of streetIndicators) {
-      const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\s*${escaped}.*`, 'i');
-      cityPart = cityPart.replace(regex, '');
+      // Обрезаем всё, что идёт после улицы/дома
+      for (const indicator of streetIndicators) {
+        const escaped = indicator.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
+        const regex = new RegExp(`\\s*${escaped}.*`, 'i');
+        cityPart = cityPart.replace(regex, '');
+      }
+
+      // Убираем лишние символы в конце
+      cityPart = cityPart.replace(/[.,;].*$/, '').trim();
+
+      // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
+      for (const city of sortedCities) {
+        if (cityPart.startsWith(city)) {
+          return city;
+        }
+      }
     }
 
-    // Убираем лишние символы в конце
-    cityPart = cityPart.replace(/[.,;].*$/, '').trim();
-
-    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
+    // 2. Если префикс не найден — ищем любой известный город в строке
     for (const city of sortedCities) {
-      if (cityPart.startsWith(city)) {
-        return city;
+      const escapedCity = city.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
+      const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
+
+      if (regex.test(address)) {
+        // Проверяем, не является ли это частью названия улицы
+        const isStreetName = streetIndicators.some(indicator => {
+          const escapedIndicator = indicator.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
+          // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
+          const streetPatterns = [
+            new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
+            new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
+            new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
+          ];
+          return streetPatterns.some(pattern => pattern.test(addressData));
+        });
+
+        if (!isStreetName) {
+          return city;
+        }
       }
     }
-  }
 
-  // 2. Если префикс не найден — ищем любой известный город в строке
-  for (const city of sortedCities) {
-    const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
+    // 3. Если всё провалилось — попробуем "грязный" поиск по частичному совпадению
+    // (на случай опечаток или нестандартных форматов)
+    const lowerAddress = address.toLowerCase();
+    for (const city of sortedCities) {
+      const cityLower = city.toLowerCase();
+      if (lowerAddress.includes(cityLower)) {
+        // Проверяем, не входит ли в название улицы
+        const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
+        const isLikelyStreet = streetPatterns.some(p => {
+          return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
+        });
 
-    if (regex.test(address)) {
-      // Проверяем, не является ли это частью названия улицы
-      const isStreetName = streetIndicators.some(indicator => {
-        const escapedIndicator = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
-        const streetPatterns = [
-          new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
-          new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
-          new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
-        ];
-        return streetPatterns.some(pattern => pattern.test(addressData));
-      });
-
-      if (!isStreetName) {
-        return city;
+        if (!isLikelyStreet) {
+          return city;
+        }
       }
     }
+
+    // Если всё провалилось
+    return "Город не определен";
   }
 
-  // 3. Если ничего не помогло — попробуем "грязный" поиск по частичному совпадению
-  // (на случай опечаток или нестандартных форматов)
-  const lowerAddress = address.toLowerCase();
-  for (const city of sortedCities) {
-    const cityLower = city.toLowerCase();
-    if (lowerAddress.includes(cityLower)) {
-      // Проверяем, не входит ли в название улицы
-      const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
-      const isLikelyStreet = streetPatterns.some(p => {
-        return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
-      });
-
-      if (!isLikelyStreet) {
-        return city;
+  // Метод для загрузки известных городов региона
+  loadKnownCitiesForRegion() {
+    try {
+      const knownCitiesPath = path.join(__dirname, "..", "dataBase", "knownCities", `${this.regionCode}.json`);
+      if (fs.existsSync(knownCitiesPath)) {
+        const data = fs.readFileSync(knownCitiesPath, "utf8");
+        return JSON.parse(data);
       }
+      // Если файл не найден, возвращаем пустой массив
+      console.warn(`Файл с известными городами для региона ${this.regionName} (${this.regionCode}) не найден`);
+      return { cities: [] };
+    } catch (error) {
+      console.error(`Ошибка при загрузке известных городов для региона ${this.regionName}:`, error.message);
+      return { cities: [] };
     }
   }
-
-  // Если всё провалилось
-  return "Город не определен";
-}
-
-
 
   // Тестовые данные для региона
   getTestRegionData() {
