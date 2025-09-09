@@ -6,9 +6,26 @@ const router = Router();
 // Запуск парсинга данных ФССП по региону
 router.post('/parse', async (req, res) => {
   try {
-    const { region } = req.body || {};
-    console.log(`Запуск парсинга данных ФССП по запросу API для региона: ${region || 'по умолчанию'}`);
-    const fsspParser = new FSSPParser(region);
+    const { region, regionCode } = req.body || {};
+    console.log(`Запуск парсинга данных ФССП по запросу API для региона: ${region || 'по умолчанию'}, код: ${regionCode || 'не указан'}`);
+    
+    // Если указан код региона, используем его для создания парсера
+    let fsspParser;
+    if (regionCode) {
+      // Находим имя региона по коду
+      const fsspRegions = (await import('../services/fsspRegions.js')).default;
+      const regionName = Object.keys(fsspRegions).find(key => fsspRegions[key] === parseInt(regionCode));
+      if (regionName) {
+        fsspParser = new FSSPParser(regionName);
+      } else {
+        // Если регион не найден по коду, создаем парсер с указанным именем или по умолчанию
+        fsspParser = new FSSPParser(region);
+      }
+    } else {
+      // Если код региона не указан, создаем парсер как раньше
+      fsspParser = new FSSPParser(region);
+    }
+    
     const result = await fsspParser.parseAllData();
     res.json(result);
   } catch (error) {
@@ -24,9 +41,26 @@ router.post('/parse', async (req, res) => {
 // Получение данных ФССП по региону
 router.get('/data', async (req, res) => {
   try {
-    const { region } = req.query || {};
-    console.log(`Получение данных ФССП для региона: ${region || 'по умолчанию'}`);
-    const fsspParser = new FSSPParser(region);
+    const { region, regionCode } = req.query || {};
+    console.log(`Получение данных ФССП для региона: ${region || 'по умолчанию'}, код: ${regionCode || 'не указан'}`);
+    
+    // Если указан код региона, используем его для создания парсера
+    let fsspParser;
+    if (regionCode) {
+      // Находим имя региона по коду
+      const fsspRegions = (await import('../services/fsspRegions.js')).default;
+      const regionName = Object.keys(fsspRegions).find(key => fsspRegions[key] === parseInt(regionCode));
+      if (regionName) {
+        fsspParser = new FSSPParser(regionName);
+      } else {
+        // Если регион не найден по коду, создаем парсер с указанным именем или по умолчанию
+        fsspParser = new FSSPParser(region);
+      }
+    } else {
+      // Если код региона не указан, создаем парсер как раньше
+      fsspParser = new FSSPParser(region);
+    }
+    
     const data = await fsspParser.getData();
     
     if (data) {

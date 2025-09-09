@@ -13,9 +13,44 @@ class FSSPParser {
   constructor(regionName = "Свердловская область") {
     this.regionName = regionName;
     this.regionCode = fsspRegions[regionName] || 66; // По умолчанию Свердловская область
-    this.baseUrl = `https://r${this.regionCode}.fssp.gov.ru/contacts`;
+    
+    // Загружаем нестандартные URL из файла
+    this.customUrls = this.loadCustomUrls();
+    
+    // Определяем baseURL - либо нестандартный, либо стандартный
+    this.baseUrl = this.getBaseUrl();
+    
     this.fileName = `${this.regionCode}_${transliterate(regionName)}.json`;
     this.dataFilePath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB", this.fileName);
+  }
+
+  // Загрузка нестандартных URL из файла
+  loadCustomUrls() {
+    try {
+      const customUrlsPath = path.join(__dirname, "..", "dataBase", "fsspRegionUrls.json");
+      if (fs.existsSync(customUrlsPath)) {
+        const data = fs.readFileSync(customUrlsPath, "utf8");
+        return JSON.parse(data);
+      }
+      return {};
+    } catch (error) {
+      console.error("Ошибка при загрузке нестандартных URL:", error.message);
+      return {};
+    }
+  }
+
+  // Получение базового URL для парсинга
+  getBaseUrl() {
+    const regionCodeStr = this.regionCode.toString().padStart(2, '0');
+    
+    // Проверяем, есть ли нестандартный URL для этого региона
+    if (this.customUrls[regionCodeStr] && this.customUrls[regionCodeStr].urls.length > 0) {
+      // Используем первый URL из списка (можно расширить логику при необходимости)
+      return this.customUrls[regionCodeStr].urls[0];
+    }
+    
+    // Если нет нестандартного URL, используем стандартный
+    return `https://r${this.regionCode}.fssp.gov.ru/contacts`;
   }
 
   // Получение данных по региону с использованием Puppeteer
@@ -87,15 +122,21 @@ class FSSPParser {
                 const phone = cells[4].textContent.trim();
 
                 // Проверяем, является ли строка заголовочной
-                // Проверяем первые 5 строк на наличие стоп-слов
+                // Увеличиваем количество проверяемых строк до 10 для более надежного определения
                 let isHeaderRow = false;
-                if (rowIndex < 5) {
+                if (rowIndex < 10) {
                   const rowText = row.textContent.toLowerCase();
-                  const stopWords = ["наименование", "структурного", "подразделения", "адрес", "почты", "почта", "телефон"];
+                  const stopWords = [
+                    "наименование", "структурного", "подразделения", "адрес", "почты", "почта", 
+                    "телефон", "e-mail", "email", "сайт", "факс", "контактная", "информация",
+                    "номер", "п/п", "№"
+                  ];
                   
                   // Проверяем, содержит ли строка хотя бы одно из стоп-слов
+                  // Используем более точное совпадение слов
+                  const wordsInRow = rowText.split(/\s+/);
                   for (const word of stopWords) {
-                    if (rowText.includes(word)) {
+                    if (wordsInRow.includes(word) || rowText.includes(word)) {
                       isHeaderRow = true;
                       break;
                     }
@@ -108,7 +149,10 @@ class FSSPParser {
                   const isHeaderData = (
                     departmentName.includes("Наименование структурного подразделения") ||
                     address.includes("Почтовый адрес") ||
-                    phone.includes("Телефон для получения справочной информации")
+                    phone.includes("Телефон для получения справочной информации") ||
+                    departmentName.toLowerCase().includes("подразделение") &&
+                    address.toLowerCase().includes("адрес") &&
+                    phone.toLowerCase().includes("телефон")
                   );
 
                   // Добавляем только если это не заголовочные данные
@@ -211,96 +255,95 @@ class FSSPParser {
   }
 
   // ПРОСТОЙ И НАДЁЖНЫЙ метод извлечения города
-  extractCityFromAddress(addressData) {
-    // Приводим к строке и нормализуем пробелы
-    let address = addressData.toString().replace(/\s+/g, ' ').trim();
+extractCityFromAddress(addressData) {
+  // Приводим к строке и нормализуем пробелы
+  let address = addressData.toString().replace(/\s+/g, ' ').trim();
 
-    // Удаляем почтовый индекс в начале (6 цифр)
-    address = address.replace(/^\d{6}\s*/, '');
+  // Удаляем почтовый индекс в начале (6 цифр)
+  address = address.replace(/^\d{6}\s*/, '');
 
-    // Загружаем известные города для текущего региона
-    const knownCitiesData = this.loadKnownCitiesForRegion();
-    const knownCities = knownCitiesData.cities || [];
+  // Загружаем известные города для текущего региона
+  const knownCitiesData = this.loadKnownCitiesForRegion();
+  const knownCities = knownCitiesData.cities || [];
 
-    // Сортируем по длине (сначала самые длинные — важно!)
-    const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
+  // Сортируем по длине (сначала самые длинные — важно!)
+  const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
 
-    // Паттерны, указывающие на улицу, дом и т.п.
-    const streetIndicators = [
-      'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
-      'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
-      'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
-    ];
+  // Паттерны, указывающие на улицу, дом и т.п.
+  const streetIndicators = [
+    'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
+    'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
+    'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
+  ];
 
-    // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
-    const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
-    if (prefixMatch) {
-      let cityPart = prefixMatch[1].trim();
+  // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
+  const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+  if (prefixMatch) {
+    let cityPart = prefixMatch[1].trim();
 
-      // Обрезаем всё, что идёт после улицы/дома
-      for (const indicator of streetIndicators) {
-        const escaped = indicator.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
-        const regex = new RegExp(`\\s*${escaped}.*`, 'i');
-        cityPart = cityPart.replace(regex, '');
-      }
-
-      // Убираем лишние символы в конце
-      cityPart = cityPart.replace(/[.,;].*$/, '').trim();
-
-      // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
-      for (const city of sortedCities) {
-        if (cityPart.startsWith(city)) {
-          return city;
-        }
-      }
+    // Обрезаем всё, что идёт после улицы/дома
+    for (const indicator of streetIndicators) {
+      const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\s*${escaped}.*`, 'i');
+      cityPart = cityPart.replace(regex, '');
     }
 
-    // 2. Если префикс не найден — ищем любой известный город в строке
+    // Убираем лишние символы в конце
+    cityPart = cityPart.replace(/[.,;].*$/, '').trim();
+
+    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
     for (const city of sortedCities) {
-      const escapedCity = city.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
-      const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
-
-      if (regex.test(address)) {
-        // Проверяем, не является ли это частью названия улицы
-        const isStreetName = streetIndicators.some(indicator => {
-          const escapedIndicator = indicator.replace(/[.*+?^${}()|[\\]]/g, '\\$&');
-          // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
-          const streetPatterns = [
-            new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
-            new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
-            new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
-          ];
-          return streetPatterns.some(pattern => pattern.test(addressData));
-        });
-
-        if (!isStreetName) {
-          return city;
-        }
+      if (cityPart.startsWith(city)) {
+        return city;
       }
     }
-
-    // 3. Если всё провалилось — попробуем "грязный" поиск по частичному совпадению
-    // (на случай опечаток или нестандартных форматов)
-    const lowerAddress = address.toLowerCase();
-    for (const city of sortedCities) {
-      const cityLower = city.toLowerCase();
-      if (lowerAddress.includes(cityLower)) {
-        // Проверяем, не входит ли в название улицы
-        const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
-        const isLikelyStreet = streetPatterns.some(p => {
-          return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
-        });
-
-        if (!isLikelyStreet) {
-          return city;
-        }
-      }
-    }
-
-    // Если всё провалилось
-    return "Город не определен";
   }
 
+  // 2. Если префикс не найден — ищем любой известный город в строке
+  for (const city of sortedCities) {
+    const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
+
+    if (regex.test(address)) {
+      // Проверяем, не является ли это частью названия улицы
+      const isStreetName = streetIndicators.some(indicator => {
+        const escapedIndicator = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
+        const streetPatterns = [
+          new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
+          new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
+          new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
+        ];
+        return streetPatterns.some(pattern => pattern.test(addressData));
+      });
+
+      if (!isStreetName) {
+        return city;
+      }
+    }
+  }
+
+  // 3. Если всё провалилось — попробуем "грязный" поиск по частичному совпадению
+  // (на случай опечаток или нестандартных форматов)
+  const lowerAddress = address.toLowerCase();
+  for (const city of sortedCities) {
+    const cityLower = city.toLowerCase();
+    if (lowerAddress.includes(cityLower)) {
+      // Проверяем, не входит ли в название улицы
+      const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
+      const isLikelyStreet = streetPatterns.some(p => {
+        return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
+      });
+
+      if (!isLikelyStreet) {
+        return city;
+      }
+    }
+  }
+
+  // Если всё провалилось
+  return "Город не определен";
+}
   // Метод для загрузки известных городов региона
   loadKnownCitiesForRegion() {
     try {
@@ -343,14 +386,52 @@ class FSSPParser {
   async parseAllData() {
     try {
       console.log(`Запуск парсера данных ФССП России (${this.regionName})`);
-
-      // Получаем данные по региону
-      const regionData = await this.getRegionData();
-
-      const regionsData = [regionData];
+      
+      // Проверяем, есть ли несколько URL для парсинга
+      let allRegionData = [];
+      const regionCodeStr = this.regionCode.toString().padStart(2, '0');
+      const customRegionData = this.customUrls[regionCodeStr];
+      
+      if (customRegionData && customRegionData.urls.length > 0) {
+        // Если есть нестандартные URL, парсим данные со всех URL
+        for (const [index, url] of customRegionData.urls.entries()) {
+          console.log(`Парсинг данных с URL ${index + 1}/${customRegionData.urls.length}: ${url}`);
+          // Временно изменяем baseUrl для этого парсинга
+          const originalBaseUrl = this.baseUrl;
+          this.baseUrl = url;
+          const regionData = await this.getRegionData();
+          allRegionData.push(regionData);
+          // Восстанавливаем оригинальный baseUrl
+          this.baseUrl = originalBaseUrl;
+        }
+        
+        // Объединяем данные из всех URL
+        const combinedRegionData = {
+          region: this.regionName,
+          cities: []
+        };
+        
+        // Собираем все отделения в один массив
+        const allDepartments = [];
+        allRegionData.forEach(regionData => {
+          regionData.cities.forEach(city => {
+            allDepartments.push(...city.departments);
+          });
+        });
+        
+        // Группируем все отделения по городам
+        const groupedData = await this.groupDepartmentsByCity(allDepartments);
+        combinedRegionData.cities = groupedData.cities;
+        
+        allRegionData = [combinedRegionData];
+      } else {
+        // Если нет нестандартных URL, парсим как обычно
+        const regionData = await this.getRegionData();
+        allRegionData = [regionData];
+      }
 
       // Сохраняем данные в файл
-      await this.saveToFile(regionsData);
+      await this.saveToFile(allRegionData);
 
       console.log("Парсинг завершен успешно!");
 
@@ -358,7 +439,7 @@ class FSSPParser {
       let totalDepartments = 0;
       let totalCities = 0;
 
-      regionsData.forEach((region) => {
+      allRegionData.forEach((region) => {
         totalCities += region.cities.length;
         region.cities.forEach((city) => {
           totalDepartments += city.departments.length;
@@ -369,7 +450,7 @@ class FSSPParser {
         success: true,
         message: "Парсинг завершен успешно",
         statistics: {
-          regions: regionsData.length,
+          regions: allRegionData.length,
           cities: totalCities,
           departments: totalDepartments,
         },
@@ -438,6 +519,33 @@ class FSSPParser {
     }
   }
 
+  // Метод для добавления нестандартного URL в файл конфигурации
+  static async addCustomUrl(regionCode, regionName, urls) {
+    try {
+      const customUrlsPath = path.join(__dirname, "..", "dataBase", "fsspRegionUrls.json");
+      let customUrls = {};
+      
+      // Загружаем существующие данные
+      if (fs.existsSync(customUrlsPath)) {
+        const data = fs.readFileSync(customUrlsPath, "utf8");
+        customUrls = JSON.parse(data);
+      }
+      
+      // Добавляем или обновляем данные для региона
+      const regionCodeStr = regionCode.toString().padStart(2, '0');
+      customUrls[regionCodeStr] = {
+        region: regionName,
+        urls: Array.isArray(urls) ? urls : [urls]
+      };
+      
+      // Сохраняем обновленные данные
+      fs.writeFileSync(customUrlsPath, JSON.stringify(customUrls, null, 2), "utf8");
+      console.log(`Добавлен/обновлен нестандартный URL для региона ${regionCodeStr}: ${regionName}`);
+    } catch (error) {
+      console.error("Ошибка при добавлении нестандартного URL:", error.message);
+    }
+  }
+
   // Получение данных из файла
   async getData() {
     try {
@@ -453,4 +561,5 @@ class FSSPParser {
   }
 }
 
-export default FSSPParser;
+// Экспортируем класс и статический метод
+export { FSSPParser as default, FSSPParser };
