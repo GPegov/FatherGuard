@@ -50,7 +50,7 @@ class FSSPParser {
     }
     
     // Если нет нестандартного URL, используем стандартный
-    return `https://r${this.regionCode}.fssp.gov.ru/contacts`;
+    return `https://r${regionCodeStr}.fssp.gov.ru/contacts`;
   }
 
   // Получение данных по региону с использованием Puppeteer
@@ -347,13 +347,15 @@ extractCityFromAddress(addressData) {
   // Метод для загрузки известных городов региона
   loadKnownCitiesForRegion() {
     try {
-      const knownCitiesPath = path.join(__dirname, "..", "dataBase", "knownCities", `${this.regionCode}.json`);
+      // Формируем имя файла с ведущим нулем для кодов от 1 до 9
+      const regionCodeStr = this.regionCode.toString().padStart(2, '0');
+      const knownCitiesPath = path.join(__dirname, "..", "dataBase", "knownCities", `${regionCodeStr}.json`);
       if (fs.existsSync(knownCitiesPath)) {
         const data = fs.readFileSync(knownCitiesPath, "utf8");
         return JSON.parse(data);
       }
       // Если файл не найден, возвращаем пустой массив
-      console.warn(`Файл с известными городами для региона ${this.regionName} (${this.regionCode}) не найден`);
+      console.warn(`Файл с известными городами для региона ${this.regionName} (${regionCodeStr}) не найден`);
       return { cities: [] };
     } catch (error) {
       console.error(`Ошибка при загрузке известных городов для региона ${this.regionName}:`, error.message);
@@ -386,6 +388,26 @@ extractCityFromAddress(addressData) {
   async parseAllData() {
     try {
       console.log(`Запуск парсера данных ФССП России (${this.regionName})`);
+      
+      // Проверка для региона 04 (Республика Алтай) - парсинг запрещен
+      if (this.regionCode === 4) {
+        console.log(`Парсинг региона "${this.regionName}" (код ${this.regionCode}) запрещен`);
+        console.log(`Причина: На сайте ФССП данного региона отсутствуют необходимые данные`);
+        
+        // Выводим сообщение о запрете парсинга
+        console.log(`Парсинг региона "${this.regionName}" невозможен, так как на сайте ФССП данного региона отсутствуют необходимые данные`);
+        
+        // Возвращаем сообщение об ошибке вместо выполнения парсинга
+        return {
+          success: false,
+          message: `Парсинг региона "${this.regionName}" невозможен, так как на сайте ФССП данного региона отсутствуют необходимые данные`,
+          statistics: {
+            regions: 0,
+            cities: 0,
+            departments: 0,
+          },
+        };
+      }
       
       // Проверяем, есть ли несколько URL для парсинга
       let allRegionData = [];
@@ -467,6 +489,13 @@ extractCityFromAddress(addressData) {
   // Сохранение данных в JSON файл
   async saveToFile(data) {
     try {
+      // Проверка для региона 04 (Республика Алтай) - сохранение запрещено
+      if (this.regionCode === 4) {
+        console.log(`Сохранение данных для региона "${this.regionName}" (код ${this.regionCode}) запрещено`);
+        console.log(`Причина: Используются вручную введенные данные`);
+        return;
+      }
+
       const dataToSave = {
         timestamp: new Date().toISOString(),
         regions: data,

@@ -1,1 +1,68 @@
-// Тест для проверки извлечения города из адреса с правильно отсортированными городами\nconst fs = require('fs');\nconst path = require('path');\n\n// Загружаем данные для Свердловской области\nconst knownCitiesData = JSON.parse(fs.readFileSync(path.join(__dirname, 'backend', 'dataBase', 'knownCities', '66.json'), 'utf8'));\nconst knownCities = knownCitiesData.cities || [];\n\nconsole.log(\"Города в Свердловской области (первые 10):");\nconsole.log(knownCities.slice(0, 10));\n\n// Проверим, как определяется город из адреса\nconst testAddresses = [\n  \"с. Туринская Слобода, ул. Ленина, д. 1\",\n  \"г. Туринск, ул. Советская, д. 5\"\n];\n\nconsole.log(\"\\nТестирование извлечения городов:\");\n\ntestAddresses.forEach(address => {\n  console.log(`\\nАдрес: ${address}`);\n  \n  // Имитация алгоритма поиска\n  const prefixMatch = address.match(/(?:г\\.|город|с\\.|село|п\\.|посёлок|пос\\.)\\s*([^\\d,;]+)/i);\n  if (prefixMatch) {\n    let cityPart = prefixMatch[1].trim();\n    console.log(`Найденная часть: \"${cityPart}\"`);\n    \n    // Обрезаем всё, что идёт после улицы/дома\n    const streetIndicators = [\n      'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',\n      'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',\n      'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'\n    ];\n    \n    for (const indicator of streetIndicators) {\n      const escaped = indicator.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n      const regex = new RegExp(`\\\\s*${escaped}.*`, 'i');\n      cityPart = cityPart.replace(regex, '');\n    }\n    \n    // Убираем лишние символы в конце\n    cityPart = cityPart.replace(/[.,;].*$/, '').trim();\n    console.log(`После обрезки: \"${cityPart}\"`);\n    \n    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)\n    let found = false;\n    for (const city of knownCities) {\n      if (cityPart.startsWith(city)) {\n        console.log(`Найдено совпадение: ${city}`);\n        found = true;\n        break;\n      }\n    }\n    \n    if (!found) {\n      console.log(\"Город не найден\");\n    }\n  }\n});
+// Тест для проверки извлечения города из адреса с правильно отсортированными городами
+const fs = require('fs');
+const path = require('path');
+
+// Функция для формирования имени файла с ведущим нулем для кодов 1-9
+function getKnownCitiesFileName(regionCode) {
+  // Добавляем ведущий ноль только для кодов от 1 до 9
+  return regionCode.toString().padStart(2, '0') + '.json';
+}
+
+// Загружаем данные для Свердловской области
+const regionCode = 66; // Свердловская область
+const fileName = getKnownCitiesFileName(regionCode);
+const knownCitiesData = JSON.parse(fs.readFileSync(path.join(__dirname, 'backend', 'dataBase', 'knownCities', fileName), 'utf8'));
+const knownCities = knownCitiesData.cities || [];
+
+console.log("Города в Свердловской области (первые 10):");
+console.log(knownCities.slice(0, 10));
+
+// Проверим, как определяется город из адреса
+const testAddresses = [
+  "с. Туринская Слобода, ул. Ленина, д. 1",
+  "г. Туринск, ул. Советская, д. 5"
+];
+
+console.log("\nТестирование извлечения городов:");
+
+testAddresses.forEach(address => {
+  console.log(`\nАдрес: ${address}`);
+  
+  // Имитация алгоритма поиска
+  const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+  if (prefixMatch) {
+    let cityPart = prefixMatch[1].trim();
+    console.log(`Найденная часть: "${cityPart}"`);
+    
+    // Обрезаем всё, что идёт после улицы/дома
+    const streetIndicators = [
+      'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
+      'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
+      'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
+    ];
+    
+    for (const indicator of streetIndicators) {
+      const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(`\\s*${indicator}.*`, 'i');
+      cityPart = cityPart.replace(regex, '');
+    }
+    
+    // Убираем лишние символы в конце
+    cityPart = cityPart.replace(/[.,;].*$/, '').trim();
+    console.log(`После обрезки: "${cityPart}"`);
+    
+    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
+    let found = false;
+    for (const city of knownCities) {
+      if (cityPart.startsWith(city)) {
+        console.log(`Найдено совпадение: ${city}`);
+        found = true;
+        break;
+      }
+    }
+    
+    if (!found) {
+      console.log("Город не найден");
+    }
+  }
+});
