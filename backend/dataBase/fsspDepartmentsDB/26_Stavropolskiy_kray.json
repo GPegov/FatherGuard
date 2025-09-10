@@ -1,9 +1,325 @@
 {
-  "timestamp": "2025-09-07T17:11:24.047Z",
+  "timestamp": "2025-09-10T11:59:16.312Z",
   "regions": [
     {
       "region": "Ставропольский край",
-      "cities": []
+      "cities": [
+        {
+          "name": "Александровское",
+          "departments": [
+            {
+              "name": "Александровское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Александровский район, с.Александровское, ул. Карла Маркса, 56",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-20-15\n\n8-962-440-87-96"
+            }
+          ]
+        },
+        {
+          "name": "Город не определен",
+          "departments": [
+            {
+              "name": "Андроповсое районное отдел ение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Андроповский район, с. Курсавка,ул. Красная, 43а",
+              "phone": "8-962-440-87-93"
+            },
+            {
+              "name": "Грачевское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Грачевский район,    с. Грачевка,             пер. Цветочный,5",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-10-28\n\n8-962-440-87-82"
+            },
+            {
+              "name": "Кировское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Кировский район,     г. Новопаловск,            ул. Мира, 190 б",
+              "phone": "8-918-884-06-12"
+            },
+            {
+              "name": "Кочубеевское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Кочубеевский район,                     с. Кочубеевское,     ул. Советская, 103",
+              "phone": "8-918-884-18-62\n8-962-440-90-58"
+            },
+            {
+              "name": "Нефтекумское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Нефтекумский район,                     г. Нефтекумск,        ул. Дзержинского, 13",
+              "phone": "8-918-884-16-81\n8-962-440-90-79"
+            },
+            {
+              "name": "Новоалександровское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Новоалександровский район, г. Новоалександровск, ул. Гагарина, 317",
+              "phone": "8-918-884-24-96\n8-962-440-93-54"
+            },
+            {
+              "name": "Туркменское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Туркменский район, с. Летняя Ставка,   ул. Советская, 154",
+              "phone": "8-988-090-59-73\n8-962-440-87-91"
+            }
+          ]
+        },
+        {
+          "name": "Дивное",
+          "departments": [
+            {
+              "name": "Апанасенковское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Апанасенковский район, с. Дивное,    ул. Советская, 85а",
+              "phone": "8-962-440-93-82"
+            }
+          ]
+        },
+        {
+          "name": "Арзгир",
+          "departments": [
+            {
+              "name": "Арзгирское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Арзгирский район,   с. Арзгир,                    ул. Есипенко, 9",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-13-56\n\n8-962-440-87-69"
+            }
+          ]
+        },
+        {
+          "name": "Благодарный",
+          "departments": [
+            {
+              "name": "Благодарненское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Благодарненский район,                         г. Благодарный, ул. Советская, 391",
+              "phone": "8-918-884-13-38\n8-962-413-53-61"
+            }
+          ]
+        },
+        {
+          "name": "Буденновск",
+          "departments": [
+            {
+              "name": "Буденовское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Буденновский район,            г. Буденновск,         ул. Розы Люксембург,26",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\n\n\t\n\t\n\t\n\t\n\t\t@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-15-40"
+            }
+          ]
+        },
+        {
+          "name": "Георгиевск",
+          "departments": [
+            {
+              "name": "Георгиевский районный отдел судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Георгиевский район,                     г. Георгиевск, ул. Калинина, 10",
+              "phone": "8-918-884-06-91\n8-962-440-90-72"
+            }
+          ]
+        },
+        {
+          "name": "Ессентуки",
+          "departments": [
+            {
+              "name": "Ессентукское городское отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Ессентукский район, г. Ессентуки,           ул. Кисловодская , 26 А",
+              "phone": "8-918-884-05-15\n8-962-440-93-05"
+            }
+          ]
+        },
+        {
+          "name": "Железноводск",
+          "departments": [
+            {
+              "name": "Железноводское городское отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Железноводский район,                         г. Железноводск,    ул. Семашко, 13",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n\n8-962-440-90-74"
+            }
+          ]
+        },
+        {
+          "name": "Изобильный",
+          "departments": [
+            {
+              "name": "Изобильненское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Изобильненский район,                         г. Изобильный,        ул. Красная, 11а",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-10-37\n\n8-962-440-94-58"
+            }
+          ]
+        },
+        {
+          "name": "Ипатово",
+          "departments": [
+            {
+              "name": "Ипатовское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Ипатовский район,   г. Ипатово,                  ул. Профсоюзная, 29",
+              "phone": "8-918-884-12-17"
+            }
+          ]
+        },
+        {
+          "name": "Кисловодск",
+          "departments": [
+            {
+              "name": "Кисловодское городское отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Кисловодский район,                     г. Кисловодск,           ул. Жуковского,10",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-09-37\n\n8-962-440-90-69"
+            }
+          ]
+        },
+        {
+          "name": "Красногвардейское",
+          "departments": [
+            {
+              "name": "Красногвардейское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Красногвардейский район, с. Красногвардейское, ул. Орджоникидзе,1",
+              "phone": "8-918-884-18-52\n8-962-440-94-62"
+            }
+          ]
+        },
+        {
+          "name": "Курская",
+          "departments": [
+            {
+              "name": "Курское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Курский район,         с. Курская,             пер. Комсомольский, 8",
+              "phone": "8-918-884-18-50\n8-962-440-93-52"
+            }
+          ]
+        },
+        {
+          "name": "Левокумское",
+          "departments": [
+            {
+              "name": "Левокумское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Левокумский район, с. Левокумское,      ул. Комсомольская,70",
+              "phone": "8-918-884-17-98\n8-962-440-87-64"
+            }
+          ]
+        },
+        {
+          "name": "Ставрополь",
+          "departments": [
+            {
+              "name": "Ленинский районный отдел судебных приставов  г. Ставрополя ГУ ФССП России по Ставропольскому краю",
+              "address": "г. Ставрополь, Ленинский район,  ул. Ленина 384",
+              "phone": "8-962-440-91-18"
+            },
+            {
+              "name": "Октябрьское районное отделение судебных приставов   г. Ставрополя ГУ ФССП России по Ставропольскому краю",
+              "address": "г. Ставрополь,         ул. Мира, 280/2",
+              "phone": "8-918-884-10-07\n8-962-440-93-89"
+            },
+            {
+              "name": "Промышленный районный отдел судебных приставов   г. Ставрополя ГУ ФССП России по Ставропольскому краю",
+              "address": "г. Ставрополь Промышленный район,                         ул. Шпаковская, 107а",
+              "phone": "8-918-884-10-79\n 8-909-760-20-21"
+            },
+            {
+              "name": "Отделение судебных приставов по исполнению исполнительных документов о взыскании алиментных платежей по городу Ставрополю",
+              "address": "г. Ставрополь Промышленный район,                         ул. Шпаковская, 107а",
+              "phone": "8-988-740-08-92\n 8-962-440-91-45"
+            }
+          ]
+        },
+        {
+          "name": "Лермонтов",
+          "departments": [
+            {
+              "name": "Лермонтовское городское отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Лермонтовский район,                         г. Лермонтов,        ул. Пятигорская, 15",
+              "phone": "8-962-440-93-38"
+            }
+          ]
+        },
+        {
+          "name": "Минеральные Воды",
+          "departments": [
+            {
+              "name": "Минераловодское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Минераловодский район, г.Минеральные Воды, пр. 22 Партсъезда,4",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-17-02\n\n8-962-440-93-23"
+            }
+          ]
+        },
+        {
+          "name": "Невинномысск",
+          "departments": [
+            {
+              "name": "Невинномысское районное отделение судебных приставов УФССП России по Ставропольскому краю",
+              "address": "Невинномысский район,                         г. Невинномыск,     ул. Павлова, 21",
+              "phone": "8-918-884-16-92"
+            }
+          ]
+        },
+        {
+          "name": "Новоселицкое",
+          "departments": [
+            {
+              "name": "Новоселицкое районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Новоселицкий район, с. Новоселицкое,    ул. Новоселицкая,206",
+              "phone": "8-918-884-24-86\n8-962-440-88-36"
+            }
+          ]
+        },
+        {
+          "name": "Светлоград",
+          "departments": [
+            {
+              "name": "Петровское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Петровский район,    г. Светлоград,          ул. Калинина, 5",
+              "phone": "@page { size: 21cm 29.7cm; margin: 2cm }\n\t\ttd p { color: #000000; orphans: 2; widows: 2; direction: ltr; background: transparent }\n\t\ttd p.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\ttd p.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\ttd p.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\tp { color: #000000; orphans: 2; widows: 2; margin-bottom: 0.21cm; direction: ltr; background: transparent }\n\t\tp.western { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ru-RU }\n\t\tp.cjk { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: zh-CN }\n\t\tp.ctl { font-family: \"Times New Roman\", serif; font-size: 14pt; so-language: ar-SA }\n\t\n\n\n8-918-884-23-15\n\n8-962-440-93-86"
+            }
+          ]
+        },
+        {
+          "name": "Ессентукская",
+          "departments": [
+            {
+              "name": "Предгорное районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Предгорный район, ст-ца Ессентукская, пер. Раевского, 3",
+              "phone": "8-918-884-05-73\n8-962-440-93-13"
+            }
+          ]
+        },
+        {
+          "name": "Пятигорск",
+          "departments": [
+            {
+              "name": "Пятигорский городской отдел судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Пятигорский район, г. Пятигорск,           пр. Кирова, 27",
+              "phone": "8-962-440-93-34\n8-918-884-11-57"
+            }
+          ]
+        },
+        {
+          "name": "Зеленокумск",
+          "departments": [
+            {
+              "name": "Советское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Советский район,      г. Зеленокумск,      пл. 50 лет Октября, 51",
+              "phone": "8-918-884-08-34"
+            }
+          ]
+        },
+        {
+          "name": "Степное",
+          "departments": [
+            {
+              "name": "Степновское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Степновский район, с. Степное,               ул. Ленина, 17а",
+              "phone": "8-919-740-02-92"
+            }
+          ]
+        },
+        {
+          "name": "Донское",
+          "departments": [
+            {
+              "name": "Труновское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Труновский р-н, с. Донское, ул. 19 Съезда ВЛКСМ, 5",
+              "phone": "8-918-884-13-95\n8-962-440-93-67"
+            }
+          ]
+        },
+        {
+          "name": "Михайловск",
+          "departments": [
+            {
+              "name": "Шпаковское районное отделение судебных приставов ГУ ФССП России по Ставропольскому краю",
+              "address": "Шпаковский район,  г. Михайловск,        ул. Вавилова, 51",
+              "phone": "8-918-884-09-28\n 8-962-440-93-72"
+            }
+          ]
+        }
+      ]
     }
   ]
 }

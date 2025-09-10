@@ -18,6 +18,14 @@
       <div v-if="selectedRegionCode" class="region-code">
         {{ selectedRegionCode }}
       </div>
+      <button 
+        v-if="searchTerm && searchTerm.length > 0" 
+        @click="clearInput" 
+        class="clear-button"
+        type="button"
+      >
+        ✕
+      </button>
     </div>
     <div v-if="showSuggestions" class="suggestions-container">
       <ul v-if="filteredRegions.length > 0" class="suggestions-list">
@@ -64,13 +72,13 @@ export default {
     // Фильтрация регионов по введенному тексту
     const filteredRegions = computed(() => {
       if (!searchTerm.value) {
-        return props.regions.slice(0, 10); // Показываем первые 10 регионов если поле пустое
+        return props.regions; // Показываем все регионы если поле пустое
       }
       
       const term = searchTerm.value.toLowerCase();
       return props.regions
-        .filter(region => region.name.toLowerCase().includes(term))
-        .slice(0, 10); // Ограничиваем 10 результатами
+        .filter(region => region.name.toLowerCase().includes(term));
+        // Не ограничиваем количество результатов
     });
 
     // Получение кода выбранного региона
@@ -145,6 +153,15 @@ export default {
       inputRef.value?.blur();
     };
 
+    // Очистка поля ввода
+    const clearInput = () => {
+      searchTerm.value = '';
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+      emit('update:modelValue', '');
+      inputRef.value?.focus();
+    };
+
     // Следим за изменением внешнего значения
     watch(() => props.modelValue, (newVal) => {
       if (newVal !== searchTerm.value) {
@@ -166,7 +183,8 @@ export default {
       onArrowUp,
       onEnter,
       onEscape,
-      selectRegion
+      selectRegion,
+      clearInput
     };
   }
 };
@@ -192,7 +210,9 @@ export default {
   font-size: 16px;
   background-color: white;
   box-sizing: border-box;
-  padding-right: 50px;
+  padding-right: 85px; /* Increased padding to accommodate the clear button */
+  position: relative;
+  z-index: 0;
 }
 
 .autocomplete-input:focus {
@@ -203,13 +223,43 @@ export default {
 
 .region-code {
   position: absolute;
-  right: 15px;
+  right: 50px; /* Moved left to avoid overlapping with clear button */
+  top: 50%;
+  transform: translateY(-50%);
   background-color: #4CAF50;
   color: white;
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 12px;
   font-weight: bold;
+  z-index: 1;
+}
+
+.clear-button {
+  position: absolute;
+  right: 15px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #999;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  z-index: 2;
+  transition: all 0.2s ease;
+  opacity: 0.7;
+}
+
+.clear-button:hover {
+  background-color: #f0f0f0;
+  color: #666;
+  opacity: 1;
 }
 
 .suggestions-container {

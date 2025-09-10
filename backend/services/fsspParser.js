@@ -20,7 +20,7 @@ class FSSPParser {
     // Определяем baseURL - либо нестандартный, либо стандартный
     this.baseUrl = this.getBaseUrl();
     
-    this.fileName = `${this.regionCode}_${transliterate(regionName)}.json`;
+    this.fileName = `${this.regionCode.toString().padStart(2, '0')}_${transliterate(regionName)}.json`;
     this.dataFilePath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB", this.fileName);
   }
 
@@ -86,91 +86,133 @@ class FSSPParser {
       // Проверяем статус ответа
       console.log(`Статус ответа: ${response.status()}`);
 
-      // Ждем загрузки контента (уменьшаем время ожидания)
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      // Ждем загрузки контента
+      await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // Проверяем URL страницы
       const currentPageUrl = page.url();
       console.log(`Текущий URL страницы: ${currentPageUrl}`);
 
       // Извлекаем данные с помощью JavaScript в контексте страницы
-      const rawData = await page.evaluate(() => {
-        const departments = [];
+  const rawData = await page.evaluate((regionCode) => {
+    const departments = [];
 
-        // Ищем таблицы с отделениями
-        const tables = document.querySelectorAll("table");
-        console.log("Найдено таблиц:", tables.length);
-
-        tables.forEach((table, tableIndex) => {
-          const rows = table.querySelectorAll("tr");
-          console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
-
-          if (rows.length > 1) {
-            // Обрабатываем строки таблицы
-            rows.forEach((row, rowIndex) => {
-              const cells = row.querySelectorAll("td, th");
-              
-              // Структура таблицы на сайте:
-              // 0 - порядковый номер (не нужен)
-              // 1 - название отделения
-              // 2 - адрес отделения
-              // 3 - email отделения
-              // 4 - телефон отделения
-              if (cells.length >= 5) {
-                const departmentName = cells[1].textContent.trim();
-                const address = cells[2].textContent.trim();
-                const phone = cells[4].textContent.trim();
-
-                // Проверяем, является ли строка заголовочной
-                // Увеличиваем количество проверяемых строк до 10 для более надежного определения
-                let isHeaderRow = false;
-                if (rowIndex < 10) {
-                  const rowText = row.textContent.toLowerCase();
-                  const stopWords = [
-                    "наименование", "структурного", "подразделения", "адрес", "почты", "почта", 
-                    "телефон", "e-mail", "email", "сайт", "факс", "контактная", "информация",
-                    "номер", "п/п", "№"
-                  ];
-                  
-                  // Проверяем, содержит ли строка хотя бы одно из стоп-слов
-                  // Используем более точное совпадение слов
-                  const wordsInRow = rowText.split(/\s+/);
-                  for (const word of stopWords) {
-                    if (wordsInRow.includes(word) || rowText.includes(word)) {
-                      isHeaderRow = true;
-                      break;
-                    }
-                  }
-                }
-
-                // Проверяем, что строка содержит данные и не является заголовочной
-                if ((departmentName || address || phone) && !isHeaderRow) {
-                  // Дополнительная проверка на заголовочные данные
-                  const isHeaderData = (
-                    departmentName.includes("Наименование структурного подразделения") ||
-                    address.includes("Почтовый адрес") ||
-                    phone.includes("Телефон для получения справочной информации") ||
-                    departmentName.toLowerCase().includes("подразделение") &&
-                    address.toLowerCase().includes("адрес") &&
-                    phone.toLowerCase().includes("телефон")
-                  );
-
-                  // Добавляем только если это не заголовочные данные
-                  if (!isHeaderData) {
-                    departments.push({
-                      name: departmentName || "Отделение ФССП",
-                      address: address || "Адрес не указан",
-                      phone: phone || "Телефон не указан",
-                    });
-                  }
-                }
-              }
+    // Специальная обработка для Республики Калмыкия (код 08)
+    if (regionCode === 8) {
+      console.log("Применение специальной логики парсинга для Республики Калмыкия");
+      
+      // Дополнительное ожидание для загрузки контента
+      // Мы не можем использовать await здесь, так как функция не асинхронная
+      // Вместо этого добавим задержку в основном коде
+      
+      // Ищем нумерованные списки с отделениями
+      const lists = document.querySelectorAll("ol");
+      console.log("Найдено списков:", lists.length);
+      
+      lists.forEach((list, listIndex) => {
+        const items = list.querySelectorAll("li");
+        console.log(`Список ${listIndex + 1}: элементов ${items.length}`);
+        
+        items.forEach((item, itemIndex) => {
+          const text = item.textContent.trim();
+          console.log(`Элемент ${itemIndex + 1}: ${text}`);
+          
+          // Разделяем данные по символу "•"
+          const parts = text.split("•").map(part => part.trim());
+          
+          if (parts.length >= 3) {
+            // Обычно структура: [название, адрес, телефон, факс (опционально)]
+            const departmentName = parts[0] || "Отделение ФССП";
+            const address = parts[1] || "Адрес не указан";
+            const phone = parts[2] || "Телефон не указан";
+            
+            departments.push({
+              name: departmentName,
+              address: address,
+              phone: phone,
             });
           }
         });
-
-        return departments;
       });
+      
+      return departments;
+    }
+
+    // Стандартная обработка для остальных регионов
+    // Ищем таблицы с отделениями
+    const tables = document.querySelectorAll("table");
+    console.log("Найдено таблиц:", tables.length);
+
+    tables.forEach((table, tableIndex) => {
+      const rows = table.querySelectorAll("tr");
+      console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+
+      if (rows.length > 1) {
+        // Обрабатываем строки таблицы
+        rows.forEach((row, rowIndex) => {
+          const cells = row.querySelectorAll("td, th");
+          
+          // Структура таблицы на сайте:
+          // 0 - порядковый номер (не нужен)
+          // 1 - название отделения
+          // 2 - адрес отделения
+          // 3 - email отделения
+          // 4 - телефон отделения
+          if (cells.length >= 5) {
+            const departmentName = cells[1].textContent.trim();
+            const address = cells[2].textContent.trim();
+            const phone = cells[4].textContent.trim();
+
+            // Проверяем, является ли строка заголовочной
+            // Увеличиваем количество проверяемых строк до 10 для более надежного определения
+            let isHeaderRow = false;
+            if (rowIndex < 10) {
+              const rowText = row.textContent.toLowerCase();
+              const stopWords = [
+                "наименование", "структурного", "подразделения", "адрес", "почты", "почта", 
+                "телефон", "e-mail", "email", "сайт", "факс", "контактная", "информация",
+                "номер", "п/п", "№"
+              ];
+              
+              // Проверяем, содержит ли строка хотя бы одно из стоп-слов
+              // Используем более точное совпадение слов
+              const wordsInRow = rowText.split(/\s+/);
+              for (const word of stopWords) {
+                if (wordsInRow.includes(word) || rowText.includes(word)) {
+                  isHeaderRow = true;
+                  break;
+                }
+              }
+            }
+
+            // Проверяем, что строка содержит данные и не является заголовочной
+            if ((departmentName || address || phone) && !isHeaderRow) {
+              // Дополнительная проверка на заголовочные данные
+              const isHeaderData = (
+                departmentName.includes("Наименование структурного подразделения") ||
+                address.includes("Почтовый адрес") ||
+                phone.includes("Телефон для получения справочной информации") ||
+                departmentName.toLowerCase().includes("подразделение") &&
+                address.toLowerCase().includes("адрес") &&
+                phone.toLowerCase().includes("телефон")
+              );
+
+              // Добавляем только если это не заголовочные данные
+              if (!isHeaderData) {
+                departments.push({
+                  name: departmentName || "Отделение ФССП",
+                  address: address || "Адрес не указан",
+                  phone: phone || "Телефон не указан",
+                });
+              }
+            }
+          }
+        });
+      }
+    });
+
+    return departments;
+  }, this.regionCode); // Передаем код региона в функцию
 
       console.log(`Получено ${rawData.length} отделений`);
 
@@ -389,7 +431,31 @@ extractCityFromAddress(addressData) {
     try {
       console.log(`Запуск парсера данных ФССП России (${this.regionName})`);
       
-      // Проверка для региона 04 (Республика Алтай) - парсинг запрещен
+      // Проверка на нестандартные URL с запретом парсинга
+      const regionCodeStr = this.regionCode.toString().padStart(2, '0');
+      const customRegionData = this.customUrls[regionCodeStr];
+      
+      if (customRegionData && customRegionData.disabled) {
+        console.log(`Парсинг региона "${this.regionName}" (код ${this.regionCode}) запрещен`);
+        console.log(`Причина: ${customRegionData.reason || "Парсинг запрещен администратором"}`);
+        
+        // Выводим сообщение о запрете парсинга
+        console.log(`Парсинг региона "${this.regionName}" невозможен. ${customRegionData.reason || "Парсинг запрещен администратором"}`);
+        console.log(`Используются вручную введенные данные из файла ${this.fileName}`);
+        
+        // Возвращаем сообщение об ошибке вместо выполнения парсинга
+        return {
+          success: false,
+          message: `Парсинг региона "${this.regionName}" невозможен. ${customRegionData.reason || "Парсинг запрещен администратором"} Используются вручную введенные данные.`,
+          statistics: {
+            regions: 0,
+            cities: 0,
+            departments: 0,
+          },
+        };
+      }
+      
+      // Проверка для региона 04 (Республика Алтай) - парсинг запрещен (сохраняем для обратной совместимости)
       if (this.regionCode === 4) {
         console.log(`Парсинг региона "${this.regionName}" (код ${this.regionCode}) запрещен`);
         console.log(`Причина: На сайте ФССП данного региона отсутствуют необходимые данные`);
@@ -409,15 +475,36 @@ extractCityFromAddress(addressData) {
         };
       }
       
+      // Проверка для региона 08 (Республика Калмыкия) - парсинг запрещен (сохраняем для обратной совместимости)
+      if (this.regionCode === 8) {
+        console.log(`Парсинг региона "${this.regionName}" (код ${this.regionCode}) запрещен`);
+        console.log(`Причина: Нестандартная структура сайта ФССП Республики Калмыкия`);
+        
+        // Выводим сообщение о запрете парсинга
+        console.log(`Парсинг региона "${this.regionName}" невозможен из-за нестандартной структуры сайта ФССП Республики Калмыкия`);
+        console.log(`Используются вручную введенные данные из файла 08_Respublika_Kalmykiya.json`);
+        
+        // Возвращаем сообщение об ошибке вместо выполнения парсинга
+        return {
+          success: false,
+          message: `Парсинг региона "${this.regionName}" невозможен из-за нестандартной структуры сайта ФССП Республики Калмыкия. Используются вручную введенные данные.`,
+          statistics: {
+            regions: 0,
+            cities: 0,
+            departments: 0,
+          },
+        };
+      }
+      
       // Проверяем, есть ли несколько URL для парсинга
       let allRegionData = [];
-      const regionCodeStr = this.regionCode.toString().padStart(2, '0');
-      const customRegionData = this.customUrls[regionCodeStr];
+      const regionCodeStrNew = this.regionCode.toString().padStart(2, '0');
+      const customRegionDataNew = this.customUrls[regionCodeStrNew];
       
-      if (customRegionData && customRegionData.urls.length > 0) {
+      if (customRegionDataNew && customRegionDataNew.urls.length > 0) {
         // Если есть нестандартные URL, парсим данные со всех URL
-        for (const [index, url] of customRegionData.urls.entries()) {
-          console.log(`Парсинг данных с URL ${index + 1}/${customRegionData.urls.length}: ${url}`);
+        for (const [index, url] of customRegionDataNew.urls.entries()) {
+          console.log(`Парсинг данных с URL ${index + 1}/${customRegionDataNew.urls.length}: ${url}`);
           // Временно изменяем baseUrl для этого парсинга
           const originalBaseUrl = this.baseUrl;
           this.baseUrl = url;
@@ -489,8 +576,25 @@ extractCityFromAddress(addressData) {
   // Сохранение данных в JSON файл
   async saveToFile(data) {
     try {
+      // Проверка на нестандартные URL с запретом парсинга
+      const regionCodeStr = this.regionCode.toString().padStart(2, '0');
+      const customRegionData = this.customUrls[regionCodeStr];
+      
+      if (customRegionData && customRegionData.disabled) {
+        console.log(`Сохранение данных для региона "${this.regionName}" (код ${this.regionCode}) запрещено`);
+        console.log(`Причина: Используются вручную введенные данные`);
+        return;
+      }
+      
       // Проверка для региона 04 (Республика Алтай) - сохранение запрещено
       if (this.regionCode === 4) {
+        console.log(`Сохранение данных для региона "${this.regionName}" (код ${this.regionCode}) запрещено`);
+        console.log(`Причина: Используются вручную введенные данные`);
+        return;
+      }
+      
+      // Проверка для региона 08 (Республика Калмыкия) - сохранение запрещено
+      if (this.regionCode === 8) {
         console.log(`Сохранение данных для региона "${this.regionName}" (код ${this.regionCode}) запрещено`);
         console.log(`Причина: Используются вручную введенные данные`);
         return;

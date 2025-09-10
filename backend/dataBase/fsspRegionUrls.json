@@ -10,5 +10,17 @@
     "urls": [
       "https://r05.fssp.gov.ru/contacts/apparat_upravlenija_kontakt"
     ]
+  },
+  "08": {
+    "region": "Республика Калмыкия",
+    "urls": [
+      "https://r08.fssp.gov.ru/kontakt"
+    ]
+  },
+  "12": {
+    "region": "Республика Марий Эл",
+    "urls": [],
+    "disabled": true,
+    "reason": "Парсинг запрещен - файл заполнен вручную и содержит корректные данные"
   }
 }
