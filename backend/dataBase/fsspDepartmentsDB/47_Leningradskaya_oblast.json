@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Ленинградская область",
+      "regionCode": "47",
       "cities": []
     }
   ]

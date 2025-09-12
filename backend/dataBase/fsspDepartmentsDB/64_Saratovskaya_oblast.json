@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Саратовская область",
+      "regionCode": "64",
       "cities": []
     }
   ]

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Владимирская область",
+      "regionCode": "33",
       "cities": [
         {
           "name": "Владимир",

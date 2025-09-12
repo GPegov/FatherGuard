@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Волгоградская область",
+      "regionCode": "34",
       "cities": []
     }
   ]

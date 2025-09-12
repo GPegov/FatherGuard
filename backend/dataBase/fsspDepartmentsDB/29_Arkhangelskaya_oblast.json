@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Архангельская область",
+      "regionCode": "29",
       "cities": []
     }
   ]

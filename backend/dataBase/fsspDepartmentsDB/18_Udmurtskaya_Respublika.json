@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Удмуртская Республика",
+      "regionCode": "18",
       "cities": []
     }
   ]

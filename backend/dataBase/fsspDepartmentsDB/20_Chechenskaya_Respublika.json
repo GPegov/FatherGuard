@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Чеченская Республика",
+      "regionCode": "20",
       "cities": []
     }
   ]

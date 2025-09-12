@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Адыгея",
+      "regionCode": "01",
       "cities": [
         {
           "name": "Майкоп",

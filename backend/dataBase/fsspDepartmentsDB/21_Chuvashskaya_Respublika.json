@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Чувашская Республика",
+      "regionCode": "21",
       "cities": [
         {
           "name": "Алатырь",

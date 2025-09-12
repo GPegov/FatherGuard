@@ -17,6 +17,12 @@
       "https://r08.fssp.gov.ru/kontakt"
     ]
   },
+  "10": {
+    "region": "Республика Карелия",
+    "urls": [
+      "https://r10.fssp.gov.ru/contacts/contacts_osp"
+    ]
+  },
   "12": {
     "region": "Республика Марий Эл",
     "urls": [],

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Белгородская область",
+      "regionCode": "31",
       "cities": [
         {
           "name": "Алексеевка",

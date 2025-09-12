@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Псковская область",
+      "regionCode": "60",
       "cities": [
         {
           "name": "Великие Луки",

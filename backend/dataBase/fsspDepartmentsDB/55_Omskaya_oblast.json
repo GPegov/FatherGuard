@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Омская область",
+      "regionCode": "55",
       "cities": []
     }
   ]

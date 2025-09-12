@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Приморский край",
+      "regionCode": "25",
       "cities": [
         {
           "name": "г. Приморский",

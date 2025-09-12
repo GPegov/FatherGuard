@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Новгородская область",
+      "regionCode": "53",
       "cities": []
     }
   ]

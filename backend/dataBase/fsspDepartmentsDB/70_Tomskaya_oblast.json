@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Томская область",
+      "regionCode": "70",
       "cities": [
         {
           "name": "Томск",

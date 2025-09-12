@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Астраханская область",
+      "regionCode": "30",
       "cities": []
     }
   ]

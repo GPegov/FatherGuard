@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Кировская область",
+      "regionCode": "43",
       "cities": [
         {
           "name": "Вятские Поляны",

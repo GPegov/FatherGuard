@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Магаданская область",
+      "regionCode": "49",
       "cities": []
     }
   ]

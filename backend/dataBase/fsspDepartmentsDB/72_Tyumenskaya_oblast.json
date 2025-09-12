@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Тюменская область",
+      "regionCode": "72",
       "cities": [
         {
           "name": "Город не определен",

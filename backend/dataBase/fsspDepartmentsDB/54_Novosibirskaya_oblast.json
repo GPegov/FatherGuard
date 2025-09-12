@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Новосибирская область",
+      "regionCode": "54",
       "cities": [
         {
           "name": "Новосибирск",

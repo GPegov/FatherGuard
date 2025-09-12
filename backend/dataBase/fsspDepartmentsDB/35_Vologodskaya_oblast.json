@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Вологодская область",
+      "regionCode": "35",
       "cities": [
         {
           "name": "Бабаево",

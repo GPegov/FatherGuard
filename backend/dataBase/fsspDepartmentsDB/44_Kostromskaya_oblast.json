@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Костромская область",
+      "regionCode": "44",
       "cities": []
     }
   ]

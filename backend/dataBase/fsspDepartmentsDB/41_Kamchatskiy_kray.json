@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Камчатский край",
+      "regionCode": "41",
       "cities": []
     }
   ]

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Курская область",
+      "regionCode": "46",
       "cities": []
     }
   ]

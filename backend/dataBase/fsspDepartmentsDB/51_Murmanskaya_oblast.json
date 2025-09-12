@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Мурманская область",
+      "regionCode": "51",
       "cities": []
     }
   ]

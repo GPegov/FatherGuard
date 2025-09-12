@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Краснодарский край",
+      "regionCode": "23",
       "cities": [
         {
           "name": "Абинск",

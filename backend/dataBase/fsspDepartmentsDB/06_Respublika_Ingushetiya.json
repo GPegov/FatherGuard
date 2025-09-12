@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Ингушетия",
+      "regionCode": "06",
       "cities": [
         {
           "name": "Назрань",

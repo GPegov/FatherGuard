@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Кемеровская область",
+      "regionCode": "42",
       "cities": []
     }
   ]

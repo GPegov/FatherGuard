@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Красноярский край",
+      "regionCode": "24",
       "cities": [
         {
           "name": "Город не определен",

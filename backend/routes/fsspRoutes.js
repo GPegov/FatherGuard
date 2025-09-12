@@ -3,6 +3,12 @@ import FSSPParser from '../services/fsspParser.js';
 
 const router = Router();
 
+// Установка заголовков для правильной кодировки
+router.use((req, res, next) => {
+  res.header('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
+
 // Запуск парсинга данных ФССП по региону
 router.post('/parse', async (req, res) => {
   try {

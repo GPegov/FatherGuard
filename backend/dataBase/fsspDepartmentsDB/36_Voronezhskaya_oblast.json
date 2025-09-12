@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Воронежская область",
+      "regionCode": "36",
       "cities": [
         {
           "name": "Воронеж",

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Брянская область",
+      "regionCode": "32",
       "cities": []
     }
   ]

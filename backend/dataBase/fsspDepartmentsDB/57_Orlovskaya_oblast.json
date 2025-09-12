@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Орловская область",
+      "regionCode": "57",
       "cities": []
     }
   ]

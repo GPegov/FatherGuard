@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Калужская область",
+      "regionCode": "40",
       "cities": []
     }
   ]

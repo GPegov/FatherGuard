@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Тамбовская область",
+      "regionCode": "68",
       "cities": []
     }
   ]

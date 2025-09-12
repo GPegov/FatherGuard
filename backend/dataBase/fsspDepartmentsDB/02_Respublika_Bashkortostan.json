@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Башкортостан",
+      "regionCode": "02",
       "cities": [
         {
           "name": "Уфа",

@@ -137,6 +137,139 @@ class FSSPParser {
       
       return departments;
     }
+    
+    // Специальная обработка для Карачаево-Черкесской Республики (код 09)
+    if (regionCode === 9) {
+      console.log("Применение специальной логики парсинга для Карачаево-Черкесской Республики");
+      
+      // Ищем таблицы с отделениями
+      const tables = document.querySelectorAll("table");
+      console.log("Найдено таблиц:", tables.length);
+
+      tables.forEach((table, tableIndex) => {
+        const rows = table.querySelectorAll("tr");
+        console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+
+        if (rows.length > 1) {
+          // Обрабатываем строки таблицы
+          rows.forEach((row, rowIndex) => {
+            const cells = row.querySelectorAll("td, th");
+            
+            // Для Карачаево-Черкесской Республики структура:
+            // 0 - наименование подразделения
+            // 1 - адрес
+            // 2 - email
+            // 3 - телефон
+            if (cells.length >= 4) {
+              const departmentName = cells[0].textContent.trim();
+              const address = cells[1].textContent.trim();
+              const phone = cells[3].textContent.trim();
+
+              // Проверяем, является ли строка заголовочной
+              let isHeaderRow = false;
+              if (rowIndex === 0) {
+                const rowText = row.textContent.toLowerCase();
+                const headerKeywords = [
+                  "наименование", "подразделения", "адрес", "электронной", "почты", 
+                  "номер", "телефона", "email", "e-mail"
+                ];
+                
+                // Проверяем, содержит ли строка ключевые слова заголовка
+                isHeaderRow = headerKeywords.some(keyword => rowText.includes(keyword));
+              }
+
+              // Проверяем, что строка содержит данные и не является заголовочной
+              if ((departmentName || address || phone) && !isHeaderRow) {
+                // Дополнительная проверка на заголовочные данные
+                const isHeaderData = (
+                  departmentName.includes("Наименование подразделения") ||
+                  address.includes("Адрес") && address.includes("электронной") ||
+                  phone.includes("Номер телефона")
+                );
+
+                // Добавляем только если это не заголовочные данные
+                if (!isHeaderData) {
+                  departments.push({
+                    name: departmentName || "Отделение ФССП",
+                    address: address || "Адрес не указан",
+                    phone: phone || "Телефон не указан",
+                  });
+                }
+              }
+            }
+          });
+        }
+      });
+
+      return departments;
+    }
+
+    // Специальная обработка для Республики Карелия (код 10)
+    if (regionCode === 10) {
+      console.log("Применение специальной логики парсинга для Республики Карелия");
+      
+      // Ищем таблицы с отделениями
+      const tables = document.querySelectorAll("table");
+      console.log("Найдено таблиц:", tables.length);
+
+      tables.forEach((table, tableIndex) => {
+        const rows = table.querySelectorAll("tr");
+        console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+
+        if (rows.length > 1) {
+          // Обрабатываем строки таблицы
+          rows.forEach((row, rowIndex) => {
+            const cells = row.querySelectorAll("td, th");
+            
+            // Для Республики Карелия структура:
+            // 0 - территориальный отдел судебных приставов
+            // 1 - адрес
+            // 2 - email
+            // 3 - телефон
+            if (cells.length >= 4) {
+              const departmentName = cells[0].textContent.trim();
+              const address = cells[1].textContent.trim();
+              const phone = cells[3].textContent.trim();
+
+              // Проверяем, является ли строка заголовочной
+              let isHeaderRow = false;
+              if (rowIndex === 0) {
+                const rowText = row.textContent.toLowerCase();
+                const headerKeywords = [
+                  "территориальный", "отдел", "судебных", "приставов", 
+                  "адрес", "электронной", "почты", "номер", "телефона", 
+                  "email", "e-mail", "справочной", "информации"
+                ];
+                
+                // Проверяем, содержит ли строка ключевые слова заголовка
+                isHeaderRow = headerKeywords.some(keyword => rowText.includes(keyword));
+              }
+
+              // Проверяем, что строка содержит данные и не является заголовочной
+              if ((departmentName || address || phone) && !isHeaderRow) {
+                // Дополнительная проверка на заголовочные данные
+                const isHeaderData = (
+                  departmentName.includes("Территориальный отдел судебных приставов") ||
+                  address.includes("Адрес") && address.includes("электронной") ||
+                  phone.includes("Телефон для получения справочной информации")
+                );
+
+                // Добавляем только если это не заголовочные данные
+                if (!isHeaderData) {
+                  departments.push({
+                    name: departmentName || "Отделение ФССП",
+                    address: address || "Адрес не указан",
+                    phone: phone || "Телефон не указан",
+                  });
+                }
+              }
+            }
+          });
+        }
+      });
+
+      return departments;
+    }
 
     // Стандартная обработка для остальных регионов
     // Ищем таблицы с отделениями

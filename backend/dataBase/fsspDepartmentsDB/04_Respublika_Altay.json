@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Алтай",
+      "regionCode": "04",
       "cities": [
         {
           "name": "Горно-Алтайск",

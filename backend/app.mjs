@@ -83,8 +83,14 @@ async function startServer() {
         allowedHeaders: ["Content-Type", "Authorization"],
       })
     );
-    app.use(express.json());
+    app.use(express.json({ type: 'application/json; charset=utf-8' }));
     app.use("/uploads", express.static(uploadDir));
+    
+    // Установка заголовков для правильной кодировки
+    app.use((req, res, next) => {
+      res.header('Content-Type', 'application/json; charset=utf-8');
+      next();
+    });
 
     // Middleware для обработки новых записей
     app.use((req, res, next) => {

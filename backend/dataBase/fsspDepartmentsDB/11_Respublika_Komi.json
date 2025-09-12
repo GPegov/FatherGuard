@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Коми",
+      "regionCode": "11",
       "cities": []
     }
   ]

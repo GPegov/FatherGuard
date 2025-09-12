@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Рязанская область",
+      "regionCode": "62",
       "cities": [
         {
           "name": "Рязань",

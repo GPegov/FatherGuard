@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Калмыкия",
+      "regionCode": "08",
       "cities": [
         {
           "name": "г. Элиста",

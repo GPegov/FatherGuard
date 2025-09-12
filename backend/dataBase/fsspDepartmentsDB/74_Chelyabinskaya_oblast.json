@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Челябинская область",
+      "regionCode": "74",
       "cities": []
     }
   ]

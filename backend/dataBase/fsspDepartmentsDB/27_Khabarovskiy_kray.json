@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Хабаровский край",
+      "regionCode": "27",
       "cities": [
         {
           "name": "г. Хабаровский",

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Курганская область",
+      "regionCode": "45",
       "cities": [
         {
           "name": "Курган",

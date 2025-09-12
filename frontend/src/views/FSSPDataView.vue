@@ -115,7 +115,17 @@ export default {
     // Загрузка данных по выбранному региону
     const loadData = async () => {
       try {
-        const response = await axios.get(`http://localhost:3001/api/fssp/data?region=${encodeURIComponent(selectedRegion.value)}`);
+        // Находим код выбранного региона
+        const selectedRegionData = availableRegions.value.find(r => r.name === selectedRegion.value);
+        const regionCode = selectedRegionData ? selectedRegionData.code : null;
+        
+        // Формируем URL с кодом региона
+        let url = `http://localhost:3001/api/fssp/data?region=${encodeURIComponent(selectedRegion.value)}`;
+        if (regionCode) {
+          url += `&regionCode=${regionCode}`;
+        }
+        
+        const response = await axios.get(url);
         if (response.data.success) {
           fsspData.value = response.data.data;
         }
@@ -130,8 +140,13 @@ export default {
       parsingResult.value = null;
       
       try {
+        // Находим код выбранного региона
+        const selectedRegionData = availableRegions.value.find(r => r.name === selectedRegion.value);
+        const regionCode = selectedRegionData ? selectedRegionData.code : null;
+        
         const response = await axios.post('http://localhost:3001/api/fssp/parse', {
-          region: selectedRegion.value
+          region: selectedRegion.value,
+          regionCode: regionCode
         });
         parsingResult.value = response.data;
         

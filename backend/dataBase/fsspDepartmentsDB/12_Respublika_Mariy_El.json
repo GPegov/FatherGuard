@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Марий Эл",
+      "regionCode": "12",
       "cities": [
         {
           "name": "Йошкар-Ола",

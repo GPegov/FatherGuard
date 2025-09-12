@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Сахалинская область",
+      "regionCode": "65",
       "cities": []
     }
   ]

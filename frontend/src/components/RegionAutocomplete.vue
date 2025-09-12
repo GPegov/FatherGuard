@@ -1,14 +1,15 @@
 <template>
-  <div class="autocomplete-wrapper">
+  <div class="autocomplete-wrapper" ref="wrapperRef">
     <div class="input-with-code">
       <input
         ref="inputRef"
         v-model="searchTerm"
         type="text"
-        placeholder="Начните вводить регион..."
+        placeholder="Начните вводить название региона..."
         class="autocomplete-input"
         @input="onInput"
         @focus="onFocus"
+        @click="onClick"
         @blur="onBlur"
         @keydown.down.prevent="onArrowDown"
         @keydown.up.prevent="onArrowUp"
@@ -18,14 +19,6 @@
       <div v-if="selectedRegionCode" class="region-code">
         {{ selectedRegionCode }}
       </div>
-      <button 
-        v-if="searchTerm && searchTerm.length > 0" 
-        @click="clearInput" 
-        class="clear-button"
-        type="button"
-      >
-        ✕
-      </button>
     </div>
     <div v-if="showSuggestions" class="suggestions-container">
       <ul v-if="filteredRegions.length > 0" class="suggestions-list">
@@ -48,7 +41,7 @@
 </template>
 
 <script>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
 
 export default {
   name: 'RegionAutocomplete',
@@ -65,20 +58,17 @@ export default {
   emits: ['update:modelValue', 'regionSelected'],
   setup(props, { emit }) {
     const inputRef = ref(null);
+    const wrapperRef = ref(null);
     const searchTerm = ref(props.modelValue || '');
+    const lastSelectedRegion = ref(props.modelValue || ''); // запоминаем последний выбранный
     const showSuggestions = ref(false);
     const selectedIndex = ref(-1);
 
-    // Фильтрация регионов по введенному тексту
+    // Фильтрация: если пусто — все регионы
     const filteredRegions = computed(() => {
-      if (!searchTerm.value) {
-        return props.regions; // Показываем все регионы если поле пустое
-      }
-      
+      if (!searchTerm.value) return props.regions;
       const term = searchTerm.value.toLowerCase();
-      return props.regions
-        .filter(region => region.name.toLowerCase().includes(term));
-        // Не ограничиваем количество результатов
+      return props.regions.filter(r => r.name.toLowerCase().includes(term));
     });
 
     // Получение кода выбранного региона
@@ -88,45 +78,115 @@ export default {
       return region ? region.code : '';
     });
 
-    // Обработчики событий
+    // --- ОСНОВНАЯ ФУНКЦИЯ: Прокрутка к региону по центру ---
+    const scrollToRegionCenter = async (regionName) => {
+      // Убедимся, что список виден
+      await nextTick();
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      const tryScroll = () => {
+        const list = wrapperRef.value?.querySelector('.suggestions-list');
+        if (!list) {
+          if (attempts < maxAttempts) {
+            attempts++;
+            setTimeout(tryScroll, 50); // попробуем снова
+          }
+          return;
+        }
+
+        const items = list.querySelectorAll('.suggestion-item');
+        let targetItem = null;
+
+        for (let item of items) {
+          const nameEl = item.querySelector('.region-name');
+          if (nameEl && nameEl.textContent.trim() === regionName) {
+            targetItem = item;
+            break;
+          }
+        }
+
+        if (!targetItem) {
+          console.warn(`Регион "${regionName}" не найден в списке`);
+          return;
+        }
+
+        const containerHeight = list.clientHeight;
+        const itemHeight = targetItem.offsetHeight;
+        const itemTop = targetItem.offsetTop;
+
+        // Центр: scrollTop = itemTop - половина высоты окна + половина высоты элемента
+        const scrollTop = itemTop - containerHeight / 2 + itemHeight / 2;
+
+        list.scrollTop = Math.max(0, scrollTop);
+        console.log(`Прокручено к "${regionName}", offsetTop=${itemTop}, scrollTop=${scrollTop}`);
+      };
+
+      tryScroll();
+    };
+
+    const onFocus = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+
+      // Приоритет: текущий ввод → последний выбранный
+      const regionToScroll = searchTerm.value || lastSelectedRegion.value;
+
+      if (regionToScroll) {
+        // Задержка для гарантии отрисовки списка
+        nextTick(() => {
+          scrollToRegionCenter(regionToScroll);
+        });
+      }
+    };
+
+    const onClick = () => {
+      searchTerm.value = '';
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+      emit('update:modelValue', '');
+    };
+
     const onInput = () => {
       showSuggestions.value = true;
       selectedIndex.value = -1;
       emit('update:modelValue', searchTerm.value);
     };
 
-    const onFocus = () => {
-      showSuggestions.value = true;
-      selectedIndex.value = -1;
-    };
-
-    const onBlur = () => {
-      // Небольшая задержка для возможности клика по suggestion
+    const onBlur = (event) => {
       setTimeout(() => {
-        showSuggestions.value = false;
-        selectedIndex.value = -1;
+        if (!event.relatedTarget || !event.relatedTarget.closest('.autocomplete-wrapper')) {
+          showSuggestions.value = false;
+          selectedIndex.value = -1;
+        }
       }, 200);
     };
 
+    const selectRegion = (region) => {
+      searchTerm.value = region.name;
+      lastSelectedRegion.value = region.name;
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+      emit('update:modelValue', region.name);
+      emit('regionSelected', region.name);
+    };
+
+    // Обработчик стрелок (для полноты)
     const onArrowDown = () => {
-      if (!showSuggestions.value) {
-        showSuggestions.value = true;
-      }
-      
+      if (!showSuggestions.value) showSuggestions.value = true;
       if (filteredRegions.value.length > 0) {
         selectedIndex.value = (selectedIndex.value + 1) % filteredRegions.value.length;
+        nextTick(scrollToSelectedIndex);
       }
     };
 
     const onArrowUp = () => {
-      if (!showSuggestions.value) {
-        showSuggestions.value = true;
-      }
-      
+      if (!showSuggestions.value) showSuggestions.value = true;
       if (filteredRegions.value.length > 0) {
-        selectedIndex.value = selectedIndex.value <= 0 
-          ? filteredRegions.value.length - 1 
+        selectedIndex.value = selectedIndex.value <= 0
+          ? filteredRegions.value.length - 1
           : selectedIndex.value - 1;
+        nextTick(scrollToSelectedIndex);
       }
     };
 
@@ -134,7 +194,6 @@ export default {
       if (showSuggestions.value && selectedIndex.value >= 0) {
         selectRegion(filteredRegions.value[selectedIndex.value]);
       } else if (filteredRegions.value.length > 0) {
-        // Если ничего не выбрано, выбираем первый элемент
         selectRegion(filteredRegions.value[0]);
       }
     };
@@ -144,33 +203,65 @@ export default {
       selectedIndex.value = -1;
     };
 
-    const selectRegion = (region) => {
-      searchTerm.value = region.name;
-      showSuggestions.value = false;
-      selectedIndex.value = -1;
-      emit('update:modelValue', region.name);
-      emit('regionSelected', region.name);
-      inputRef.value?.blur();
+    const scrollToSelectedIndex = () => {
+      if (selectedIndex.value === -1 || !wrapperRef.value) return;
+      const list = wrapperRef.value.querySelector('.suggestions-list');
+      if (!list) return;
+
+      const items = list.querySelectorAll('.suggestion-item');
+      const selectedRegionName = filteredRegions.value[selectedIndex.value]?.name;
+      let targetItem = null;
+
+      for (let item of items) {
+        const nameEl = item.querySelector('.region-name');
+        if (nameEl && nameEl.textContent.trim() === selectedRegionName) {
+          targetItem = item;
+          break;
+        }
+      }
+
+      if (!targetItem) return;
+
+      const itemTop = targetItem.offsetTop;
+      const itemBottom = itemTop + targetItem.offsetHeight;
+      const containerHeight = list.clientHeight;
+      const scrollTop = list.scrollTop;
+      const scrollBottom = scrollTop + containerHeight;
+
+      if (itemTop < scrollTop) {
+        list.scrollTop = itemTop - containerHeight / 2 + targetItem.offsetHeight / 2;
+      } else if (itemBottom > scrollBottom) {
+        list.scrollTop = itemTop - containerHeight / 2 + targetItem.offsetHeight / 2;
+      }
     };
 
-    // Очистка поля ввода
-    const clearInput = () => {
-      searchTerm.value = '';
-      showSuggestions.value = true;
-      selectedIndex.value = -1;
-      emit('update:modelValue', '');
-      inputRef.value?.focus();
-    };
-
-    // Следим за изменением внешнего значения
+    // Синхронизация с внешним значением
     watch(() => props.modelValue, (newVal) => {
       if (newVal !== searchTerm.value) {
         searchTerm.value = newVal || '';
+        if (newVal) lastSelectedRegion.value = newVal;
       }
+    });
+
+    // Клик вне компонента
+    const handleClickOutside = (event) => {
+      if (wrapperRef.value && !wrapperRef.value.contains(event.target)) {
+        showSuggestions.value = false;
+        selectedIndex.value = -1;
+      }
+    };
+
+    onMounted(() => {
+      document.addEventListener('click', handleClickOutside);
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener('click', handleClickOutside);
     });
 
     return {
       inputRef,
+      wrapperRef,
       searchTerm,
       showSuggestions,
       selectedIndex,
@@ -179,12 +270,14 @@ export default {
       onInput,
       onFocus,
       onBlur,
+      onClick,
       onArrowDown,
       onArrowUp,
       onEnter,
       onEscape,
       selectRegion,
-      clearInput
+      scrollToRegionCenter,
+      scrollToSelectedIndex
     };
   }
 };
@@ -210,7 +303,8 @@ export default {
   font-size: 16px;
   background-color: white;
   box-sizing: border-box;
-  padding-right: 85px; /* Increased padding to accommodate the clear button */
+  padding-right: 50px;
+  /* Padding to accommodate the region code */
   position: relative;
   z-index: 0;
 }
@@ -223,7 +317,8 @@ export default {
 
 .region-code {
   position: absolute;
-  right: 50px; /* Moved left to avoid overlapping with clear button */
+  right: 15px;
+  /* Moved to the right edge */
   top: 50%;
   transform: translateY(-50%);
   background-color: #4CAF50;

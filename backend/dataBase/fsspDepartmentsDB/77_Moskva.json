@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Москва",
+      "regionCode": "77",
       "cities": [
         {
           "name": "Город не определен",

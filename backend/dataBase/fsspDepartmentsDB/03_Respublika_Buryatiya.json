@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Бурятия",
+      "regionCode": "03",
       "cities": [
         {
           "name": "Баргузин",

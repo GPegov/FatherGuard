@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Амурская область",
+      "regionCode": "28",
       "cities": [
         {
           "name": "Белогорск",

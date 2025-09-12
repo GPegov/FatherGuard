@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Санкт-Петербург",
+      "regionCode": "78",
       "cities": []
     }
   ]

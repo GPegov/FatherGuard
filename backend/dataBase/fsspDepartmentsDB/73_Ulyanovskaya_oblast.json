@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Ульяновская область",
+      "regionCode": "73",
       "cities": [
         {
           "name": "Барыш",

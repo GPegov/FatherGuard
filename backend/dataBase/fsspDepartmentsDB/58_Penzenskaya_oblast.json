@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Пензенская область",
+      "regionCode": "58",
       "cities": []
     }
   ]

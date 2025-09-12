@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Байконур",
+      "regionCode": "99",
       "cities": []
     }
   ]

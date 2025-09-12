@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Ярославская область",
+      "regionCode": "76",
       "cities": []
     }
   ]

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Ростовская область",
+      "regionCode": "61",
       "cities": []
     }
   ]

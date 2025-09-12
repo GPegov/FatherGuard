@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Крым",
+      "regionCode": "91",
       "cities": []
     }
   ]

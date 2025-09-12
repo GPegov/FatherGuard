@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Тверская область",
+      "regionCode": "69",
       "cities": []
     }
   ]

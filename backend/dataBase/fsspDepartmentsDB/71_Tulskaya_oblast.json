@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Тульская область",
+      "regionCode": "71",
       "cities": []
     }
   ]

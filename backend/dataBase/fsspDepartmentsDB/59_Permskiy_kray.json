@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Пермский край",
+      "regionCode": "59",
       "cities": [
         {
           "name": "Город не определен",

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Смоленская область",
+      "regionCode": "67",
       "cities": []
     }
   ]

@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Самарская область",
+      "regionCode": "63",
       "cities": [
         {
           "name": "Самара",

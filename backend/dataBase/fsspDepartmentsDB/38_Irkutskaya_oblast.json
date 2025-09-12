@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Иркутская область",
+      "regionCode": "38",
       "cities": [
         {
           "name": "Иркутск",

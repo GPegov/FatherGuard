@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Липецкая область",
+      "regionCode": "48",
       "cities": []
     }
   ]

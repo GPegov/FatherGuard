@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Московская область",
+      "regionCode": "50",
       "cities": []
     }
   ]

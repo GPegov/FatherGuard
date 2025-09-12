@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Севастополь",
+      "regionCode": "92",
       "cities": []
     }
   ]

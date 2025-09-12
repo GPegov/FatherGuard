@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Республика Дагестан",
+      "regionCode": "05",
       "cities": [
         {
           "name": "Махачкала",

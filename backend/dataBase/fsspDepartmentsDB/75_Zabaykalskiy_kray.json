@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Забайкальский край",
+      "regionCode": "75",
       "cities": [
         {
           "name": "Чита",

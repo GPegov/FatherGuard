@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Калининградская область",
+      "regionCode": "39",
       "cities": []
     }
   ]

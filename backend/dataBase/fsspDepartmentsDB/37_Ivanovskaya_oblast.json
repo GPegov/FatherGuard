@@ -3,6 +3,7 @@
   "regions": [
     {
       "region": "Ивановская область",
+      "regionCode": "37",
       "cities": []
     }
   ]
