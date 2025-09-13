@@ -2,8 +2,13 @@ import puppeteer from "puppeteer";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import fsspRegions from "./fsspRegions.js";
-import transliterate from "./transliterate.js";
+import fsspRegions from "../fsspRegions.js";
+import transliterate from "../transliterate.js";
+import { parseKalmykiaData } from "./specialCases/kalmykiaParser.js";
+import { parseKarachayCherkessiaData } from "./specialCases/karachayCherkessiaParser.js";
+import { parseKareliaData } from "./specialCases/kareliaParser.js";
+import { parseKomiData } from "./specialCases/komiParser.js";
+import { parseMordoviaData } from "./specialCases/mordoviaParser.js";
 
 // Получаем __dirname в ES модуле
 const __filename = fileURLToPath(import.meta.url);
@@ -21,13 +26,13 @@ class FSSPParser {
     this.baseUrl = this.getBaseUrl();
     
     this.fileName = `${this.regionCode.toString().padStart(2, '0')}_${transliterate(regionName)}.json`;
-    this.dataFilePath = path.join(__dirname, "..", "dataBase", "fsspDepartmentsDB", this.fileName);
+    this.dataFilePath = path.join(__dirname, "..", "..", "dataBase", "fsspDepartmentsDB", this.fileName);
   }
 
   // Загрузка нестандартных URL из файла
   loadCustomUrls() {
     try {
-      const customUrlsPath = path.join(__dirname, "..", "dataBase", "fsspRegionUrls.json");
+      const customUrlsPath = path.join(__dirname, "..", "..", "dataBase", "fsspRegionUrls.json");
       if (fs.existsSync(customUrlsPath)) {
         const data = fs.readFileSync(customUrlsPath, "utf8");
         return JSON.parse(data);
@@ -45,7 +50,7 @@ class FSSPParser {
     
     // Проверяем, есть ли нестандартный URL для этого региона
     if (this.customUrls[regionCodeStr] && this.customUrls[regionCodeStr].urls.length > 0) {
-      // Используем первый URL из списка (можно расширить логику при необходимости)
+      // Используем первый URL из списка
       return this.customUrls[regionCodeStr].urls[0];
     }
     
@@ -65,7 +70,7 @@ class FSSPParser {
 
       // Запускаем браузер
       browser = await puppeteer.launch({
-        headless: true, // В продакшене используем headless режим
+        headless: true,
         args: ["--no-sandbox", "--disable-setuid-sandbox"],
       });
 
@@ -93,259 +98,104 @@ class FSSPParser {
       const currentPageUrl = page.url();
       console.log(`Текущий URL страницы: ${currentPageUrl}`);
 
-      // Извлекаем данные с помощью JavaScript в контексте страницы
-  const rawData = await page.evaluate((regionCode) => {
-    const departments = [];
+      // Получаем HTML содержимое страницы
+      const htmlContent = await page.content();
 
-    // Специальная обработка для Республики Калмыкия (код 08)
-    if (regionCode === 8) {
-      console.log("Применение специальной логики парсинга для Республики Калмыкия");
-      
-      // Дополнительное ожидание для загрузки контента
-      // Мы не можем использовать await здесь, так как функция не асинхронная
-      // Вместо этого добавим задержку в основном коде
-      
-      // Ищем нумерованные списки с отделениями
-      const lists = document.querySelectorAll("ol");
-      console.log("Найдено списков:", lists.length);
-      
-      lists.forEach((list, listIndex) => {
-        const items = list.querySelectorAll("li");
-        console.log(`Список ${listIndex + 1}: элементов ${items.length}`);
-        
-        items.forEach((item, itemIndex) => {
-          const text = item.textContent.trim();
-          console.log(`Элемент ${itemIndex + 1}: ${text}`);
-          
-          // Разделяем данные по символу "•"
-          const parts = text.split("•").map(part => part.trim());
-          
-          if (parts.length >= 3) {
-            // Обычно структура: [название, адрес, телефон, факс (опционально)]
-            const departmentName = parts[0] || "Отделение ФССП";
-            const address = parts[1] || "Адрес не указан";
-            const phone = parts[2] || "Телефон не указан";
-            
-            departments.push({
-              name: departmentName,
-              address: address,
-              phone: phone,
-            });
-          }
-        });
-      });
-      
-      return departments;
-    }
-    
-    // Специальная обработка для Карачаево-Черкесской Республики (код 09)
-    if (regionCode === 9) {
-      console.log("Применение специальной логики парсинга для Карачаево-Черкесской Республики");
-      
-      // Ищем таблицы с отделениями
-      const tables = document.querySelectorAll("table");
-      console.log("Найдено таблиц:", tables.length);
+      let rawData = [];
 
-      tables.forEach((table, tableIndex) => {
-        const rows = table.querySelectorAll("tr");
-        console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+      // Проверяем специальные случаи
+      if (this.regionCode === 8) {
+        rawData = parseKalmykiaData(htmlContent);
+        console.log("Применение специальной логики парсинга для Республики Калмыкия");
+      } else if (this.regionCode === 9) {
+        rawData = parseKarachayCherkessiaData(htmlContent);
+        console.log("Применение специальной логики парсинга для Карачаево-Черкесской Республики");
+      } else if (this.regionCode === 10) {
+        rawData = parseKareliaData(htmlContent);
+        console.log("Применение специальной логики парсинга для Республики Карелия");
+      } else if (this.regionCode === 11) {
+        rawData = parseKomiData(htmlContent);
+        console.log("Применение специальной логики парсинга для Республики Коми");
+      } else if (this.regionCode === 13) {
+        rawData = parseMordoviaData(htmlContent);
+        console.log("Применение специальной логики парсинга для Республики Мордовия");
+      } else {
+        rawData = await page.evaluate((regionCode) => {
+          const departments = [];
 
-        if (rows.length > 1) {
-          // Обрабатываем строки таблицы
-          rows.forEach((row, rowIndex) => {
-            const cells = row.querySelectorAll("td, th");
-            
-            // Для Карачаево-Черкесской Республики структура:
-            // 0 - наименование подразделения
-            // 1 - адрес
-            // 2 - email
-            // 3 - телефон
-            if (cells.length >= 4) {
-              const departmentName = cells[0].textContent.trim();
-              const address = cells[1].textContent.trim();
-              const phone = cells[3].textContent.trim();
+          // Стандартная обработка для остальных регионов
+          // Ищем таблицы с отделениями
+          const tables = document.querySelectorAll("table");
+          console.log("Найдено таблиц:", tables.length);
 
-              // Проверяем, является ли строка заголовочной
-              let isHeaderRow = false;
-              if (rowIndex === 0) {
-                const rowText = row.textContent.toLowerCase();
-                const headerKeywords = [
-                  "наименование", "подразделения", "адрес", "электронной", "почты", 
-                  "номер", "телефона", "email", "e-mail"
-                ];
+          tables.forEach((table, tableIndex) => {
+            const rows = table.querySelectorAll("tr");
+            console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
+
+            if (rows.length > 1) {
+              // Обрабатываем строки таблицы
+              rows.forEach((row, rowIndex) => {
+                const cells = row.querySelectorAll("td, th");
                 
-                // Проверяем, содержит ли строка ключевые слова заголовка
-                isHeaderRow = headerKeywords.some(keyword => rowText.includes(keyword));
-              }
+                // Структура таблицы на сайте:
+                // 0 - порядковый номер (не нужен)
+                // 1 - название отделения
+                // 2 - адрес отделения
+                // 3 - email отделения
+                // 4 - телефон отделения
+                if (cells.length >= 5) {
+                  const departmentName = cells[1].textContent.trim();
+                  const address = cells[2].textContent.trim();
+                  const phone = cells[4].textContent.trim();
 
-              // Проверяем, что строка содержит данные и не является заголовочной
-              if ((departmentName || address || phone) && !isHeaderRow) {
-                // Дополнительная проверка на заголовочные данные
-                const isHeaderData = (
-                  departmentName.includes("Наименование подразделения") ||
-                  address.includes("Адрес") && address.includes("электронной") ||
-                  phone.includes("Номер телефона")
-                );
 
-                // Добавляем только если это не заголовочные данные
-                if (!isHeaderData) {
-                  departments.push({
-                    name: departmentName || "Отделение ФССП",
-                    address: address || "Адрес не указан",
-                    phone: phone || "Телефон не указан",
-                  });
+                  // Проверяем, является ли строка заголовочной
+                  // Увеличиваем количество проверяемых строк до 10 для более надежного определения
+                  let isHeaderRow = false;
+                  if (rowIndex < 10) {
+                    const rowText = row.textContent.toLowerCase();
+                    const stopWords = [
+                      "наименование", "структурного", "подразделения", "адрес", "почты", "почта", 
+                      "телефон", "e-mail", "email", "сайт", "факс", "контактная", "информация",
+                      "номер", "п/п", "№"
+                    ];
+                    
+                    // Проверяем, содержит ли строка хотя бы одно из стоп-слов
+                    // Используем более точное совпадение слов
+                    const wordsInRow = rowText.split(/\s+/);
+                    for (const word of stopWords) {
+                      if (wordsInRow.includes(word) || rowText.includes(word)) {
+                        isHeaderRow = true;
+                        break;
+                      }
+                    }
+                  }
+
+                  // Проверяем, что строка содержит данные и не является заголовочной
+                  const isHeaderData = (
+                    departmentName.includes("Наименование структурного подразделения") ||
+                    address.includes("Почтовый адрес") ||
+                    phone.includes("Телефон для получения справочной информации") ||
+                    (departmentName.toLowerCase().includes("подразделение") &&
+                     address.toLowerCase().includes("адрес") &&
+                     phone.toLowerCase().includes("телефон"))
+                  );
+
+                  if ((departmentName || address || phone) && !isHeaderRow && !isHeaderData) {
+                    departments.push({
+                      name: departmentName || "Отделение ФССП",
+                      address: address || "Адрес не указан",
+                      phone: phone || "Телефон не указан",
+                    });
+                  }
                 }
-              }
+              });
             }
           });
-        }
-      });
 
-      return departments;
-    }
-
-    // Специальная обработка для Республики Карелия (код 10)
-    if (regionCode === 10) {
-      console.log("Применение специальной логики парсинга для Республики Карелия");
-      
-      // Ищем таблицы с отделениями
-      const tables = document.querySelectorAll("table");
-      console.log("Найдено таблиц:", tables.length);
-
-      tables.forEach((table, tableIndex) => {
-        const rows = table.querySelectorAll("tr");
-        console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
-
-        if (rows.length > 1) {
-          // Обрабатываем строки таблицы
-          rows.forEach((row, rowIndex) => {
-            const cells = row.querySelectorAll("td, th");
-            
-            // Для Республики Карелия структура:
-            // 0 - территориальный отдел судебных приставов
-            // 1 - адрес
-            // 2 - email
-            // 3 - телефон
-            if (cells.length >= 4) {
-              const departmentName = cells[0].textContent.trim();
-              const address = cells[1].textContent.trim();
-              const phone = cells[3].textContent.trim();
-
-              // Проверяем, является ли строка заголовочной
-              let isHeaderRow = false;
-              if (rowIndex === 0) {
-                const rowText = row.textContent.toLowerCase();
-                const headerKeywords = [
-                  "территориальный", "отдел", "судебных", "приставов", 
-                  "адрес", "электронной", "почты", "номер", "телефона", 
-                  "email", "e-mail", "справочной", "информации"
-                ];
-                
-                // Проверяем, содержит ли строка ключевые слова заголовка
-                isHeaderRow = headerKeywords.some(keyword => rowText.includes(keyword));
-              }
-
-              // Проверяем, что строка содержит данные и не является заголовочной
-              if ((departmentName || address || phone) && !isHeaderRow) {
-                // Дополнительная проверка на заголовочные данные
-                const isHeaderData = (
-                  departmentName.includes("Территориальный отдел судебных приставов") ||
-                  address.includes("Адрес") && address.includes("электронной") ||
-                  phone.includes("Телефон для получения справочной информации")
-                );
-
-                // Добавляем только если это не заголовочные данные
-                if (!isHeaderData) {
-                  departments.push({
-                    name: departmentName || "Отделение ФССП",
-                    address: address || "Адрес не указан",
-                    phone: phone || "Телефон не указан",
-                  });
-                }
-              }
-            }
-          });
-        }
-      });
-
-      return departments;
-    }
-
-    // Стандартная обработка для остальных регионов
-    // Ищем таблицы с отделениями
-    const tables = document.querySelectorAll("table");
-    console.log("Найдено таблиц:", tables.length);
-
-    tables.forEach((table, tableIndex) => {
-      const rows = table.querySelectorAll("tr");
-      console.log(`Таблица ${tableIndex + 1}: строк ${rows.length}`);
-
-      if (rows.length > 1) {
-        // Обрабатываем строки таблицы
-        rows.forEach((row, rowIndex) => {
-          const cells = row.querySelectorAll("td, th");
-          
-          // Структура таблицы на сайте:
-          // 0 - порядковый номер (не нужен)
-          // 1 - название отделения
-          // 2 - адрес отделения
-          // 3 - email отделения
-          // 4 - телефон отделения
-          if (cells.length >= 5) {
-            const departmentName = cells[1].textContent.trim();
-            const address = cells[2].textContent.trim();
-            const phone = cells[4].textContent.trim();
-
-            // Проверяем, является ли строка заголовочной
-            // Увеличиваем количество проверяемых строк до 10 для более надежного определения
-            let isHeaderRow = false;
-            if (rowIndex < 10) {
-              const rowText = row.textContent.toLowerCase();
-              const stopWords = [
-                "наименование", "структурного", "подразделения", "адрес", "почты", "почта", 
-                "телефон", "e-mail", "email", "сайт", "факс", "контактная", "информация",
-                "номер", "п/п", "№"
-              ];
-              
-              // Проверяем, содержит ли строка хотя бы одно из стоп-слов
-              // Используем более точное совпадение слов
-              const wordsInRow = rowText.split(/\s+/);
-              for (const word of stopWords) {
-                if (wordsInRow.includes(word) || rowText.includes(word)) {
-                  isHeaderRow = true;
-                  break;
-                }
-              }
-            }
-
-            // Проверяем, что строка содержит данные и не является заголовочной
-            if ((departmentName || address || phone) && !isHeaderRow) {
-              // Дополнительная проверка на заголовочные данные
-              const isHeaderData = (
-                departmentName.includes("Наименование структурного подразделения") ||
-                address.includes("Почтовый адрес") ||
-                phone.includes("Телефон для получения справочной информации") ||
-                departmentName.toLowerCase().includes("подразделение") &&
-                address.toLowerCase().includes("адрес") &&
-                phone.toLowerCase().includes("телефон")
-              );
-
-              // Добавляем только если это не заголовочные данные
-              if (!isHeaderData) {
-                departments.push({
-                  name: departmentName || "Отделение ФССП",
-                  address: address || "Адрес не указан",
-                  phone: phone || "Телефон не указан",
-                });
-              }
-            }
-          }
-        });
+          return departments;
+        }, this.regionCode); // Передаем код региона в функцию
       }
-    });
-
-    return departments;
-  }, this.regionCode); // Передаем код региона в функцию
 
       console.log(`Получено ${rawData.length} отделений`);
 
@@ -373,6 +223,92 @@ class FSSPParser {
     }
   }
 
+  // ПРОСТОЙ И НАДЁЖНЫЙ метод извлечения города
+  extractCityFromAddress(addressData) {
+    // Приводим к строке и нормализуем пробелы
+    let address = addressData.toString().replace(/\s+/g, ' ').trim();
+
+    // Удаляем почтовый индекс в начале (6 цифр)
+    address = address.replace(/^\d{6}\s*/, '');
+
+    // Загружаем известные города для текущего региона
+    const knownCitiesData = this.loadKnownCitiesForRegion();
+    const knownCities = knownCitiesData.cities || [];
+
+    // Сортируем по длине (сначала самые длинные — важно!)
+    const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
+
+    // Паттерны, указывающие на улицу, дом и т.п.
+    const streetIndicators = [
+      'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
+      'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
+      'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
+    ];
+
+    // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
+    const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+    if (prefixMatch) {
+      let cityPart = prefixMatch[1].trim();
+
+      // Обрезаем всё, что идёт после улицы/дома
+      for (const indicator of streetIndicators) {
+        const escaped = indicator.replace(/[.*+?^${}()|[\\\]]/g, '\\$&');
+        const regex = new RegExp(`\\s*${escaped}.*`, 'i');
+        cityPart = cityPart.replace(regex, '');
+      }
+
+      // Убираем лишние символы в конце
+      cityPart = cityPart.replace(/[.,;].*$/, '').trim();
+
+      // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
+      for (const city of sortedCities) {
+        if (cityPart.startsWith(city)) {
+          return city;
+        }
+      }
+    }
+
+    // 2. Если префикс не найден — ищем любой известный город в строке
+    for (const city of sortedCities) {
+      const escapedCity = city.replace(/[.*+?^${}()|[\\\]]/g, '\\$&');
+      const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
+
+      // Проверяем, не является ли это частью названия улицы
+      const isStreetName = streetIndicators.some(indicator => {
+        const escapedIndicator = indicator.replace(/[.*+?^${}()|[\\\]]/g, '\\$&');
+        // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
+        const streetPatterns = [
+          new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
+          new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
+          new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
+        ];
+        return streetPatterns.some(pattern => pattern.test(addressData));
+      });
+
+      if (regex.test(address) && !isStreetName) {
+        return city;
+      }
+    }
+
+    // 3. Если всё провалилось — попробуем "грязный" поиск по частичному совпадению
+    const lowerAddress = address.toLowerCase();
+    for (const city of sortedCities) {
+      const cityLower = city.toLowerCase();
+      if (lowerAddress.includes(cityLower)) {
+        const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
+        const isLikelyStreet = streetPatterns.some(p => {
+          return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
+        });
+        if (!isLikelyStreet) {
+          return city;
+        }
+      }
+    }
+
+    // Если всё провалилось
+    return "Город не определен";
+  }
+  
   // Группировка отделений по городам
   async groupDepartmentsByCity(departments) {
     try {
@@ -429,102 +365,12 @@ class FSSPParser {
     }
   }
 
-  // ПРОСТОЙ И НАДЁЖНЫЙ метод извлечения города
-extractCityFromAddress(addressData) {
-  // Приводим к строке и нормализуем пробелы
-  let address = addressData.toString().replace(/\s+/g, ' ').trim();
-
-  // Удаляем почтовый индекс в начале (6 цифр)
-  address = address.replace(/^\d{6}\s*/, '');
-
-  // Загружаем известные города для текущего региона
-  const knownCitiesData = this.loadKnownCitiesForRegion();
-  const knownCities = knownCitiesData.cities || [];
-
-  // Сортируем по длине (сначала самые длинные — важно!)
-  const sortedCities = [...knownCities].sort((a, b) => b.length - a.length);
-
-  // Паттерны, указывающие на улицу, дом и т.п.
-  const streetIndicators = [
-    'ул.', 'улица', 'пер.', 'переулок', 'пр.', 'проспект', 'ш.', 'шоссе',
-    'мкр.', 'микрорайон', 'д.', 'дом', 'корп.', 'корпус', 'стр.', 'строение',
-    'обл.', 'область', 'р-н', 'район', 'пл.', 'площадь'
-  ];
-
-  // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
-  const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
-  if (prefixMatch) {
-    let cityPart = prefixMatch[1].trim();
-
-    // Обрезаем всё, что идёт после улицы/дома
-    for (const indicator of streetIndicators) {
-      const escaped = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\s*${escaped}.*`, 'i');
-      cityPart = cityPart.replace(regex, '');
-    }
-
-    // Убираем лишние символы в конце
-    cityPart = cityPart.replace(/[.,;].*$/, '').trim();
-
-    // Проверяем, совпадает ли с известным городом (с приоритетом по длине)
-    for (const city of sortedCities) {
-      if (cityPart.startsWith(city)) {
-        return city;
-      }
-    }
-  }
-
-  // 2. Если префикс не найден — ищем любой известный город в строке
-  for (const city of sortedCities) {
-    const escapedCity = city.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const regex = new RegExp(`\\b${escapedCity}\\b`, 'i'); // \b — граница слова
-
-    if (regex.test(address)) {
-      // Проверяем, не является ли это частью названия улицы
-      const isStreetName = streetIndicators.some(indicator => {
-        const escapedIndicator = indicator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Паттерны: "ул. Каменск", "Каменск-Уральская ул.", "мкр. Артёмовский"
-        const streetPatterns = [
-          new RegExp(`${escapedIndicator}\\s+${escapedCity}`, 'i'),
-          new RegExp(`${escapedCity}[-\\s]*[А-Яа-я]*\\s+${escapedIndicator}`, 'i'),
-          new RegExp(`${escapedCity}[\\s-]+(?:ул|пер|пр|ш|мкр|р-н)`, 'i')
-        ];
-        return streetPatterns.some(pattern => pattern.test(addressData));
-      });
-
-      if (!isStreetName) {
-        return city;
-      }
-    }
-  }
-
-  // 3. Если всё провалилось — попробуем "грязный" поиск по частичному совпадению
-  // (на случай опечаток или нестандартных форматов)
-  const lowerAddress = address.toLowerCase();
-  for (const city of sortedCities) {
-    const cityLower = city.toLowerCase();
-    if (lowerAddress.includes(cityLower)) {
-      // Проверяем, не входит ли в название улицы
-      const streetPatterns = ['ул', 'пер', 'пр', 'ш', 'мкр', 'р-н'];
-      const isLikelyStreet = streetPatterns.some(p => {
-        return lowerAddress.includes(`${cityLower} ${p}`) || lowerAddress.includes(`${p}.${cityLower}`);
-      });
-
-      if (!isLikelyStreet) {
-        return city;
-      }
-    }
-  }
-
-  // Если всё провалилось
-  return "Город не определен";
-}
   // Метод для загрузки известных городов региона
   loadKnownCitiesForRegion() {
     try {
       // Формируем имя файла с ведущим нулем для кодов от 1 до 9
       const regionCodeStr = this.regionCode.toString().padStart(2, '0');
-      const knownCitiesPath = path.join(__dirname, "..", "dataBase", "knownCities", `${regionCodeStr}.json`);
+      const knownCitiesPath = path.join(__dirname, "..", "..", "dataBase", "knownCities", `${regionCodeStr}.json`);
       if (fs.existsSync(knownCitiesPath)) {
         const data = fs.readFileSync(knownCitiesPath, "utf8");
         return JSON.parse(data);
@@ -762,7 +608,7 @@ extractCityFromAddress(addressData) {
       if (fs.existsSync(this.dataFilePath)) {
         // Формируем имя файла для резервной копии с суффиксом _backup
         const backupFileName = this.fileName.replace('.json', '_backup.json');
-        const backupPath = path.join(__dirname, "..", "dataBase", "backup", backupFileName);
+        const backupPath = path.join(__dirname, "..", "..", "dataBase", "backup", backupFileName);
         // Создаем папку backup, если она не существует
         const backupDir = path.dirname(backupPath);
         if (!fs.existsSync(backupDir)) {
@@ -788,7 +634,7 @@ extractCityFromAddress(addressData) {
   // Метод для добавления нестандартного URL в файл конфигурации
   static async addCustomUrl(regionCode, regionName, urls) {
     try {
-      const customUrlsPath = path.join(__dirname, "..", "dataBase", "fsspRegionUrls.json");
+      const customUrlsPath = path.join(__dirname, "..", "..", "dataBase", "fsspRegionUrls.json");
       let customUrls = {};
       
       // Загружаем существующие данные

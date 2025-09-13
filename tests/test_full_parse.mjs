@@ -1,4 +1,4 @@
-import FSSPParser from './backend/services/fsspParser.js';
+import FSSPParser from './backend/services/parsing/fsspParser.js';
 
 async function runFullParse() {
   console.log('=== Полный парсинг данных для Республики Башкортостан ===');

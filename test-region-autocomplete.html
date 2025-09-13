@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест RegionAutocomplete</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+        .test-section h2 {
+            margin-top: 0;
+            color: #555;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #results {
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            margin-top: 15px;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Тест компонента RegionAutocomplete</h1>
+        
+        <div class="test-section">
+            <h2>1. Тест фильтрации регионов</h2>
+            <p>Проверим, как работает фильтрация регионов по вводу.</p>
+            <button onclick="testRegionFiltering()">Запустить тест</button>
+            <div id="results"></div>
+        </div>
+        
+        <div class="test-section">
+            <h2>2. Тест API endpoint'ов</h2>
+            <p>Проверим доступность API endpoint'ов.</p>
+            <button onclick="testAPIEndpoints()">Запустить тест</button>
+            <div id="api-results"></div>
+        </div>
+    </div>
+
+    <script>
+        // Тест фильтрации регионов
+        function testRegionFiltering() {
+            const regions = [
+                { name: 'Республика Адыгея', code: 1 },
+                { name: 'Республика Башкортостан', code: 2 },
+                { name: 'Республика Коми', code: 11 },
+                { name: 'Свердловская область', code: 66 }
+            ];
+
+            function filterRegions(searchTerm, regionsList) {
+                if (!searchTerm) return regionsList;
+                const term = searchTerm.toLowerCase();
+                return regionsList.filter(r => r.name.toLowerCase().includes(term));
+            }
+
+            let results = "=== ТЕСТ ФИЛЬТРАЦИИ РЕГИОНОВ ===
+
+";
+
+            // Тест 1: Пустой поиск
+            const allRegions = filterRegions('', regions);
+            results += "1. Пустой поиск:
+";
+            results += `   Найдено регионов: ${allRegions.length}
+
+`;
+
+            // Тест 2: Поиск "Коми"
+            const komiRegions = filterRegions('Коми', regions);
+            results += "2. Поиск 'Коми':
+";
+            results += `   Найдено регионов: ${komiRegions.length}
+`;
+            komiRegions.forEach(region => {
+                results += `   - ${region.name} (${region.code})
+`;
+            });
+            results += "
+
+";
+
+            // Тест 3: Поиск "Республика"
+            const republicRegions = filterRegions('Республика', regions);
+            results += "3. Поиск 'Республика':
+";
+            results += `   Найдено регионов: ${republicRegions.length}
+`;
+            republicRegions.forEach(region => {
+                results += `   - ${region.name} (${region.code})
+`;
+            });
+
+            document.getElementById('results').textContent = results;
+        }
+
+        // Тест API endpoint'ов
+        async function testAPIEndpoints() {
+            const resultsDiv = document.getElementById('api-results');
+            resultsDiv.textContent = "Проверка API endpoint'ов...
+";
+
+            try {
+                // Тест endpoint'а /regions
+                resultsDiv.textContent += "1. Проверка /api/fssp/regions...
+";
+                const regionsResponse = await fetch('http://localhost:3001/api/fssp/regions');
+                const regionsData = await regionsResponse.json();
+
+                if (regionsData.success) {
+                    resultsDiv.textContent += `   ✓ Успешно: ${regionsData.regions.length} регионов
+`;
+
+                    // Проверим наличие Республики Коми
+                    const komiRegion = regionsData.regions.find(r => r.name === 'Республика Коми');
+                    if (komiRegion) {
+                        resultsDiv.textContent += `   ✓ Республика Коми найдена (код: ${komiRegion.code})
+`;
+                    } else {
+                        resultsDiv.textContent += `   ✗ Республика Коми НЕ найдена
+`;
+                    }
+                } else {
+                    resultsDiv.textContent += `   ✗ Ошибка: ${regionsData.message}
+`;
+                }
+
+            } catch (error) {
+                resultsDiv.textContent += `   ✗ Ошибка сети: ${error.message}
+`;
+            }
+        }
+    </script>
+</body>
+</html>

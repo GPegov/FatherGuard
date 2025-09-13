@@ -1,4 +1,4 @@
-import FSSPParser from './backend/services/fsspParser.js';
+import FSSPParser from './backend/services/parsing/fsspParser.js';
 
 async function testRegionLoading() {
   console.log('=== Тест загрузки файлов известных городов ===');

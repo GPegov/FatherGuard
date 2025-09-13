@@ -23,10 +23,22 @@
       "https://r10.fssp.gov.ru/contacts/contacts_osp"
     ]
   },
+  "11": {
+    "region": "Республика Коми",
+    "urls": [
+      "https://r11.fssp.gov.ru/kontakty_fssp"
+    ]
+  },
   "12": {
     "region": "Республика Марий Эл",
     "urls": [],
     "disabled": true,
     "reason": "Парсинг запрещен - файл заполнен вручную и содержит корректные данные"
+  },
+  "13": {
+    "region": "Республика Мордовия",
+    "urls": [
+      "https://r13.fssp.gov.ru/contacts/telefony_dlja_spravok"
+    ]
   }
 }

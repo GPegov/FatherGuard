@@ -1,4 +1,4 @@
-import FSSPParser from './backend/services/fsspParser.js';
+import FSSPParser from './backend/services/parsing/fsspParser.js';
 
 async function testAltaiParsing() {
   console.log('=== Тест запрета парсинга Республики Алтай (регион 04) ===');

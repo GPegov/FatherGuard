@@ -1,5 +1,5 @@
 // test_parser_detailed.js
-import FSSPParser from './backend/services/fsspParser.js';
+import FSSPParser from './backend/services/parsing/fsspParser.js';
 
 async function runDetailedTest() {
   console.log('=== Детальный тест парсера для Республики Башкортостан ===');

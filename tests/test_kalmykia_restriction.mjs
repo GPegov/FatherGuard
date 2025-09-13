@@ -1,4 +1,4 @@
-import FSSPParser from "./backend/services/fsspParser.js";
+import FSSPParser from "./backend/services/parsing/fsspParser.js";
 
 // Тестовый скрипт для проверки запрета парсинга Республики Калмыкия
 async function testKalmykiaParsingRestriction() {

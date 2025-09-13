@@ -1,4 +1,4 @@
-import FSSPParser from '../backend/services/fsspParser.js';
+import FSSPParser from '../backend/services/parsing/fsspParser.js';
 
 // Создаем экземпляр парсера для Республики Марий Эл
 const parser = new FSSPParser("Республика Марий Эл");

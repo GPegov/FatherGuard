@@ -1,5 +1,5 @@
 // Тестовый скрипт для проверки правильности формирования пути к файлу
-import FSSPParser from "../backend/services/fsspParser.js";
+import FSSPParser from "../backend/services/parsing/fsspParser.js";
 import fs from "fs";
 
 function testFilePathGeneration() {

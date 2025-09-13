@@ -1,4 +1,4 @@
-import FSSPParser from "./services/fsspParser.js";
+import FSSPParser from "./services/parsing/fsspParser.js";
 
 async function testRealParsing() {
   try {

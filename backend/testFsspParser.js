@@ -1,4 +1,4 @@
-import FSSPParser from "./services/fsspParser.js";
+import FSSPParser from "./services/parsing/fsspParser.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";

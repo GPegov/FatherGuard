@@ -1,4 +1,4 @@
-import FSSPParser from './backend/services/fsspParser.js';
+import FSSPParser from './backend/services/parsing/fsspParser.js';
 
 async function testPageAccess() {
   console.log('=== Тест доступности страницы ФССП для Республики Башкортостан ===');
