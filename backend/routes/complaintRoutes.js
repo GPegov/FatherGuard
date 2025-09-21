@@ -18,8 +18,6 @@ export default function complaintRoutes({ db }) {
   });
 
   // Экспорт жалобы
-
-  // Экспорт жалобы
   router.get('/:id/export', async (req, res) => {
     try {
       const { format = 'txt' } = req.query;
@@ -29,11 +27,19 @@ export default function complaintRoutes({ db }) {
         return res.status(404).json({ message: 'Complaint not found' });
       }
 
+      // Определяем, какой контент использовать (шаблонизированный или обычный)
+      const contentToUse = complaint.templatedContent || complaint.content;
+
       if (format === 'txt') {
         res.setHeader('Content-Type', 'text/plain');
         res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.txt`);
         res.send(complaint.content);
       } 
+      else if (format === 'html') {
+        res.setHeader('Content-Type', 'text/html');
+        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.html`);
+        res.send(contentToUse);
+      }
       else if (format === 'doc') {
         const docxDocument = new Document({
           sections: [{

@@ -1,5 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
 import AIService from './aiService.js';
+import ejs from 'ejs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Получаем __dirname в ES модулях
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Создаем экземпляр AIService
 const aiService = new AIService();
@@ -8,6 +16,9 @@ class ComplaintService {
   constructor() {
     this.generateComplaint = this.generateComplaint.bind(this);
     this.generateUnifiedComplaint = this.generateUnifiedComplaint.bind(this);
+    this.renderComplaintTemplate = this.renderComplaintTemplate.bind(this);
+    this.getTemplatePath = this.getTemplatePath.bind(this);
+    this.prepareTemplateData = this.prepareTemplateData.bind(this);
   }
 
   // ЕДИНСТВЕННЫЙ унифицированный метод для генерации жалоб
@@ -31,8 +42,12 @@ class ComplaintService {
       // Генерируем жалобу через AI
       const complaintResult = await this.generateWithAI(mainDocData, relatedDocsData, agency);
       
+      // Генерируем жалобу через шаблон
+      const templateData = this.prepareTemplateData(mainDocData, relatedDocsData, agency, complaintResult);
+      const templatedComplaint = await this.renderComplaintTemplate(agency, templateData);
+      
       // Создаем и сохраняем объект жалобы
-      const complaint = this.createComplaintObject(mainDocData, agency, relatedDocsData, complaintResult, documentId);
+      const complaint = this.createComplaintObject(mainDocData, agency, relatedDocsData, complaintResult, documentId, templatedComplaint);
       
       // Сохраняем в БД
       await this.saveComplaintToDB(db, complaint, mainDocData);
@@ -149,10 +164,21 @@ class ComplaintService {
     } catch (aiError) {
       console.error('Ошибка AI генерации:', aiError);
       console.error('Стек ошибки:', aiError.stack);
-      // Возвращаем запасной вариант
-      return {
-        content: this.generateFallbackComplaint(mainDocData, agency)
-      };
+      // Генерируем запасной вариант через шаблон
+      const templateData = this.prepareTemplateData(mainDocData, relatedDocsData, agency, {});
+      try {
+        const templatedComplaint = await this.renderComplaintTemplate(agency, templateData);
+        return {
+          content: this.generateFallbackComplaint(mainDocData, agency),
+          templatedContent: templatedComplaint
+        };
+      } catch (templateError) {
+        console.error('Ошибка генерации шаблона:', templateError);
+        // Если шаблон не работает, возвращаем только запасной вариант
+        return {
+          content: this.generateFallbackComplaint(mainDocData, agency)
+        };
+      }
     }
   }
 
@@ -209,13 +235,60 @@ class ComplaintService {
 Подпись: _________________`;
   }
 
+  // Резервный механизм генерации при ошибках шаблонизации
+  async generateFallbackWithTemplate(documentData, relatedDocsData, agency) {
+    try {
+      // Подготавливаем минимальные данные для шаблона
+      const templateData = {
+        complaintDate: new Date().toLocaleDateString('ru-RU'),
+        recipient: agency || 'Государственный орган',
+        recipientPosition: 'Должностному лицу',
+        recipientAddress: '127994, г. Москва, ул. Щепкина, д. 8',
+        fsspDepartment: agency && agency.includes('ФССП') ? agency : '',
+        applicantFullName: documentData.applicantFullName || 'Не указано',
+        applicantAddress: documentData.applicantAddress || 'Не указано',
+        applicantPhone: documentData.applicantPhone || 'Не указано',
+        applicantEmail: documentData.applicantEmail || 'Не указано',
+        documentDate: documentData.documentDate || new Date().toISOString().split('T')[0],
+        documentNumber: documentData.documentNumber || 'Не указано',
+        documentAgency: documentData.senderAgency || agency || 'Не указано',
+        documentSummary: documentData.summary || 'Не указано',
+        violations: documentData.violations || [],
+        legalReferences: documentData.legalReferences || [],
+        requirements: documentData.requirements || [],
+        attachments: relatedDocsData.map(doc => {
+          return {
+            date: doc.documentDate || 'Не указана',
+            summary: doc.summary || 'Не указано'
+          };
+        }),
+        complaintNumber: `ФГ-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000)}`,
+        executiveProductionNumber: documentData.executiveProductionNumber || ''
+      };
+
+      // Пытаемся использовать шаблон
+      const templatedComplaint = await this.renderComplaintTemplate(agency, templateData);
+      return {
+        content: this.generateFallbackComplaint(documentData, agency),
+        templatedContent: templatedComplaint
+      };
+    } catch (error) {
+      console.error('Ошибка резервного механизма генерации:', error);
+      // Если шаблон не работает, возвращаем только текстовую жалобу
+      return {
+        content: this.generateFallbackComplaint(documentData, agency)
+      };
+    }
+  }
+
   // Создание объекта жалобы
-  createComplaintObject(mainDocData, agency, relatedDocsData, complaintResult, documentId) {
+  createComplaintObject(mainDocData, agency, relatedDocsData, complaintResult, documentId, templatedComplaint = null) {
     return {
       id: uuidv4(),
       documentId: documentId || mainDocData.id,
       agency: agency,
       content: complaintResult.content,
+      templatedContent: templatedComplaint,
       relatedDocuments: relatedDocsData.map(d => d.id),
       status: 'draft',
       createdAt: new Date().toISOString(),
@@ -257,6 +330,115 @@ class ComplaintService {
     }
   }
 
+  // Получение пути к шаблону в зависимости от типа органа
+  getTemplatePath(agency) {
+    const templatesDir = path.join(__dirname, '..', 'templates');
+    
+    // Определяем шаблон в зависимости от типа органа
+    if (agency && agency.toLowerCase().includes('фссп')) {
+      return path.join(templatesDir, 'fssp-complaint.ejs');
+    } else {
+      return path.join(templatesDir, 'official-complaint.ejs');
+    }
+  }
+
+  // Подготовка данных для шаблона
+  prepareTemplateData(mainDocData, relatedDocsData, agency, complaintResult) {
+    const currentDate = new Date().toLocaleDateString('ru-RU');
+    
+    // Основные данные заявителя (можно расширить)
+    const applicantData = {
+      fullName: mainDocData.applicantFullName || 'Не указано',
+      address: mainDocData.applicantAddress || 'Не указано',
+      phone: mainDocData.applicantPhone || 'Не указано',
+      email: mainDocData.applicantEmail || 'Не указано'
+    };
+
+    // Данные документа
+    const documentData = {
+      date: mainDocData.documentDate || new Date().toISOString().split('T')[0],
+      number: mainDocData.documentNumber || 'Не указано',
+      agency: mainDocData.senderAgency || agency || 'Не указано',
+      summary: mainDocData.summary || 'Не указано',
+      violations: mainDocData.violations || []
+    };
+
+    // Связанные документы
+    const attachments = relatedDocsData.map(doc => {
+      return {
+        date: doc.documentDate || 'Не указана',
+        summary: doc.summary || 'Не указано'
+      };
+    });
+
+    // Подготавливаем данные для шаблона
+    return {
+      complaintDate: currentDate,
+      recipient: this.getRecipientForAgency(agency),
+      recipientPosition: this.getRecipientPositionForAgency(agency),
+      recipientAddress: this.getRecipientAddressForAgency(agency),
+      fsspDepartment: agency.includes('ФССП') ? agency : '',
+      applicantFullName: applicantData.fullName,
+      applicantAddress: applicantData.address,
+      applicantPhone: applicantData.phone,
+      applicantEmail: applicantData.email,
+      documentDate: documentData.date,
+      documentNumber: documentData.number,
+      documentAgency: documentData.agency,
+      documentSummary: documentData.summary,
+      violations: documentData.violations,
+      legalReferences: mainDocData.legalReferences || [],
+      requirements: mainDocData.requirements || [],
+      attachments: attachments,
+      complaintNumber: `ФГ-${new Date().getFullYear()}-${Math.floor(Math.random() * 1000)}`,
+      executiveProductionNumber: mainDocData.executiveProductionNumber || ''
+    };
+  }
+
+  // Получение получателя в зависимости от органа
+  getRecipientForAgency(agency) {
+    if (agency && agency.toLowerCase().includes('фссп')) {
+      return 'Федеральная служба судебных приставов';
+    } else {
+      return agency || 'Государственный орган';
+    }
+  }
+
+  // Получение должности получателя в зависимости от органа
+  getRecipientPositionForAgency(agency) {
+    if (agency && agency.toLowerCase().includes('фссп')) {
+      return 'Начальнику управления';
+    } else {
+      return 'Должностному лицу';
+    }
+  }
+
+  // Получение адреса получателя в зависимости от органа
+  getRecipientAddressForAgency(agency) {
+    // В реальной реализации здесь должна быть логика определения адреса
+    // в зависимости от конкретного органа. Пока возвращаем общий адрес.
+    return '127994, г. Москва, ул. Щепкина, д. 8';
+  }
+
+  // Рендеринг шаблона жалобы
+  async renderComplaintTemplate(agency, templateData) {
+    try {
+      const templatePath = this.getTemplatePath(agency);
+      
+      // Проверяем существование шаблона
+      if (!fs.existsSync(templatePath)) {
+        throw new Error(`Шаблон не найден: ${templatePath}`);
+      }
+
+      // Рендерим шаблон с данными
+      const renderedHtml = await ejs.renderFile(templatePath, { data: templateData });
+      return renderedHtml;
+    } catch (error) {
+      console.error('Ошибка рендеринга шаблона:', error);
+      throw error;
+    }
+  }
+
   /**
    * @deprecated Устаревший метод. Используйте generateUnifiedComplaint вместо него.
    * Сохранен для обратной совместимости.
@@ -285,12 +467,34 @@ class ComplaintService {
       return result;
     } catch (error) {
       console.error('Ошибка в generateComplaint:', error);
-      return {
-        content: this.generateFallbackComplaint(
+      // Пытаемся сгенерировать через шаблон
+      try {
+        const templateData = this.prepareTemplateData(
           complaintData.currentDocument || complaintData, 
-          complaintData.agency || "ФССП"
-        )
-      };
+          complaintData.relatedDocuments || [], 
+          complaintData.agency || "ФССП", 
+          {}
+        );
+        const templatedComplaint = await this.renderComplaintTemplate(
+          complaintData.agency || "ФССП", 
+          templateData
+        );
+        return {
+          content: this.generateFallbackComplaint(
+            complaintData.currentDocument || complaintData, 
+            complaintData.agency || "ФССП"
+          ),
+          templatedContent: templatedComplaint
+        };
+      } catch (templateError) {
+        console.error('Ошибка генерации шаблона в generateComplaint:', templateError);
+        return {
+          content: this.generateFallbackComplaint(
+            complaintData.currentDocument || complaintData, 
+            complaintData.agency || "ФССП"
+          )
+        };
+      }
     }
   }
 }

@@ -9,6 +9,7 @@ import { parseKarachayCherkessiaData } from "./specialCases/karachayCherkessiaPa
 import { parseKareliaData } from "./specialCases/kareliaParser.js";
 import { parseKomiData } from "./specialCases/komiParser.js";
 import { parseMordoviaData } from "./specialCases/mordoviaParser.js";
+import { parseYakutiaData } from "./specialCases/yakutiaParser.js";
 
 // Получаем __dirname в ES модуле
 const __filename = fileURLToPath(import.meta.url);
@@ -119,6 +120,9 @@ class FSSPParser {
       } else if (this.regionCode === 13) {
         rawData = parseMordoviaData(htmlContent);
         console.log("Применение специальной логики парсинга для Республики Мордовия");
+      } else if (this.regionCode === 14) {
+        rawData = parseYakutiaData(htmlContent);
+        console.log("Применение специальной логики парсинга для Республики Саха (Якутия)");
       } else {
         rawData = await page.evaluate((regionCode) => {
           const departments = [];
