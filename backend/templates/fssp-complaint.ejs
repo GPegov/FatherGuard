@@ -1,37 +1,8 @@
-<%
-  // Default values for all variables to prevent undefined errors
-  const currentDate = new Date().toLocaleDateString('ru-RU');
-  const complaintDate = data.complaintDate || currentDate;
-  const recipient = data.recipient || 'Федеральная служба судебных приставов';
-  const recipientPosition = data.recipientPosition || 'Начальнику управления';
-  const recipientAddress = data.recipientAddress || '';
-  const fsspDepartment = data.fsspDepartment || 'Федеральной службы судебных приставов';
-  const applicantFullName = data.applicantFullName || '';
-  const applicantAddress = data.applicantAddress || '';
-  const applicantPhone = data.applicantPhone || '';
-  const applicantEmail = data.applicantEmail || '';
-  const documentDate = data.documentDate || '';
-  const documentNumber = data.documentNumber || '';
-  const documentAgency = data.documentAgency || 'ФССП';
-  const documentSummary = data.documentSummary || '';
-  const violations = Array.isArray(data.violations) ? data.violations : [];
-  const legalReferences = Array.isArray(data.legalReferences) ? data.legalReferences : [
-    'Федеральный закон от 02.10.2007 № 229-ФЗ «Об исполнительном производстве»',
-    'Федеральный закон от 02.05.2006 № 59-ФЗ «О порядке рассмотрения обращений граждан Российской Федерации»',
-    'Постановление Правительства РФ от 26.01.2017 № 87 «Об утверждении Правил подачи и рассмотрения заявлений о возбуждении исполнительного производства»'
-  ];
-  const requirements = Array.isArray(data.requirements) ? data.requirements : [];
-  const attachments = Array.isArray(data.attachments) ? data.attachments : [];
-  const complaintNumber = data.complaintNumber || 'Б/Н';
-  const executiveProductionNumber = data.executiveProductionNumber || '';
-%>
-
 <!DOCTYPE html>
-<html lang="ru">
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Жалоба в <%= recipient %></title>
+    <title>Жалоба в ФССП</title>
     <style>
         body {
             font-family: 'Times New Roman', Times, serif;
@@ -40,142 +11,89 @@
             margin: 2cm;
         }
         .header {
-            text-align: right;
-            margin-bottom: 1cm;
-        }
-        .recipient {
-            text-align: left;
-            margin-bottom: 1cm;
-        }
-        .title {
             text-align: center;
-            font-weight: bold;
-            margin: 1cm 0;
-        }
-        .subject {
-            text-align: center;
-            font-weight: bold;
-            text-decoration: underline;
             margin-bottom: 1cm;
         }
-        .content {
-            text-align: justify;
-            margin-bottom: 1cm;
-        }
-        .requirements {
-            margin: 1cm 0;
-        }
-        .attachments {
-            margin: 1cm 0;
+        .section {
+            margin-bottom: 0.5cm;
         }
         .signature {
             margin-top: 1cm;
-            text-align: right;
-        }
-        .page-break {
-            page-break-after: always;
-        }
-        h1, h2, h3 {
-            font-weight: bold;
-        }
-        ul, ol {
-            margin: 0.5cm 0;
-            padding-left: 1cm;
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <p><%= applicantFullName %><br>
-        <%= applicantAddress %><br>
-        Тел.: <%= applicantPhone %><br>
-        Email: <%= applicantEmail %><br>
-        <%= complaintDate %> г.</p>
+        <h2>В <%= data.recipient %></h2>
+        <h3><%= data.recipientPosition %></h3>
+        <p><%= data.recipientAddress %></p>
     </div>
 
-    <div class="recipient">
-        <p><%= recipientPosition %> <%= fsspDepartment %><br>
-        <%= recipientAddress %></p>
+    <div class="section">
+        <p>От: <%= data.applicantFullName %></p>
+        <p>Адрес: <%= data.applicantAddress %></p>
+        <p>Телефон: <%= data.applicantPhone %></p>
+        <p>Email: <%= data.applicantEmail %></p>
     </div>
 
-    <div class="title">
-        <h1>ЖАЛОБА</h1>
+    <div class="section">
+        <h3>Заявление</h3>
+        <p><%= data.documentSummary %></p>
     </div>
 
-    <div class="subject">
-        <p>на неправомерные действия (бездействие) судебного пристава-исполнителя</p>
+    <% if (data.executiveProductionNumber) { %>
+    <div class="section">
+        <p>Исполнительное производство № <%= data.executiveProductionNumber %></p>
     </div>
+    <% } %>
 
-    <div class="content">
-        <p>Я, нижеподписавшийся(аяся) <%= applicantFullName %>, проживающий(ая) по адресу: <%= applicantAddress %>, 
-        в <%= complaintDate %> года получил(а) документ от <%= documentAgency %> № <%= documentNumber %> от <%= documentDate %>, 
-        суть которого: <%= documentSummary %>.</p>
-
-        <% if (executiveProductionNumber) { %>
-        <p>Указанное действие касается исполнительного производства № <%= executiveProductionNumber %>.</p>
-        <% } %>
-
-        <% if (violations && violations.length > 0) { %>
-        <p>Указанный документ содержит следующие нарушения:</p>
+    <% if (data.violations && data.violations.length > 0) { %>
+    <div class="section">
+        <h4>Выявленные нарушения:</h4>
         <ul>
-            <% violations.forEach(function(violation) { %>
+            <% data.violations.forEach(function(violation) { %>
             <li><%= violation %></li>
             <% }); %>
         </ul>
-        <% } %>
+    </div>
+    <% } %>
 
-        <% if (legalReferences && legalReferences.length > 0) { %>
-        <p>Нарушения основаны на следующих нормах законодательства:</p>
+    <% if (data.legalReferences && data.legalReferences.length > 0) { %>
+    <div class="section">
+        <h4>Ссылки на законодательство:</h4>
         <ul>
-            <% legalReferences.forEach(function(ref) { %>
-            <li><%= ref %></li>
+            <% data.legalReferences.forEach(function(reference) { %>
+            <li><%= reference %></li>
             <% }); %>
         </ul>
-        <% } %>
     </div>
+    <% } %>
 
-    <div class="requirements">
-        <p>На основании вышеизложенного и руководствуясь статьями 3, 12, 18 Федерального закона от 02.05.2006 № 59-ФЗ 
-        «О порядке рассмотрения обращений граждан Российской Федерации», а также статьей 123 Федерального закона 
-        от 02.10.2007 № 229-ФЗ «Об исполнительном производстве», прошу:</p>
-        <ol>
-            <% if (requirements && requirements.length > 0) { %>
-            <% requirements.forEach(function(req) { %>
-            <li><%= req %></li>
+    <% if (data.requirements && data.requirements.length > 0) { %>
+    <div class="section">
+        <h4>Прошу:</h4>
+        <ul>
+            <% data.requirements.forEach(function(requirement) { %>
+            <li><%= requirement %></li>
             <% }); %>
-            <% } else { %>
-            <li>Провести проверку по обстоятельствам изложенного в настоящей жалобе.</li>
-            <li>Принять меры по устранению выявленных нарушений.</li>
-            <li>Предоставить письменный ответ с указанием принятых мер в течение 30 дней со дня регистрации настоящей жалобы.</li>
-            <% } %>
-        </ol>
+        </ul>
     </div>
+    <% } %>
 
-    <% if (attachments && attachments.length > 0) { %>
-    <div class="attachments">
-        <p>Приложения:</p>
-        <ol>
-            <% attachments.forEach(function(attachment, index) { %>
-            <li><%= attachment %></li>
+    <% if (data.attachments && data.attachments.length > 0) { %>
+    <div class="section">
+        <h4>Приложения:</h4>
+        <ul>
+            <% data.attachments.forEach(function(attachment, index) { %>
+            <li><%= index + 1 %>. <%= attachment.summary %> от <%= attachment.date %></li>
             <% }); %>
-        </ol>
+        </ul>
     </div>
     <% } %>
 
     <div class="signature">
-        <p>Подпись: _________________ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <%= applicantFullName %></p>
+        <p><%= data.complaintDate %></p>
+        <p>___________________ /<%= data.applicantFullName %>/</p>
     </div>
-
-    <% if (attachments && attachments.length > 0) { %>
-    <div class="page-break"></div>
-    <h2>Приложения к жалобе № <%= complaintNumber %> от <%= complaintDate %> г.</h2>
-    
-    <% attachments.forEach(function(attachment, index) { %>
-    <div>
-        <h3>Приложение № <%= index + 1 %></h3>
-        <p><%= attachment %></p>
-    </div>
-    <% }); %>
-    <% } %>
 </body>
 </html>

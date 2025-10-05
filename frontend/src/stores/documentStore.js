@@ -32,7 +32,7 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const currentDocument = ref({
-    id: null, // Не устанавливаем ID сразу
+    id: uuidv4(), // Устанавливаем ID сразу при создании
     date: new Date().toISOString().split("T")[0],
     agency: "",
     originalText: "",
@@ -130,7 +130,7 @@ export const useDocumentStore = defineStore("document", () => {
 
   const resetCurrentDocument = () => {
     currentDocument.value = {
-      id: null, // Не устанавливаем ID сразу
+      id: uuidv4(), // Устанавливаем новый ID при сбросе
       date: new Date().toISOString().split("T")[0],
       agency: "",
       originalText: "",
@@ -229,20 +229,42 @@ export const useDocumentStore = defineStore("document", () => {
           : "";
 
       let savedDocument;
-      // Проверяем, является ли ID "истинным" значением для определения PUT/POST
+      // Проверяем, существует ли документ на сервере (поиск по ID)
       if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
-        
-        const { data } = await axios.put(
-          `${API_BASE}/api/documents/${currentDocument.value.id}`,
-          currentDocument.value
-        );
-        savedDocument = data;
+        // Проверим, существует ли документ с таким ID на сервере
+        try {
+          await axios.get(`${API_BASE}/api/documents/${currentDocument.value.id}`);
+          // Если документ существует, обновляем его
+          const { data } = await axios.put(
+            `${API_BASE}/api/documents/${currentDocument.value.id}`,
+            currentDocument.value
+          );
+          savedDocument = data;
+        } catch (error) {
+          // Если документ не существует, создаем новый
+          console.log("Документ с ID не найден, создание нового документа");
+          const newDocToSave = {
+            ...currentDocument.value,
+            createdAt:
+              currentDocument.value.createdAt || new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            originalText:
+              currentDocument.value.originalText !== undefined
+                ? currentDocument.value.originalText
+                : "",
+          };
+          const { data } = await axios.post(
+            `${API_BASE}/api/documents`,
+            newDocToSave
+          );
+          savedDocument = data;
+        }
       } else {
-        console.log("Создание нового документа");
-        // Убедимся, что новый документ имеет правильную структуру
+        // Если ID не определен, создаем новый документ
+        console.log("Создание нового документа с новым ID");
         const newDocToSave = {
           ...currentDocument.value,
-          id: typeof currentDocument.value.id === 'string' ? currentDocument.value.id : uuidv4(),
+          id: uuidv4(), // Генерируем новый UUID
           createdAt:
             currentDocument.value.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -359,7 +381,8 @@ export const useDocumentStore = defineStore("document", () => {
                   documentDate: analysis.sentDate || attachment.documentDate || "",
                   senderAgency: analysis.senderAgency || attachment.senderAgency || "",
                   summary: analysis.summary || attachment.summary || "",
-                  keySentences: analysis.keySentences || attachment.keySentences || []
+                  keySentences: analysis.keySentences || attachment.keySentences || [],
+                  text: attachment.text || ""  // Сохраняем исходный текст вложения
                 };
               }
               return attachment;
@@ -374,17 +397,22 @@ export const useDocumentStore = defineStore("document", () => {
       } 
       // Если у документа нет ID (новый документ), анализируем его напрямую по тексту
       else {
-        // Подготавливаем данные для анализа
-        const documentData = {
-          originalText: currentDocument.value.originalText || "",
-          attachments: currentDocument.value.attachments || []
-        };
+        const textToAnalyze = (currentDocument.value.originalText || "").trim();
+        
+        if (textToAnalyze === "") {
+          error.value = "Нет текста для анализа";
+          isAnalyzing.value = false;
+          console.log("Анализ нового документа: текст =", JSON.stringify(textToAnalyze));
+          return;
+        }
+
+        console.log("Анализ нового документа: текст =", JSON.stringify(textToAnalyze));
 
         // Вызываем бэкенд для анализа текста напрямую
         const { data } = await axios.post(
           `${API_BASE}/api/documents/analyze`,
           {
-            text: documentData.originalText,
+            text: textToAnalyze,
             instructions: "",
             strictMode: false
           }
@@ -410,7 +438,12 @@ export const useDocumentStore = defineStore("document", () => {
         return currentDocument.value;
       }
     } catch (err) {
+
       console.error("Ошибка анализа документа:", err);
+      console.error("Статус:", err.response?.status);
+      console.error("Данные ошибки:", err.response?.data);
+
+
       currentDocument.value.analysisStatus = "failed";
       // Для новых документов не вызываем saveDocument в случае ошибки
       if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {

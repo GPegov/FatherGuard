@@ -96,10 +96,25 @@
             <input v-model="document.senderAgency" class="form-input" list="agencies" />
           </div>
         </div>
-
+      </form>
         <!-- Вложения -->
-        <div class="form-section" v-if="document.attachments?.length">
+        <div class="form-section">
           <h2>Вложенные документы</h2>
+          
+          <!-- Отладочная информация -->
+          <div class="debug-info" style="background: #e6f7ff; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #91d5ff;">
+            <p>Количество вложений в документе: {{ document.attachments ? document.attachments.length : 0 }}</p>
+            <p v-if="!document.attachments || document.attachments.length === 0">Вложений нет</p>
+            <div v-for="(attachment, idx) in document.attachments" :key="'debug-' + idx">
+              <p>Вложение {{ idx + 1 }}: {{ attachment.name }} ({{ attachment.type }})</p>
+              <p>Размер: {{ formatFileSize(attachment.size) }}, Текст длина: {{ (attachment.text || '').length }}</p>
+              <p v-if="!attachment.text || attachment.text.trim() === ''" style="color: red; font-weight: bold;">ПРЕДУПРЕЖДЕНИЕ: Вложение не содержит текста!</p>
+            </div>
+          </div>
+          
+          <!-- Отображаем секцию вложений только если есть вложения -->
+          <div v-if="document.attachments && document.attachments.length > 0">
+          
           <div v-for="(attachment, idx) in document.attachments" :key="attachment.id || idx"
             class="attachment-analysis">
             <div class="attachment-header">
@@ -107,29 +122,30 @@
               <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
             </div>
 
-            <div v-if="attachment.analysis" class="attachment-details">
-              <div class="detail-row">
-                <span class="detail-label">Тип документа:</span>
-                <span>{{ attachment.analysis.documentType || 'Не указан' }}</span>
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Дата отправления:</span>
-                <input type="date" v-model="attachment.documentDate" class="form-input small">
-              </div>
-              <div class="detail-row">
-                <span class="detail-label">Ведомство-отправитель:</span>
-                <input v-model="attachment.senderAgency" class="form-input small" list="agencies">
-              </div>
-              <div class="detail-row full-width">
-                <span class="detail-label">Краткая суть:</span>
-                <textarea v-model="attachment.summary" class="form-textarea" rows="3"></textarea>
+            <div class="attachment-details">
+              <div v-if="attachment.analysis" class="analysis-details">
+                <div class="detail-row">
+                  <span class="detail-label">Тип документа:</span>
+                  <span>{{ attachment.analysis.documentType || 'Не указан' }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Дата отправления:</span>
+                  <input type="date" v-model="attachment.documentDate" class="form-input small">
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Ведомство-отправитель:</span>
+                  <input v-model="attachment.senderAgency" class="form-input small" list="agencies">
+                </div>
+                <div class="detail-row full-width">
+                  <span class="detail-label">Краткая суть:</span>
+                  <textarea v-model="attachment.summary" class="form-textarea" rows="3"></textarea>
+                </div>
               </div>
               <div class="detail-row full-width">
                 <span class="detail-label">Полный текст:</span>
-                <textarea v-model="attachment.text" class="form-textarea" rows="6" readonly></textarea>
+                <textarea v-model="attachment.text" class="form-textarea" rows="6" readonly="false"></textarea>
               </div>
-
-              <div class="key-paragraphs">
+              <div v-if="attachment.analysis" class="key-paragraphs">
                 <h4>Важные предложения:</h4>
                 <div v-for="(sentence, index) in attachment.keySentences" :key="index" class="paragraph-item">
                   <textarea v-model="attachment.keySentences[index]" class="form-textarea" rows="2"></textarea>
@@ -143,9 +159,6 @@
                   + Добавить предложение
                 </button>
               </div>
-            </div>
-            <div v-else class="no-analysis">
-              <p>Анализ не выполнен</p>
             </div>
           </div>
         </div>
@@ -164,7 +177,8 @@
             {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
           </button>
         </div>
-      </form>
+      </div>
+      
 
       <!-- Блок статуса -->
       <div class="status-section">
@@ -199,14 +213,16 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import { useAIStore } from '@/stores/aiStore'
 import { useDocumentStore } from '@/stores/documentStore'
+import FileUpload from '@/components/common/FileUpload.vue' // Добавляем импорт компонента FileUpload
 
 const router = useRouter()
+const route = useRoute() // Добавляем useRoute для получения параметров маршрута
 const aiStore = useAIStore()
 const documentStore = useDocumentStore()
 
@@ -214,6 +230,7 @@ const isLoading = ref(true)
 const isSaving = ref(false)
 const isAnalyzing = ref(false)
 const error = ref(null)
+const fileUploadError = ref(null)
 
 const document = ref({
   ...documentStore.currentDocument
@@ -221,34 +238,65 @@ const document = ref({
 
 const agenciesList = computed(() => documentStore.agenciesList)
 
+// Следим за изменениями в currentDocument в хранилище и обновляем локальный документ
+watch(
+  () => documentStore.currentDocument,
+  (newCurrentDocument) => {
+    console.log('Обнаружено изменение в currentDocument в хранилище:', newCurrentDocument);
+    document.value = {
+      ...newCurrentDocument,
+      attachments: newCurrentDocument.attachments?.map(att => ({
+        ...att,
+        analysis: att.analysis || null
+      })) || []
+    };
+    console.log('Локальный документ обновлен, вложения:', document.value.attachments);
+  },
+  { deep: true }
+);
+
+// Обработка загрузки файлов
+const handleFilesSelected = async (files) => {
+  console.log('Выбраны файлы для загрузки:', files);
+  if (files.length > 0) {
+    try {
+      // Загружаем файлы и обновляем документ
+      const result = await documentStore.uploadFiles(files);
+      console.log('Файлы успешно загружены, результат:', result);
+      fileUploadError.value = null;
+    } catch (err) {
+      console.error('Ошибка загрузки файлов:', err);
+      fileUploadError.value = 'Ошибка загрузки файлов: ' + err.message;
+    }
+  }
+};
+
 onMounted(async () => {
   try {
-    console.log('Инициализация компонента DocumentReview');
+    console.log('Инициализация компонента DocumentReview, текущий document.value.id:', document.value.id);
     await aiStore.checkServerStatus();
 
-    // Проверяем, есть ли текст для анализа
-    const hasOriginalText = document.value.originalText && document.value.originalText.trim().length > 0;
-    const hasAttachmentsWithText = document.value.attachments?.some(att => att.text && att.text.trim().length > 0);
-    
-    console.log('Проверка текста при инициализации:', { hasOriginalText, hasAttachmentsWithText, document: document.value });
-    
-    if (!document.value.id && !hasOriginalText && !hasAttachmentsWithText) {
-      console.log('Нет документа для анализа, перенаправление на главную');
-      router.push('/');
-      return;
-    }
-
-    if (document.value.id && document.value.id !== 'new') {
-      console.log('Загрузка документа по ID:', document.value.id);
-      await documentStore.fetchDocumentById(document.value.id);
-      document.value = {
-        ...documentStore.currentDocument,
-        attachments: documentStore.currentDocument.attachments?.map(att => ({
-          ...att,
-          analysis: att.analysis || null
-        })) || []
-      };
-      console.log('Документ загружен:', document.value);
+    // Проверяем, есть ли ID у документа
+    const routeId = document.value.id;
+    if (routeId && routeId !== 'new') {
+      console.log('Проверка наличия документа по ID:', routeId);
+      
+      // Попробуем загрузить документ с сервера
+      try {
+        await documentStore.fetchDocumentById(routeId);
+        document.value = {
+          ...documentStore.currentDocument,
+          attachments: documentStore.currentDocument.attachments?.map(att => ({
+            ...att,
+            analysis: att.analysis || null
+          })) || []
+        };
+        console.log('Документ загружен с сервера:', document.value, 'Количество вложений:', document.value.attachments?.length);
+      } catch (fetchErr) {
+        console.log('Документ с ID не найден на сервере, используем локальный документ:', document.value);
+        // Если документ не найден на сервере, продолжаем с локальным документом
+        // который уже был инициализирован при создании store
+      }
     }
   } catch (err) {
     console.error('Ошибка загрузки:', err);
@@ -290,8 +338,11 @@ const analyzeDocument = async () => {
   try {
     // Обновляем currentDocument в хранилище перед анализом
     documentStore.currentDocument = document.value
-    const updatedDocument = await documentStore.analyzeDocument()
+    
+    // Выполняем анализ документа
+    const updatedDocument = await documentStore.analyzeDocument(document.value.id)
 
+    // Обновляем локальный документ результатами анализа
     document.value = {
       ...updatedDocument
     }
@@ -309,13 +360,18 @@ const analyzeDocument = async () => {
 const regenerateSummary = async () => {
   isAnalyzing.value = true
   try {
-    // Вызываем бэкенд для генерации краткой сути
+    // Обновляем currentDocument в хранилище перед перегенерацией
+    documentStore.currentDocument = document.value;
+    
+    // Вызываем бэкенд для генерации краткой сути только для основного текста  
     const response = await axios.post('http://localhost:3001/api/documents/analyze', {
-      text: document.value.originalText
+      text: document.value.originalText || "",
+      instructions: "",
+      strictMode: false
     });
     const analysis = response.data;
     
-    // Обновляем все поля анализа
+    // Обновляем поля анализа основного документа
     document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
     document.value.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : [];
     document.value.violations = Array.isArray(analysis.violations) ? analysis.violations : [];
@@ -408,12 +464,19 @@ const getStatusText = (status) => {
 }
 
 .attachment-details {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 15px;
   margin-top: 15px;
   padding: 15px;
   background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.analysis-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 15px;
+  margin-bottom: 15px;
+  padding: 15px;
+  background: #e8f4f8;
   border-radius: 4px;
 }
 
@@ -606,10 +669,10 @@ const getStatusText = (status) => {
 }
 
 .attachment-details {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-  gap: 15px;
   margin-top: 15px;
+  padding: 15px;
+  background: #f5f5f5;
+  border-radius: 4px;
 }
 
 .detail-row {

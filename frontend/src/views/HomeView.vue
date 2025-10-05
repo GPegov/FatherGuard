@@ -87,6 +87,18 @@ const submitData = async () => {
     // Обновляем документ в хранилище
     documentStore.currentDocument = newDocument;
 
+    // Если есть файлы для загрузки, сначала загружаем их
+    if (files.value.length > 0) {
+      try {
+        // Загружаем файлы и обновляем документ
+        await documentStore.uploadFiles(files.value);
+      } catch (uploadError) {
+        console.error('Ошибка загрузки файлов:', uploadError);
+        errorMessage.value = 'Ошибка загрузки файлов: ' + uploadError.message;
+        return;
+      }
+    }
+
     // Переходим к предпросмотру без сохранения документа
     // Передаем временный ID для соответствия маршруту
     router.push({ 

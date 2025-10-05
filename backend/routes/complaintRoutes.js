@@ -32,12 +32,12 @@ export default function complaintRoutes({ db }) {
 
       if (format === 'txt') {
         res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.txt`);
+        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}_${complaint.id}.txt`);
         res.send(complaint.content);
       } 
       else if (format === 'html') {
         res.setHeader('Content-Type', 'text/html');
-        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.html`);
+        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}_${complaint.id}.html`);
         res.send(contentToUse);
       }
       else if (format === 'doc') {
@@ -58,7 +58,7 @@ export default function complaintRoutes({ db }) {
 
         const buffer = await Packer.toBuffer(docxDocument);
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}.docx`);
+        res.setHeader('Content-Disposition', `attachment; filename=complaint_${complaint.agency}_${complaint.id}.docx`);
         res.send(buffer);
       }
       else {

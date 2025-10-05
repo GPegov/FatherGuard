@@ -210,6 +210,7 @@ class AIService {
         const mainResult = await this.queryLocalModel(promptData, {
           temperature: 0.4,
           format: "json",
+          taskType: "legal_analysis"
         });
 
         console.log("Main model response received:", typeof mainResult);
@@ -451,20 +452,68 @@ ${processedText || ""}
       
       console.log("Sending attachment text:", processedText.substring(0, 200) + "...");
       
-      // Анализируем вложение через AI-сервис, используя тот же промпт, что и для основного документа
-      console.log("Вызов analyzeLegalText для анализа вложения");
-      const analysisResult = await this.analyzeLegalText(processedText, instructions, false);
-      console.log("Результат анализа вложения:", analysisResult);
+      // Анализируем вложение через AI-сервис, используя специализированный промпт для официальных документов
+      console.log("Вызов queryLocalModel для анализа вложения с использованием специализированного промпта");
+      const promptData = this.buildAttachmentAnalysisPrompt(processedText, instructions);
+      const analysisResult = await this.queryLocalModel(promptData, {
+        temperature: 0.4,
+        format: "json",
+        taskType: "attachment_analysis"
+      });
+
+      const parsedResult = this.safeParseResponse(analysisResult);
+      console.log("Parsed attachment analysis result:", parsedResult);
+
+      // Извлекаем основную информацию из результата
+      const documentType = parsedResult.documentType || parsedResult.type || "Документ";
+      const summary = parsedResult.summary || parsedResult.content || "Не удалось сгенерировать краткую суть";
+      const sentDate = parsedResult.sentDate || parsedResult.documentDate || this.extractDate(processedText) || "";
+      const senderAgency = parsedResult.senderAgency || parsedResult.agency || this.extractAgency(processedText) || "";
+      const violations = Array.isArray(parsedResult.violations) 
+        ? parsedResult.violations
+        : [];
+
+      // Дополнительный запрос с температурой 0.1 для извлечения важных предложений из официального документа
+      console.log("=== НАЧАЛО ИЗВЛЕЧЕНИЯ ВАЖНЫХ ПРЕДЛОЖЕНИЙ ИЗ ВЛОЖЕНИЯ ===");
+      const keySentencesPrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст официального документа (ответ органа на жалобу, постановление, уведомление и т.п.) и предоставь массив из 5 самых важных предложений, касающихся сути ответа, требований, ограничений или изменений в статусе.
+
+Текст официального документа для анализа:
+${processedText || ""}
+
+Верни только массив предложений в формате JSON:
+[
+  "предложение 1",
+  "предложение 2",
+  "предложение 3",
+  "предложение 4",
+  "предложение 5"
+]`;
+
+      console.log("Key sentences prompt for attachment built, calling queryLocalModel with temperature 0.1");
+      const keySentencesResult = await this.queryLocalModel(keySentencesPrompt, {
+        temperature: 0.1,
+        format: "json",
+        taskType: "attachment_analysis"
+      });
+
+      const parsedKeySentencesResult = this.safeParseResponse(keySentencesResult);
+      console.log("Parsed key sentences result for attachment:", parsedKeySentencesResult);
+
+      // Извлекаем важные предложения из результата
+      const keySentences = Array.isArray(parsedKeySentencesResult) 
+        ? parsedKeySentencesResult.filter((p) => p && p.length > 5)
+        : (Array.isArray(parsedResult.keySentences) 
+          ? parsedResult.keySentences.filter((p) => p && p.length > 5)
+          : []);
 
       // Формируем результат в формате вложения
       const attachmentResult = {
-        documentType: "Документ", // Будет определен моделью
-        sentDate: analysisResult.documentDate || "",
-        senderAgency: analysisResult.senderAgency || "",
-        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
-        keySentences: Array.isArray(analysisResult.keySentences) 
-          ? analysisResult.keySentences.filter((p) => p && p.length > 5)
-          : []
+        documentType,
+        sentDate,
+        senderAgency,
+        summary,
+        keySentences,
+        violations: violations // также сохраняем нарушения, обнаруженные в официальном документе
       };
       
       console.log("Возвращаем результат анализа вложения:", attachmentResult);
@@ -478,6 +527,7 @@ ${processedText || ""}
         senderAgency: "",
         summary: "Error analyzing attachment: " + error.message,
         keySentences: [],
+        violations: []
       };
     }
   }
@@ -509,15 +559,15 @@ ${processedText || ""}
     console.log("Instructions:", instructions);
     console.log("Strict mode:", strictMode);
     
-    // Формируем строку промпта для анализа документа
-    let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
-- keySentences: массив из 5 самых важных предложений из документа
+    // Формируем строку промпта для анализа пояснений клиента
+    let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст - это пояснение клиента, в котором он описывает ситуацию с его слов. Предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть пояснения клиента (2-3 предложения) - изложи суть от лица клиента, например: "Я подал прошение", "в отношении меня завели исполнительное производство"
+- keySentences: массив из 5 самых важных предложений из пояснений клиента
 - violations: массив выявленных нарушений законодательства (если есть)
-- documentDate: дата документа (если указана)
-- senderAgency: ведомство-отправитель (если указано)
+- documentDate: дата, упомянутая в пояснениях (если указана)
+- senderAgency: ведомство, упомянутое в пояснениях как нарушитель (если указано)
 
-Текст документа для анализа:
+Текст пояснений клиента для анализа:
 ${text || ""}`;
     
     // Добавляем инструкции, если они есть
@@ -538,6 +588,37 @@ ${instructions}`;
     console.log("Сформированный prompt (первые 200 символов):", prompt.substring(0, 200));
     console.log("Общая длина prompt:", prompt.length);
     console.log("=== КОНЕЦ BUILD ANALYSIS PROMPT ===");
+    return prompt;
+  }
+
+  buildAttachmentAnalysisPrompt(text, instructions) {
+    console.log("=== НАЧАЛО BUILD ATTACHMENT ANALYSIS PROMPT ===");
+    console.log("Text length:", text ? text.length : 0);
+    console.log("Instructions:", instructions);
+    
+    // Формируем строку промпта для анализа официального документа (вложения)
+    let prompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый официальный документ (ответ органа на жалобу, постановление, уведомление и т.п.) и предоставь структурированный ответ в формате JSON с полями:
+- documentType: тип документа (постановление, уведомление, ответ на жалобу и т.д.)
+- summary: краткая суть официального документа (2-3 предложения) - изложи суть от лица получателя документа, например: "Отказано в удовлетворении жалобы", "Производство приостановлено"
+- keySentences: массив из 5 самых важных предложений из официального документа
+- violations: массив выявленных нарушений законодательства в действиях/бездействии органа (если есть)
+- sentDate: дата документа (если указана)
+- senderAgency: ведомство-отправитель (если указано)
+
+Текст официального документа для анализа:
+${text || ""}`;
+    
+    // Добавляем инструкции, если они есть
+    if (instructions && instructions.trim()) {
+      prompt = `${prompt}
+
+ДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:
+${instructions}`;
+    }
+    
+    console.log("Сформированный prompt для анализа вложения (первые 200 символов):", prompt.substring(0, 200));
+    console.log("Общая длина prompt:", prompt.length);
+    console.log("=== КОНЕЦ BUILD ATTACHMENT ANALYSIS PROMPT ===");
     return prompt;
   }
 
@@ -601,16 +682,30 @@ ${instructions}`;
       // Формируем промпт в зависимости от типа задачи
       let basePrompt = "";
       
-      // Для анализа документов передаем только текст пользователя
+      // Для анализа пояснений клиента передаем только текст пользователя
       if (task === 'legal_analysis') {
-        basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст документа и предоставь структурированный ответ в формате JSON с полями:
-- summary: краткая суть документа (2-3 предложения) - изложи суть от лица адресата документа (отца), например: "Вы подали прошение", "в отношении Вас завели исполнительное производство"
-- keySentences: массив из 5 самых важных предложений из документа
+        basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый текст - это пояснение клиента, в котором он описывает ситуацию с его слов. Предоставь структурированный ответ в формате JSON с полями:
+- summary: краткая суть пояснения клиента (2-3 предложения) - изложи суть от лица клиента, например: "Я подал прошение", "в отношении меня завели исполнительное производство"
+- keySentences: массив из 5 самых важных предложений из пояснений клиента
 - violations: массив выявленных нарушений законодательства (если есть)
-- documentDate: дата документа (если указана)
+- documentDate: дата, упомянутая в пояснениях (если указана)
+- senderAgency: ведомство, упомянутое в пояснениях как нарушитель (если указано)
+
+Текст пояснений клиента для анализа:
+${text || ""}`;
+      }
+      
+      // Для анализа официальных документов (вложений) используем специализированный промпт
+      else if (task === 'attachment_analysis') {
+        basePrompt = `Выступи в роли опытного юриста. Тщательно проанализируй нижеприведённый официальный документ (ответ органа на жалобу, постановление, уведомление и т.п.) и предоставь структурированный ответ в формате JSON с полями:
+- documentType: тип документа (постановление, уведомление, ответ на жалобу и т.д.)
+- summary: краткая суть официального документа (2-3 предложения) - изложи суть от лица получателя документа, например: "Отказано в удовлетворении жалобы", "Производство приостановлено"
+- keySentences: массив из 5 самых важных предложений из официального документа
+- violations: массив выявленных нарушений законодательства в действиях/бездействии органа (если есть)
+- sentDate: дата документа (если указана)
 - senderAgency: ведомство-отправитель (если указано)
 
-Текст документа для анализа:
+Текст официального документа для анализа:
 ${text || ""}`;
       }
       

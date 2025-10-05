@@ -85,27 +85,24 @@ export default function documentRoutes({ db, upload }) {
     for (const file of files) {
       try {
         console.log('Обработка файла:', file);
+        console.log('MIME-тип файла:', file.mimetype);
         const fileContent = await extractFileContent(file);
-        console.log('Извлеченный текст из файла:', fileContent ? fileContent.text.substring(0, 100) + '...' : 'null');
+        console.log('Извлеченный текст из файла:', fileContent ? fileContent.substring(0, 100) + '...' : 'null');
+        console.log('Длина текста файла:', fileContent ? fileContent.length : 0);
         
-        // Комбинируем пользовательский текст и текст из файла
-        // Если пользовательский текст пуст, используем только текст из файла
-        // Если текст из файла пуст, используем только пользовательский текст
-        const combinedText = [validUserText, fileContent].filter(Boolean).join('');
-        console.log('Комбинированный текст:', combinedText ? combinedText.substring(0, 100) + '...' : 'null');
-
+        console.log('Создание вложения с текстом:', fileContent ? fileContent.substring(0, 100) + '...' : 'null (length: ' + (fileContent ? fileContent.length : 0) + ')');
         const newDocument = {
           id: uuidv4(),
           date: new Date().toISOString().split('T')[0],
           agency: '',
-          originalText: combinedText || '', 
+          originalText: validUserText, 
           summary: '',
           documentDate: '',
           senderAgency: '',
           keySentences: [],
           attachments: [{
             id: uuidv4(),
-            name: file.originalname,
+            name: Buffer.from(file.originalname, 'latin1').toString('utf8'), // Исправляем кодировку
             type: file.mimetype,
             size: file.size,
             path: `/uploads/${file.filename}`,
@@ -144,7 +141,7 @@ export default function documentRoutes({ db, upload }) {
           // Не прерываем выполнение, просто логируем ошибку
         }
       } catch (fileError) {
-        console.error(`Ошибка обработки файла ${file.originalname}:`, fileError);
+        console.error(`Ошибка обработки файла ${Buffer.from(file.originalname, 'latin1').toString('utf8')}:`, fileError);
         continue;
       }
     }
@@ -643,6 +640,7 @@ export default function documentRoutes({ db, upload }) {
 
   // Анализ произвольного текста
   router.post('/analyze', async (req, res) => {
+    console.log('Получен req.body:', req.body);
     try {
       // Корректная обработка типа для strictMode
       let { text, instructions = "", strictMode = false } = req.body;

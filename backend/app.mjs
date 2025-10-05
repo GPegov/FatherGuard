@@ -83,7 +83,7 @@ async function startServer() {
         allowedHeaders: ["Content-Type", "Authorization"],
       })
     );
-    app.use(express.json({ type: 'application/json; charset=utf-8' }));
+    app.use(express.json({ limit: '10mb' }));
     app.use("/uploads", express.static(uploadDir));
     
     // Установка заголовков для правильной кодировки

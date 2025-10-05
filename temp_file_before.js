@@ -25,45 +25,11 @@ class ComplaintService {
   async generateUnifiedComplaint(db, requestData) {
     try {
       console.log('Генерация жалобы из данных:', requestData);
-      console.log('requestData.agency:', requestData.agency);
-      console.log('requestData.data?.agency:', requestData.data?.agency);
-      console.log('requestData.options?.agency:', requestData.options?.agency);
       
-      // Проверим все возможные значения, связанные с agency
-      console.log('Все ключи requestData:', Object.keys(requestData));
-      console.log('Полный requestData.agency typeof:', typeof requestData.agency);
-      
-      // Поддержка разных форматов запроса
-      // Определяем agency из разных возможных источников
-      let agency = requestData.agency || requestData.data?.agency || requestData.options?.agency;
-      console.log('Итоговое значение agency:', agency);
-      
-      // Если агентство все еще не определено, используем запасной вариант
-      if (!agency) {
-        console.log('Агентство не найдено в обычных полях, ищем в других возможных местах...');
-        
-        // Попробуем найти агентство в других возможных местах
-        if (requestData.documentId && db.data.documents) {
-          const doc = db.data.documents.find(d => d.id === requestData.documentId);
-          if (doc && doc.agency) {
-            agency = doc.agency;
-            console.log('Агентство найдено из документа:', agency);
-          }
-        }
-      }
-      
-      // Проверим, если agency - это объект, возможно, нужно извлечь значение из него
-      if (agency && typeof agency === 'object' && agency.value) {
-        agency = agency.value;
-        console.log('Извлечено agency из объекта:', agency);
-      }
-      
-      const { documentId, currentDocument, relatedDocuments } = requestData;
+      const { documentId, agency, currentDocument, relatedDocuments } = requestData;
       
       // Проверка обязательных полей
       if (!agency) {
-        console.error('Агентство не найдено ни в одном источнике!');
-        console.error('Полный requestData:', requestData);
         throw new Error('Не указано ведомство');
       }
 
@@ -198,10 +164,21 @@ class ComplaintService {
     } catch (aiError) {
       console.error('Ошибка AI генерации:', aiError);
       console.error('Стек ошибки:', aiError.stack);
-      // Возвращаем запасной вариант
-      return {
-        content: this.generateFallbackComplaint(mainDocData, agency)
-      };
+      // Генерируем запасной вариант через шаблон
+      const templateData = this.prepareTemplateData(mainDocData, relatedDocsData, agency, {});
+      try {
+        const templatedComplaint = await this.renderComplaintTemplate(agency, templateData);
+        return {
+          content: this.generateFallbackComplaint(mainDocData, agency),
+          templatedContent: templatedComplaint
+        };
+      } catch (templateError) {
+        console.error('Ошибка генерации шаблона:', templateError);
+        // Если шаблон не работает, возвращаем только запасной вариант
+        return {
+          content: this.generateFallbackComplaint(mainDocData, agency)
+        };
+      }
     }
   }
 

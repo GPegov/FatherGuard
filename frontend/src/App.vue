@@ -34,32 +34,22 @@
 </template>
 
 <script setup>
-import { watch } from 'vue'
+import { onMounted } from 'vue'
 import { useDocumentStore } from '@/stores/documentStore'
 import { useComplaintStore } from '@/stores/complaintStore'
 
 const documentStore = useDocumentStore()
 const complaintStore = useComplaintStore()
 
-// Загружаем данные при первом открытии соответствующих страниц
-watch(
-  () => documentStore.documents,
-  (newVal) => {
-    if (newVal.length === 0) { 
-      documentStore.fetchDocuments()
-    }
-  },
-  { immediate: true }
-)
-watch(
-  () => complaintStore.complaints,
-  (newVal) => {
-    if (newVal.length === 0) { 
-      complaintStore.fetchComplaints()
-    }
-  },
-  { immediate: true }
-)
+// Загружаем данные при запуске приложения, если они ещё не загружены
+onMounted(async () => {
+  if (documentStore.documents.length === 0 && !documentStore.isLoading) {
+    await documentStore.fetchDocuments()
+  }
+  if (complaintStore.complaints.length === 0 && !complaintStore.isLoading) {
+    await complaintStore.fetchComplaints()
+  }
+})
 </script>
 
 <style>
