@@ -104,6 +104,7 @@ async function startServer() {
             summary: "",
             keySentences: [],
             attachments: [],
+            regionCode: "",
             createdAt: new Date().toISOString(),
             ...req.body,
           };

@@ -8,10 +8,24 @@
       rows="15"
     ></textarea>
     
+    <div class="region-selection-section">
+      <p>Выберите регион, в котором произошло нарушение:</p>
+      <RegionAutocomplete
+        :regions="regionsList"
+        v-model="selectedRegionName"
+        @region-selected="onRegionSelected"
+        class="region-autocomplete"
+        :disabled="isLoading || regionsList.length === 0"
+      />
+      <div v-if="regionLoading" class="loading-regions">
+        Загрузка списка регионов...
+      </div>
+    </div>
+    
     <div class="upload-section">
       <p>Приложите входящие документы (.doc / .docx / .txt / .pdf)</p>
       <FileUpload 
-        label="Загрузить документы"
+        label="Добавить документы"
         @files-selected="handleFilesSelected"
         accept=".doc,.docx,.txt,.pdf"
       />
@@ -22,7 +36,7 @@
 
     <button 
       @click="submitData"
-      :disabled="!isFormValid || isLoading"
+      :disabled="!isFormValid || isLoading || !selectedRegionCode"
       class="submit-btn"
     >
       <span v-if="!isLoading">Продолжить</span>
@@ -36,9 +50,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
+import { v4 as uuidv4 } from 'uuid';
 import FileUpload from '@/components/common/FileUpload.vue';
+import RegionAutocomplete from '@/components/RegionAutocomplete.vue';
 import { useDocumentStore } from '@/stores/documentStore';
 
 const documentStore = useDocumentStore();
@@ -47,6 +63,42 @@ const userText = ref('');
 const files = ref([]);
 const isLoading = ref(false);
 const errorMessage = ref('');
+const selectedRegionName = ref(''); // Изменяем на имя региона
+const selectedRegionCode = ref(''); // Добавляем отдельное состояние для кода региона
+const regionsList = ref([]);
+const regionLoading = ref(false);
+
+// Загружаем список регионов при монтировании компонента
+onMounted(async () => {
+  await loadRegions();
+});
+
+const loadRegions = async () => {
+  regionLoading.value = true;
+  try {
+    const response = await fetch('http://localhost:3001/api/fssp/regions');
+    const data = await response.json();
+    if (data.success) {
+      regionsList.value = data.regions;
+    } else {
+      console.error('Ошибка загрузки регионов:', data.message);
+      errorMessage.value = 'Ошибка загрузки списка регионов';
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки регионов:', error);
+    errorMessage.value = 'Ошибка соединения с сервером';
+  } finally {
+    regionLoading.value = false;
+  }
+};
+
+// Обработка выбора региона через автозаполнение
+const onRegionSelected = (regionName) => {
+  selectedRegionName.value = regionName;
+  // Найти код региона по имени
+  const region = regionsList.value.find(r => r.name === regionName);
+  selectedRegionCode.value = region ? region.code : '';
+};
 
 const handleFilesSelected = (selectedFiles) => {
   files.value = selectedFiles;
@@ -66,9 +118,9 @@ const submitData = async () => {
   try {
     // Инициализируем новый документ с полной структурой
     const newDocument = {
-      id: null, // Явно устанавливаем ID как null для нового документа
+      id: uuidv4(), // Генерируем уникальный ID сразу при создании документа
       date: new Date().toISOString().split('T')[0],
-      agency: '',
+      agency: '', // Вначале оставляем пустым, будет заполнено конкретным отделением ФССП позже
       originalText: userText.value,
       summary: '',
       documentDate: '',
@@ -81,7 +133,8 @@ const submitData = async () => {
       lastAnalyzedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      violations: []
+      violations: [],
+      regionCode: selectedRegionCode.value // Сохраняем код региона для загрузки отделений ФССП
     };
 
     // Обновляем документ в хранилище
@@ -98,13 +151,19 @@ const submitData = async () => {
         return;
       }
     }
+    
+    // Обновляем документ в хранилище, чтобы убедиться, что regionCode сохранен
+    // (сервер может не возвращать regionCode в ответе, но он нужен для дальнейшей работы)
+    documentStore.currentDocument = {
+      ...documentStore.currentDocument,
+      regionCode: selectedRegionCode.value
+    };
 
     // Переходим к предпросмотру без сохранения документа
-    // Передаем временный ID для соответствия маршруту
+    // Используем реальный ID документа
     router.push({ 
       name: 'review', 
-      params: { id: 'new' },
-      query: { new: 'true' }  
+      params: { id: newDocument.id }
     });
   } catch (error) {
     console.error('Ошибка при создании документа:', error);
@@ -152,6 +211,31 @@ h1 {
   border-color: #42b983;
   outline: none;
   box-shadow: 0 0 0 2px rgba(66, 185, 131, 0.2);
+}
+
+.region-selection-section {
+  margin: 20px 0;
+  padding: 15px;
+  background-color: #f0f8ff;
+  border-radius: 8px;
+  border: 1px solid #d0e6ff;
+}
+
+.region-selection-section p {
+  margin-bottom: 10px;
+  color: #555;
+  font-weight: 500;
+}
+
+.region-autocomplete {
+  width: 100%;
+}
+
+.loading-regions {
+  margin-top: 10px;
+  font-size: 0.9em;
+  color: #666;
+  text-align: center;
 }
 
 .upload-section {

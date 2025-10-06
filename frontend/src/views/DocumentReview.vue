@@ -21,6 +21,11 @@
 
     <div v-else class="review-container">
       <form @submit.prevent="handleSubmit" class="review-form">
+        <!-- Информация о выбранном регионе -->
+        <div class="region-info" v-if="document.regionCode">
+          <p><strong>Выбранный регион:</strong> {{ documentStore.getRegionNameByCode(document.regionCode) }}</p>
+        </div>
+
         <!-- Основные поля -->
         <div class="form-section">
           <h2>Основная информация</h2>
@@ -30,12 +35,23 @@
           </div>
 
           <div class="form-group">
-            <label for="agency">Ведомство, допустившее нарушение:</label>
-            <input type="text" id="agency" v-model="document.agency" list="agencies" required class="form-input"
-              placeholder="Выберите ведомство" />
-            <datalist id="agencies">
-              <option v-for="agency in agenciesList" :key="agency">{{ agency }}</option>
-            </datalist>
+            <label for="agency">Отделение ФССП, допустившее нарушение:</label>
+            <div v-if="document.regionCode && agenciesList.length === 0 && fsspDepartments.length === 0" class="loading-message">
+              Загрузка отделений ФССП для выбранного региона...
+            </div>
+            <div v-else-if="document.regionCode && agenciesList.length === 0 && fsspDepartments.length > 0" class="no-departments-message">
+              В выбранном регионе нет известных отделений ФССП
+            </div>
+            <AgencyAutocomplete
+              id="agency"
+              :agencies="agenciesList"
+              v-model="document.agency"
+              @agency-selected="onAgencySelected"
+              :placeholder="agenciesList.length > 0 ? 'Выберите отделение ФССП' : 'Отделения недоступны'"
+              class="agency-autocomplete"
+              :disabled="agenciesList.length === 0"
+              required
+            />
           </div>
 
           <div class="form-group">
@@ -219,6 +235,7 @@ import axios from 'axios'
 import { v4 as uuidv4 } from 'uuid'
 import { useAIStore } from '@/stores/aiStore'
 import { useDocumentStore } from '@/stores/documentStore'
+import AgencyAutocomplete from '@/components/AgencyAutocomplete.vue'
 import FileUpload from '@/components/common/FileUpload.vue' // Добавляем импорт компонента FileUpload
 
 const router = useRouter()
@@ -236,24 +253,88 @@ const document = ref({
   ...documentStore.currentDocument
 })
 
-const agenciesList = computed(() => documentStore.agenciesList)
+// Добавляем новое состояние для отделений ФССП
+const fsspDepartments = ref([]);
+
+// Обновляем computed для получения списка отделений ФССП выбранного региона
+const agenciesList = computed(() => {
+  console.log('Обновление agenciesList:', {
+    regionCode: document.value.regionCode,
+    fsspDepartmentsLength: fsspDepartments.value ? fsspDepartments.value.length : 0,
+    hasDepartments: !!(document.value.regionCode && fsspDepartments.value && fsspDepartments.value.length > 0)
+  });
+  
+  if (!document.value.regionCode || !fsspDepartments.value || fsspDepartments.value.length === 0) {
+    // Если нет региона или отделений, возвращаем пустой массив
+    return [];
+  }
+
+  // Собираем все отделения ФССП из всех городов выбранного региона
+  const departments = [];
+  fsspDepartments.value.forEach(region => {
+    if (region.cities) {
+      region.cities.forEach(city => {
+        if (city.departments) {
+          city.departments.forEach(dept => {
+            departments.push(dept.name);
+          });
+        }
+      });
+    }
+  });
+
+  console.log('Список отделений ФССП:', departments);
+  return departments.sort();
+});
 
 // Следим за изменениями в currentDocument в хранилище и обновляем локальный документ
 watch(
   () => documentStore.currentDocument,
   (newCurrentDocument) => {
     console.log('Обнаружено изменение в currentDocument в хранилище:', newCurrentDocument);
+    // Сохраняем regionCode до обновления, чтобы не потерять его
+    const savedRegionCode = document.value.regionCode;
     document.value = {
       ...newCurrentDocument,
+      // Восстанавливаем regionCode, если он был в локальном документе, но отсутствует в новом
+      regionCode: newCurrentDocument.regionCode || savedRegionCode || "",
       attachments: newCurrentDocument.attachments?.map(att => ({
         ...att,
         analysis: att.analysis || null
       })) || []
     };
-    console.log('Локальный документ обновлен, вложения:', document.value.attachments);
+    console.log('Локальный документ обновлен, регион:', document.value.regionCode, 'вложения:', document.value.attachments);
+    
+    // Если у нового документа есть regionCode, и у нас еще нет загруженных отделений, загружаем их
+    if (document.value.regionCode && (!fsspDepartments.value || fsspDepartments.value.length === 0)) {
+      console.log('Обнаружен код региона в новом документе, запускаем загрузку отделений');
+      loadFSSPDepartments(document.value.regionCode);
+    }
   },
   { deep: true }
 );
+
+// Обработка выбора агентства
+const onAgencySelected = (agency) => {
+  document.value.agency = agency;
+  console.log('Выбрано ведомство:', agency);
+};
+
+// Выносим логику загрузки отделений в отдельную функцию для повторного использования
+const loadFSSPDepartments = async (regionCode) => {
+  console.log('Загрузка отделений ФССП для региона:', regionCode);
+  try {
+    const departments = await documentStore.getFSSPDepartmentsByRegion(regionCode);
+    if (departments && departments.regions) {
+      fsspDepartments.value = departments.regions;
+      console.log('Отделения ФССП загружены для региона', regionCode, ':', fsspDepartments.value);
+    } else {
+      console.warn('Не удалось загрузить отделения ФССП для региона', regionCode);
+    }
+  } catch (err) {
+    console.error('Ошибка загрузки отделений ФССП:', err);
+  }
+};
 
 // Обработка загрузки файлов
 const handleFilesSelected = async (files) => {
@@ -278,7 +359,8 @@ onMounted(async () => {
 
     // Проверяем, есть ли ID у документа
     const routeId = document.value.id;
-    if (routeId && routeId !== 'new') {
+    // Убираем проверку routeId !== 'new', так как теперь у всех документов всегда есть реальный ID
+    if (routeId) {
       console.log('Проверка наличия документа по ID:', routeId);
       
       // Попробуем загрузить документ с сервера
@@ -296,7 +378,35 @@ onMounted(async () => {
         console.log('Документ с ID не найден на сервере, используем локальный документ:', document.value);
         // Если документ не найден на сервере, продолжаем с локальным документом
         // который уже был инициализирован при создании store
+        // Обновляем локальный документ, чтобы убедиться, что он содержит актуальные данные
+        document.value = {
+          ...documentStore.currentDocument,
+          attachments: documentStore.currentDocument.attachments?.map(att => ({
+            ...att,
+            analysis: att.analysis || null
+          })) || []
+        };
       }
+    }
+
+    // Загружаем отделения ФССП, если есть код региона
+    // Сначала используем код из локального документа
+    let regionCodeToUse = document.value.regionCode;
+    
+    // Если код региона не найден в локальном документе, проверяем store
+    if (!regionCodeToUse) {
+      regionCodeToUse = documentStore.currentDocument.regionCode;
+      if (regionCodeToUse) {
+        // Обновляем локальный документ, чтобы он также содержал regionCode
+        document.value.regionCode = regionCodeToUse;
+        console.log('Код региона найден в store и добавлен в локальный документ:', regionCodeToUse);
+      }
+    }
+    
+    console.log('Попытка загрузки отделений ФССП для региона:', regionCodeToUse);
+    
+    if (regionCodeToUse) {
+      await loadFSSPDepartments(regionCodeToUse);
     }
   } catch (err) {
     console.error('Ошибка загрузки:', err);
@@ -556,6 +666,10 @@ const getStatusText = (status) => {
   margin-bottom: 8px;
   font-weight: 500;
   color: #555;
+}
+
+.agency-autocomplete {
+  width: 100%;
 }
 
 .form-input,
@@ -880,5 +994,26 @@ const getStatusText = (status) => {
   to {
     opacity: 1;
   }
+}
+
+/* Стили для сообщений загрузки и отсутствия отделений */
+.loading-message {
+  color: #666;
+  font-style: italic;
+  padding: 10px 0;
+}
+
+.no-departments-message {
+  color: #ff6b6b;
+  font-style: italic;
+  padding: 10px 0;
+}
+
+.region-info {
+  background: #e8f4f8;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  border-left: 4px solid #42b983;
 }
 </style>

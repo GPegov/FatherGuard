@@ -42,6 +42,7 @@ export const useDocumentStore = defineStore("document", () => {
     senderAgency: "",
     attachments: [],
     complaints: [],
+    regionCode: "",
     analysisStatus: "pending",
     lastAnalyzedAt: null,
     createdAt: new Date().toISOString(),
@@ -79,6 +80,33 @@ export const useDocumentStore = defineStore("document", () => {
 
   const analyzedDocuments = computed(() => {
     return documents.value.filter((doc) => doc.analysisStatus === "completed");
+  });
+
+  const regionsList = ref([]);
+
+  // Загружаем список регионов при инициализации хранилища
+  const loadRegionsList = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/regions`);
+      if (response.data.success) {
+        regionsList.value = response.data.regions;
+      } else {
+        console.error('Ошибка загрузки списка регионов:', response.data.message);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки списка регионов:', error);
+    }
+  };
+  
+  // Инициализируем список регионов при создании хранилища
+  loadRegionsList();
+
+  const getRegionNameByCode = computed(() => {
+    return (code) => {
+      if (!code) return 'Регион не выбран';
+      const region = regionsList.value.find(r => r.code === code);
+      return region ? region.name : `Регион ${code}`;
+    };
   });
 
   // Вспомогательные функции
@@ -151,6 +179,22 @@ export const useDocumentStore = defineStore("document", () => {
     validateDocumentId(currentDocument.value, "resetCurrentDocument");
   };
 
+  // Добавляем функцию для получения отделений ФССП по коду региона
+  const getFSSPDepartmentsByRegion = async (regionCode) => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/data?regionCode=${regionCode}`);
+      if (response.data.success) {
+        return response.data.data;
+      } else {
+        console.error('Ошибка получения данных ФССП:', response.data.message);
+        return null;
+      }
+    } catch (error) {
+      console.error('Ошибка запроса к API ФССП:', error);
+      throw error;
+    }
+  };
+
   // Действия
   const fetchDocuments = async () => {
     return handleApiCall(async () => {
@@ -195,14 +239,15 @@ export const useDocumentStore = defineStore("document", () => {
       // Проверяем тип ID в возвращенных данных
       validateDocumentId(data, "uploadFiles (response)");
       
-      // Бэкенд возвращает созданный документ в правильной структуре
-      currentDocument.value = {
-        ...currentDocument.value,
-        ...data,
-        // Убедимся, что originalText правильно установлен
-        originalText:
-          data.originalText || currentDocument.value.originalText || "",
-      };
+      // Обновляем только вложения, чтобы не потерять другие поля документа (например, regionCode)
+      if (data.attachments && Array.isArray(data.attachments)) {
+        currentDocument.value.attachments = data.attachments;
+      }
+      
+      // Также обновляем originalText, если он пришел с сервера
+      if (data.originalText !== undefined) {
+        currentDocument.value.originalText = data.originalText;
+      }
       
       // Проверяем тип ID после обновления
       validateDocumentId(currentDocument.value, "uploadFiles (after update)");
@@ -489,6 +534,7 @@ export const useDocumentStore = defineStore("document", () => {
     agenciesList,
     hasAttachments,
     analyzedDocuments,
+    getRegionNameByCode,
 
     // Действия
     fetchDocuments,
@@ -500,5 +546,6 @@ export const useDocumentStore = defineStore("document", () => {
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,
+    getFSSPDepartmentsByRegion,
   };
 });
