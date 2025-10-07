@@ -109,6 +109,49 @@ export const useDocumentStore = defineStore("document", () => {
     };
   });
 
+  // Вычисляемое свойство для получения списка отделений ФССП по региону
+  const fsspDepartmentsByRegion = ref({}); // Кэш для отделений по регионам
+
+  const getFSSPDepartmentsList = computed(() => {
+    return (regionCode) => {
+      if (!regionCode) return [];
+      
+      const regionData = fsspDepartmentsByRegion.value[regionCode];
+      if (!regionData || !regionData.regions) return [];
+
+      const departments = [];
+      // Обрабатываем разные возможные структуры данных
+      if (Array.isArray(regionData.regions)) {
+        // Случай, когда в data.regions содержится массив регионов
+        regionData.regions.forEach(region => {
+          if (region.cities) {
+            region.cities.forEach(city => {
+              if (city.departments) {
+                city.departments.forEach(dept => {
+                  departments.push(dept.name);
+                });
+              }
+            });
+          }
+        });
+      } else if (regionData.cities) {
+        // Стандартный случай
+        const region = regionData;
+        if (region.cities) {
+          region.cities.forEach(city => {
+            if (city.departments) {
+              city.departments.forEach(dept => {
+                departments.push(dept.name);
+              });
+            }
+          });
+        }
+      }
+
+      return departments.sort();
+    };
+  });
+
   // Вспомогательные функции
 
   const updateDocumentsList = (savedDocument) => {
@@ -180,10 +223,12 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   // Добавляем функцию для получения отделений ФССП по коду региона
-  const getFSSPDepartmentsByRegion = async (regionCode) => {
+  const fetchFSSPDepartmentsByRegion = async (regionCode) => {
     try {
       const response = await axios.get(`${API_BASE}/api/fssp/data?regionCode=${regionCode}`);
       if (response.data.success) {
+        // Кэшируем данные
+        fsspDepartmentsByRegion.value[regionCode] = response.data.data;
         return response.data.data;
       } else {
         console.error('Ошибка получения данных ФССП:', response.data.message);
@@ -535,6 +580,7 @@ export const useDocumentStore = defineStore("document", () => {
     hasAttachments,
     analyzedDocuments,
     getRegionNameByCode,
+    getFSSPDepartmentsList,
 
     // Действия
     fetchDocuments,
@@ -546,6 +592,6 @@ export const useDocumentStore = defineStore("document", () => {
     fetchComplaints,
     resetCurrentDocument,
     viewDocument,
-    getFSSPDepartmentsByRegion,
+    fetchFSSPDepartmentsByRegion,
   };
 });

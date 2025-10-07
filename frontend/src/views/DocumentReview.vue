@@ -36,10 +36,10 @@
 
           <div class="form-group">
             <label for="agency">Отделение ФССП, допустившее нарушение:</label>
-            <div v-if="document.regionCode && agenciesList.length === 0 && fsspDepartments.length === 0" class="loading-message">
+            <div v-if="document.regionCode && agenciesList.length === 0" class="loading-message">
               Загрузка отделений ФССП для выбранного региона...
             </div>
-            <div v-else-if="document.regionCode && agenciesList.length === 0 && fsspDepartments.length > 0" class="no-departments-message">
+            <div v-else-if="document.regionCode && agenciesList.length === 0 && !isLoadingDepartments" class="no-departments-message">
               В выбранном регионе нет известных отделений ФССП
             </div>
             <AgencyAutocomplete
@@ -248,43 +248,40 @@ const isSaving = ref(false)
 const isAnalyzing = ref(false)
 const error = ref(null)
 const fileUploadError = ref(null)
+const isLoadingDepartments = ref(false)
 
 const document = ref({
   ...documentStore.currentDocument
 })
 
-// Добавляем новое состояние для отделений ФССП
-const fsspDepartments = ref([]);
-
-// Обновляем computed для получения списка отделений ФССП выбранного региона
+// Обновляем computed для получения списка отделений ФССП выбранного региона из стора
 const agenciesList = computed(() => {
-  console.log('Обновление agenciesList:', {
+  console.log('Обновление agenciesList из стора:', {
     regionCode: document.value.regionCode,
-    fsspDepartmentsLength: fsspDepartments.value ? fsspDepartments.value.length : 0,
-    hasDepartments: !!(document.value.regionCode && fsspDepartments.value && fsspDepartments.value.length > 0)
+    hasDepartments: !!(document.value.regionCode && documentStore.getFSSPDepartmentsList(document.value.regionCode)?.length > 0)
   });
   
-  if (!document.value.regionCode || !fsspDepartments.value || fsspDepartments.value.length === 0) {
-    // Если нет региона или отделений, возвращаем пустой массив
+  if (!document.value.regionCode) {
+    // Если нет региона, возвращаем пустой массив
     return [];
   }
 
-  // Собираем все отделения ФССП из всех городов выбранного региона
-  const departments = [];
-  fsspDepartments.value.forEach(region => {
-    if (region.cities) {
-      region.cities.forEach(city => {
-        if (city.departments) {
-          city.departments.forEach(dept => {
-            departments.push(dept.name);
-          });
-        }
-      });
+  // Получаем список отделений из стора
+  const departments = documentStore.getFSSPDepartmentsList(document.value.regionCode);
+  
+  if (!departments || departments.length === 0) {
+    // Если отделения не загружены, но регион есть, пытаемся их загрузить
+    if (document.value.regionCode && document.value.regionCode !== '') {
+      console.log('Отделения для региона не загружены, инициируем загрузку...');
+      loadFSSPDepartments(document.value.regionCode);
     }
-  });
+    
+    // Пока данные не загружены, возвращаем пустой массив
+    return [];
+  }
 
-  console.log('Список отделений ФССП:', departments);
-  return departments.sort();
+  console.log('Список отделений ФССП из стора:', departments);
+  return departments;
 });
 
 // Следим за изменениями в currentDocument в хранилище и обновляем локальный документ
@@ -305,13 +302,25 @@ watch(
     };
     console.log('Локальный документ обновлен, регион:', document.value.regionCode, 'вложения:', document.value.attachments);
     
-    // Если у нового документа есть regionCode, и у нас еще нет загруженных отделений, загружаем их
-    if (document.value.regionCode && (!fsspDepartments.value || fsspDepartments.value.length === 0)) {
-      console.log('Обнаружен код региона в новом документе, запускаем загрузку отделений');
+    // Если у нового документа есть regionCode, и он отличается от текущего, загружаем отделения
+    if (document.value.regionCode && document.value.regionCode !== savedRegionCode) {
+      console.log('Обнаружен новый код региона в документе, запускаем загрузку отделений:', document.value.regionCode);
       loadFSSPDepartments(document.value.regionCode);
     }
   },
   { deep: true }
+);
+
+// Добавляем отдельное отслеживание изменения региона в локальном документе
+watch(
+  () => document.value.regionCode,
+  (newRegionCode, oldRegionCode) => {
+    console.log('Наблюдение за изменением regionCode в локальном документе:', { newRegionCode, oldRegionCode });
+    if (newRegionCode && newRegionCode !== oldRegionCode) {
+      console.log('Обнаружен новый код региона в локальном документе, запускаем загрузку отделений:', newRegionCode);
+      loadFSSPDepartments(newRegionCode);
+    }
+  }
 );
 
 // Обработка выбора агентства
@@ -322,17 +331,16 @@ const onAgencySelected = (agency) => {
 
 // Выносим логику загрузки отделений в отдельную функцию для повторного использования
 const loadFSSPDepartments = async (regionCode) => {
+  if (!regionCode) return; // Не загружаем, если нет кода региона
+  
   console.log('Загрузка отделений ФССП для региона:', regionCode);
+  isLoadingDepartments.value = true;
   try {
-    const departments = await documentStore.getFSSPDepartmentsByRegion(regionCode);
-    if (departments && departments.regions) {
-      fsspDepartments.value = departments.regions;
-      console.log('Отделения ФССП загружены для региона', regionCode, ':', fsspDepartments.value);
-    } else {
-      console.warn('Не удалось загрузить отделения ФССП для региона', regionCode);
-    }
+    await documentStore.fetchFSSPDepartmentsByRegion(regionCode);
   } catch (err) {
     console.error('Ошибка загрузки отделений ФССП:', err);
+  } finally {
+    isLoadingDepartments.value = false;
   }
 };
 
