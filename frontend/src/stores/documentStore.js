@@ -82,6 +82,10 @@ export const useDocumentStore = defineStore("document", () => {
     return documents.value.filter((doc) => doc.analysisStatus === "completed");
   });
 
+  const isCurrentDocumentAnalyzed = computed(() => {
+    return currentDocument.value.analysisStatus === "completed";
+  });
+
   const regionsList = ref([]);
 
   // Загружаем список регионов при инициализации хранилища
@@ -405,7 +409,12 @@ export const useDocumentStore = defineStore("document", () => {
     
     // Если передан ID документа, загружаем его
     if (documentId) {
-      await fetchDocumentById(documentId);
+      try {
+        await fetchDocumentById(documentId);
+      } catch (fetchErr) {
+        // Если документ не найден на сервере, возможно это документ с временным ID
+        console.log("Документ с ID не найден на сервере, используем currentDocument:", fetchErr.message);
+      }
     }
 
     // Проверяем, есть ли текст для анализа
@@ -430,8 +439,25 @@ export const useDocumentStore = defineStore("document", () => {
       // Проверяем тип ID перед анализом
       validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
       
-      // Если у документа есть ID (строка), анализируем его по ID
+      // Проверяем, существует ли документ на сервере
+      let documentExistsOnServer = false;
       if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        try {
+          await axios.get(`${API_BASE}/api/documents/${currentDocument.value.id}`);
+          documentExistsOnServer = true;
+        } catch (err) {
+          if (err.response?.status === 404) {
+            documentExistsOnServer = false;
+            console.log("Документ с ID не существует на сервере, анализируем как новый документ");
+          } else {
+            // Если произошла другая ошибка, прерываем
+            throw err;
+          }
+        }
+      }
+      
+      // Если документ существует на сервере, анализируем его по ID
+      if (documentExistsOnServer) {
         currentDocument.value.analysisStatus = "processing";
 
         // Вызываем бэкенд для анализа документа
@@ -485,27 +511,36 @@ export const useDocumentStore = defineStore("document", () => {
         const savedDocument = await saveDocument();
         return savedDocument;
       } 
-      // Если у документа нет ID (новый документ), анализируем его напрямую по тексту
+      // Если документ не существует на сервере, анализируем его напрямую по тексту
       else {
         const textToAnalyze = (currentDocument.value.originalText || "").trim();
+        const attachmentsToAnalyze = currentDocument.value.attachments?.filter(att => att.text && att.text.trim().length > 0) || [];
         
-        if (textToAnalyze === "") {
+        if (textToAnalyze === "" && attachmentsToAnalyze.length === 0) {
           error.value = "Нет текста для анализа";
           isAnalyzing.value = false;
-          console.log("Анализ нового документа: текст =", JSON.stringify(textToAnalyze));
+          console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
           return;
         }
 
-        console.log("Анализ нового документа: текст =", JSON.stringify(textToAnalyze));
+        console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
+
+        // Подготовим данные для анализа
+        const analyzeData = {
+          text: textToAnalyze,
+          instructions: "",
+          strictMode: false,
+          attachments: attachmentsToAnalyze.map(att => ({
+            id: att.id,
+            name: att.name,
+            text: att.text
+          }))
+        };
 
         // Вызываем бэкенд для анализа текста напрямую
         const { data } = await axios.post(
           `${API_BASE}/api/documents/analyze`,
-          {
-            text: textToAnalyze,
-            instructions: "",
-            strictMode: false
-          }
+          analyzeData
         );
 
         // Обновляем документ результатами анализа
@@ -520,6 +555,28 @@ export const useDocumentStore = defineStore("document", () => {
             [],
           documentDate: data.documentDate || "",
           senderAgency: data.senderAgency || "",
+          attachments: currentDocument.value.attachments.map(attachment => {
+            // Найдем соответствующий анализ в результатах
+            const analysis = data.attachments?.find(a => a.id === attachment.id);
+            if (analysis) {
+              return {
+                ...attachment,
+                analysis: {
+                  documentType: analysis.documentType || "Документ",
+                  sentDate: analysis.sentDate || "",
+                  senderAgency: analysis.senderAgency || "",
+                  summary: analysis.summary || "",
+                  keySentences: analysis.keySentences || []
+                },
+                documentDate: analysis.sentDate || attachment.documentDate || "",
+                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                summary: analysis.summary || attachment.summary || "",
+                keySentences: analysis.keySentences || attachment.keySentences || [],
+                text: attachment.text || ""  // Сохраняем исходный текст вложения
+              };
+            }
+            return attachment;
+          }),
           analysisStatus: "completed",
           lastAnalyzedAt: new Date().toISOString(),
         };
@@ -536,7 +593,7 @@ export const useDocumentStore = defineStore("document", () => {
 
       currentDocument.value.analysisStatus = "failed";
       // Для новых документов не вызываем saveDocument в случае ошибки
-      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string' && documentExistsOnServer) {
         await saveDocument();
       }
       throw err;
@@ -581,6 +638,7 @@ export const useDocumentStore = defineStore("document", () => {
     analyzedDocuments,
     getRegionNameByCode,
     getFSSPDepartmentsList,
+    isCurrentDocumentAnalyzed,
 
     // Действия
     fetchDocuments,

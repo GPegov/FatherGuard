@@ -141,10 +141,16 @@ export default {
     };
 
     const onClick = () => {
-      searchTerm.value = '';
-      showSuggestions.value = true;
-      selectedIndex.value = -1;
-      emit('update:modelValue', '');
+      // Не сбрасываем значение при клике, если уже выбран регион
+      if (!searchTerm.value) {
+        // Только если поле пустое, показываем все регионы
+        showSuggestions.value = true;
+        selectedIndex.value = -1;
+      } else {
+        // Если есть значение, показываем список с фильтрацией
+        showSuggestions.value = true;
+        selectedIndex.value = -1;
+      }
     };
 
     const onInput = () => {

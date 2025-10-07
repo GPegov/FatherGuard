@@ -183,13 +183,23 @@
 
         <!-- Кнопки действий -->
         <div class="form-actions">
-          <button type="button" @click="analyzeDocument" class="analyze-btn"
-            :disabled="isAnalyzing || (!document.originalText && (!document.attachments || document.attachments.length === 0))">
+          <button 
+            type="button" 
+            @click="analyzeDocument" 
+            class="analyze-btn" 
+            :disabled="isAnalyzing || documentStore.isCurrentDocumentAnalyzed || (!document.originalText && (!document.attachments || document.attachments.length === 0))"
+            :class="{ 'analyze-btn-completed': documentStore.isCurrentDocumentAnalyzed }"
+          >
             <span v-if="isAnalyzing" class="button-loader"></span>
-            {{ isAnalyzing ? 'Анализ...' : 'Анализировать документ' }}
+            {{ isAnalyzing ? 'Анализ...' : (documentStore.isCurrentDocumentAnalyzed ? 'Документ проанализирован' : 'Анализировать документ') }}
           </button>
 
-          <button type="submit" class="save-btn" :disabled="isSaving">
+          <button 
+            type="submit" 
+            class="save-btn" 
+            :disabled="isSaving"
+            :class="{ 'save-btn-active': documentStore.isCurrentDocumentAnalyzed && !isSaving }"
+          >
             {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
           </button>
         </div>
@@ -1002,6 +1012,16 @@ const getStatusText = (status) => {
   to {
     opacity: 1;
   }
+}
+
+/* Стили для кнопок после анализа */
+.analyze-btn-completed {
+  background-color: #cccccc; /* Серый цвет для неактивной кнопки анализа */
+  cursor: not-allowed;
+}
+
+.save-btn-active {
+  background-color: #42b983; /* Зеленый цвет для активной кнопки сохранения */
 }
 
 /* Стили для сообщений загрузки и отсутствия отделений */
