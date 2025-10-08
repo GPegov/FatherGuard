@@ -16,12 +16,16 @@
           </button>
         </div>
         
-        <textarea 
-          :value="chronicleContent" 
-          class="chronicle-textarea"
-          readonly
-          placeholder="Здесь будет отображаться история взаимоотношений с судебными приставами..."
-        ></textarea>
+        <div class="chronicle-entries">
+          <div 
+            v-for="(entry, index) in chronicleEntries" 
+            :key="entry.id || index"
+            class="chronicle-entry"
+          >
+            <div class="entry-date">{{ formatDate(entry.date) }}</div>
+            <div class="entry-content">{{ entry.content }}</div>
+          </div>
+        </div>
       </div>
 
       <!-- Раздел чата (правая сторона) -->
@@ -43,6 +47,7 @@
             v-model="userInput" 
             @keypress.enter="sendMessage"
             placeholder="Введите сообщение..."
+            class="full-width-input"
           />
           <button @click="sendMessage">Отправить</button>
         </div>
@@ -56,16 +61,17 @@
 import { ref, onMounted, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useDocumentStore } from '@/stores/documentStore';
+import axios from 'axios';
 
 const router = useRouter();
 const documentStore = useDocumentStore();
 
 // Содержимое летописи
-const chronicleContent = ref('');
+const chronicleEntries = ref([]);
 
 // Функциональность чата
 const chatMessages = ref([
-  { sender: 'ai', text: 'Здесь можно внести уточнения в историю взаимодействия с ФССП или спросить юрдический совет.' }
+  { sender: 'ai', text: 'Здесь можно внести уточнения в историю взаимодействия с ФССП или спросить юридический совет.' }
 ]);
 const userInput = ref('');
 const messagesContainer = ref(null);
@@ -88,6 +94,35 @@ const sendMessage = () => {
   }, 1000);
   
   userInput.value = '';
+};
+
+// Форматирование даты
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const monthNames = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря"
+  ];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}г`;
+};
+
+// Загрузка записей летописи
+const loadChronicleEntries = async () => {
+  try {
+    const response = await axios.get('/api/chronicle');
+    chronicleEntries.value = response.data;
+  } catch (error) {
+    console.error('Ошибка при загрузке летописи:', error);
+    // Если не удалось загрузить с сервера, можно использовать временное решение
+    chronicleEntries.value = [
+      { id: '1', date: new Date().toISOString().split('T')[0], content: 'Здесь будет отображаться история взаимоотношений с судебными приставами...' }
+    ];
+  }
 };
 
 // Автоматическая прокрутка вниз чата
@@ -113,8 +148,7 @@ const addInfo = () => {
 };
 
 onMounted(() => {
-  // Содержимое летописи будет заполняться локальной моделью ИИ
-  chronicleContent.value = '';
+  loadChronicleEntries();
 });
 </script>
 
@@ -144,9 +178,11 @@ onMounted(() => {
 .main-content {
   display: flex;
   flex: 1;
-  padding: 2rem 1.25rem; /* Уменьшаем горизонтальный отступ до 20px (1.25rem) */
+  padding: 2rem 0; /* Возвращаемся к стандартным горизонтальным отступам */
+  margin: 0 -1.875rem; /* Добавляем отрицательный margin для компенсации, чтобы уменьшить визуальные отступы еще на 30px */
   gap: 2rem;
   overflow: hidden;
+  min-height: 75vh; /* Устанавливаем минимальную высоту для основного контента */
 }
 
 .chronicle-section {
@@ -155,6 +191,7 @@ onMounted(() => {
   flex-direction: column;
   gap: 1rem;
   margin-top: -20px;
+  min-height: 70vh; /* Устанавливаем минимальную высоту */
 }
 
 .chronicle-info {
@@ -204,10 +241,37 @@ textarea[readonly] {
   resize: none;
 }
 
-.chronicle-textarea:focus {
-  outline: none;
-  border-color: #007bff;
-  box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+.chronicle-entries {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: #f8f9fa;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 70vh; /* Устанавливаем минимальную высоту */
+}
+
+.chronicle-entry {
+  padding: 0.75rem;
+  background-color: white;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.entry-date {
+  font-weight: bold;
+  color: #007bff;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.entry-content {
+  color: #495057;
+  line-height: 1.5;
 }
 
 .chat-section {
@@ -219,6 +283,7 @@ textarea[readonly] {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   overflow: hidden;
   margin-top: 5px;
+  min-height: 70vh; /* Устанавливаем минимальную высоту */
 }
 
 .chat-header {
@@ -235,6 +300,7 @@ textarea[readonly] {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  min-height: 60vh; /* Устанавливаем минимальную высоту для области сообщений */
 }
 
 .message {
@@ -258,17 +324,19 @@ textarea[readonly] {
 
 .chat-input {
   display: flex;
-  padding: 0.75rem;  /* Уменьшаем отступы на 0.25rem (4px) */
+  flex-direction: column;
+  padding: 0.75rem;
   border-top: 1px solid #dee2e6;
   background-color: #f8f9fa;
+  gap: 0.5rem;
 }
 
 .chat-input input {
-  flex: 1;
   padding: 0.5rem;
   border: 1px solid #ced4da;
   border-radius: 4px;
-  margin-right: 0.5rem;
+  width: 100%;
+  font-size: 1.1rem;
 }
 
 .chat-input input:focus {
@@ -284,6 +352,7 @@ textarea[readonly] {
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  align-self: flex-end;
 }
 
 .chat-input button:hover {

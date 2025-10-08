@@ -142,6 +142,13 @@ async function startServer() {
         app.use("/api/fssp", fsspRoutes);
       }
     );
+    
+    // Подключение роутов для летописи
+    import("./routes/chronicleRoutes.js").then(
+      ({ default: chronicleRoutes }) => {
+        app.use("/api/chronicle", chronicleRoutes({ db }));
+      }
+    );
 
     // Делаем aiService доступным в приложении
     app.locals.aiService = aiService;

@@ -50,7 +50,7 @@
               :placeholder="agenciesList.length > 0 ? 'Выберите отделение ФССП' : 'Отделения недоступны'"
               class="agency-autocomplete"
               :disabled="agenciesList.length === 0"
-              required
+              :required="agenciesList.length > 0"
             />
           </div>
 
@@ -226,15 +226,6 @@
         </div>
       </div>
     </div>
-    
-    <!-- Индикатор анализа -->
-    <div v-if="isAnalyzing && !isLoading" class="analyzing-overlay">
-      <div class="analyzing-content">
-        <div class="loading-spinner"></div>
-        <div class="analyzing-text">Анализ документа...</div>
-        <div class="analyzing-subtext">Пожалуйста, подождите</div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -279,19 +270,11 @@ const agenciesList = computed(() => {
   // Получаем список отделений из стора
   const departments = documentStore.getFSSPDepartmentsList(document.value.regionCode);
   
-  if (!departments || departments.length === 0) {
-    // Если отделения не загружены, но регион есть, пытаемся их загрузить
-    if (document.value.regionCode && document.value.regionCode !== '') {
-      console.log('Отделения для региона не загружены, инициируем загрузку...');
-      loadFSSPDepartments(document.value.regionCode);
-    }
-    
-    // Пока данные не загружены, возвращаем пустой массив
-    return [];
-  }
-
-  console.log('Список отделений ФССП из стора:', departments);
-  return departments;
+  // Возвращаем отделения, если они есть, иначе пустой массив
+  // Загрузка отделений происходит в отдельном watcher
+  const result = departments || [];
+  console.log('Список отделений ФССП из стора:', result);
+  return result;
 });
 
 // Следим за изменениями в currentDocument в хранилище и обновляем локальный документ
@@ -319,18 +302,6 @@ watch(
     }
   },
   { deep: true }
-);
-
-// Добавляем отдельное отслеживание изменения региона в локальном документе
-watch(
-  () => document.value.regionCode,
-  (newRegionCode, oldRegionCode) => {
-    console.log('Наблюдение за изменением regionCode в локальном документе:', { newRegionCode, oldRegionCode });
-    if (newRegionCode && newRegionCode !== oldRegionCode) {
-      console.log('Обнаружен новый код региона в локальном документе, запускаем загрузку отделений:', newRegionCode);
-      loadFSSPDepartments(newRegionCode);
-    }
-  }
 );
 
 // Обработка выбора агентства
@@ -432,6 +403,26 @@ onMounted(async () => {
   } finally {
     isLoading.value = false;
   }
+  
+  // Добавляем отслеживание изменения региона в локальном документе
+  // для синхронизации с хранилищем и загрузки отделений
+  watch(
+    () => document.value.regionCode,
+    (newRegionCode, oldRegionCode) => {
+      console.log('Наблюдение за изменением regionCode в локальном документе:', { newRegionCode, oldRegionCode });
+      if (newRegionCode && newRegionCode !== oldRegionCode) {
+        console.log('Обнаружен новый код региона в локальном документе, обновляем store и запускаем загрузку отделений:', newRegionCode);
+        
+        // Обновляем currentDocument в хранилище, чтобы изменения были синхронизированы
+        documentStore.currentDocument = {
+          ...documentStore.currentDocument,
+          regionCode: newRegionCode
+        };
+        
+        loadFSSPDepartments(newRegionCode);
+      }
+    }
+  );
 });
 
 const addAttachmentSentence = (attachmentId) => {
@@ -477,6 +468,8 @@ const analyzeDocument = async () => {
     
     // Обновляем currentDocument в хранилище
     documentStore.currentDocument = document.value
+    
+    console.log('Анализ завершён, статус:', document.value.analysisStatus, 'isCurrentDocumentAnalyzed:', documentStore.isCurrentDocumentAnalyzed);
   } catch (err) {
     error.value = 'Ошибка анализа: ' + err.message
   } finally {
@@ -519,6 +512,7 @@ const regenerateSummary = async () => {
 }
 
 const handleSubmit = async () => {
+  console.log("handleSubmit вызвана, isSaving:", isSaving.value);
   isSaving.value = true
   error.value = null
 
@@ -532,11 +526,15 @@ const handleSubmit = async () => {
     
     // Обновляем currentDocument в хранилище перед сохранением
     documentStore.currentDocument = document.value
+    console.log("Сохранение документа начато:", document.value.id);
     await documentStore.saveDocument()
+    console.log("Документ успешно сохранён, перенаправление на /documents");
     router.push('/documents')
   } catch (err) {
+    console.error("Ошибка при сохранении документа:", err);
     error.value = 'Ошибка сохранения: ' + err.message
   } finally {
+    console.log("Конец сохранения, сбрасываем isSaving:", isSaving.value);
     isSaving.value = false
   }
 }

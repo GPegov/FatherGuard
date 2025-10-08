@@ -7,11 +7,15 @@ import fs from 'fs/promises';
 import pdfService from '../services/pdfService.js';
 import { fileURLToPath } from 'url';
 import { analyzeText, analyzeDocument, analyzeAttachment } from '../services/documentService.js';
+import ChronicleService from '../services/chronicleService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default function documentRoutes({ db, upload }) {
   const router = Router();
+  
+  // Создаем экземпляр ChronicleService
+  const chronicleService = new ChronicleService(path.join(__dirname, '../dataBase/chronicle.json'));
 
   // Middleware для проверки JSON только для POST и PUT запросов с JSON телом
   // Так как express.json() уже применяется в app.mjs, здесь мы просто добавим дополнительную проверку
@@ -239,6 +243,15 @@ export default function documentRoutes({ db, upload }) {
         
         db.data.documents.push(newDocument);
         await db.write();
+        
+        // Создаем запись в летописи
+        try {
+          await chronicleService.createEntryForNewDocument(newDocument, userComments);
+        } catch (chronicleErr) {
+          console.error('Ошибка создания записи в летописи:', chronicleErr);
+          // Не прерываем выполнение основного запроса из-за ошибки летописи
+        }
+        
         return res.status(201).json(newDocument);
       }
 
@@ -339,6 +352,15 @@ export default function documentRoutes({ db, upload }) {
       
       db.data.documents.push(newDocument);
       await db.write();
+      
+      // Создаем запись в летописи
+      try {
+        await chronicleService.createEntryForNewDocument(newDocument);
+      } catch (chronicleErr) {
+        console.error('Ошибка создания записи в летописи:', chronicleErr);
+        // Не прерываем выполнение основного запроса из-за ошибки летописи
+      }
+      
       res.status(201).json(newDocument);
     } catch (err) {
       console.error('Ошибка создания документа:', err);
@@ -603,6 +625,14 @@ export default function documentRoutes({ db, upload }) {
         updateDocumentAnalysis(doc, analysisResult.data);
         await db.write();
         console.log(`Документ обновлен после анализа`);
+
+        // Создаем запись в летописи
+        try {
+          await chronicleService.createEntryForAnalyzedDocument(doc);
+        } catch (chronicleErr) {
+          console.error('Ошибка создания записи в летописи:', chronicleErr);
+          // Не прерываем выполнение основного запроса из-за ошибки летописи
+        }
 
         res.json({
           ...analysisResult.data,

@@ -543,14 +543,116 @@ ${processedText || ""}
     return result;
   }
 
+  /**
+   * Генерирует текст для записи летописи на основе документа
+   * @param {Object} documentData - Данные документа
+   * @param {string} eventType - Тип события (например, 'document_created', 'document_analyzed', 'complaint_generated')
+   * @returns {Promise<string>} Сгенерированный текст записи летописи
+   */
+  async generateChronicleEntryText(documentData, eventType = 'document_created') {
+    try {
+      console.log("Генерация текста для летописи, тип события:", eventType);
+      
+      let prompt = "";
+      
+      switch (eventType) {
+        case 'document_created':
+          prompt = `Создай краткое описание события для летописи в формате дневниковой записи. Описание должно быть в формате: "ДАТА - описание события", где ДАТА уже указана и не должна повторяться в тексте.
+          
+          Событие: Пользователь добавил новый документ
+          
+          Контекст:
+          - Тип события: Добавление документа
+          - Краткое содержание документа: ${documentData.summary || 'не указано'}
+          - Орган, упомянутый в документе: ${documentData.senderAgency || 'не указан'}
+          - Дата документа: ${documentData.documentDate || 'не указана'}
+          
+          Создай краткое, информативное описание события в деловом стиле, не включая дату в текст.`;
+          break;
+          
+        case 'document_analyzed':
+          prompt = `Создай краткое описание события для летописи в формате дневниковой записи. Описание должно быть в формате: "ДАТА - описание события", где ДАТА уже указана и не должна повторяться в тексте.
+          
+          Событие: Документ проанализирован системой
+          
+          Контекст:
+          - Тип события: Анализ документа
+          - Краткое содержание: ${documentData.summary || 'не указано'}
+          - Выявленные нарушения: ${(documentData.violations && documentData.violations.length) ? documentData.violations.length + ' нарушений' : 'нарушения не выявлены'}
+          - Орган-отправитель: ${documentData.senderAgency || 'не указан'}
+          
+          Создай краткое, информативное описание события в деловом стиле, не включая дату в текст.`;
+          break;
+          
+        case 'complaint_generated':
+          prompt = `Создай краткое описание события для летописи в формате дневниковой записи. Описание должно быть в формате: "ДАТА - описание события", где ДАТА уже указана и не должна повторяться в тексте.
+          
+          Событие: Создана официальная жалоба
+          
+          Контекст:
+          - Тип события: Создание жалобы
+          - Основание для жалобы: ${documentData.summary || 'не указано'}
+          - Целевой орган: ${documentData.targetAgency || 'не указан'}
+          - Выявленные нарушения: ${(documentData.violations && documentData.violations.length) ? documentData.violations.length + ' нарушений' : 'нарушения не выявлены'}
+          
+          Создай краткое, информативное описание события в деловом стиле, не включая дату в текст.`;
+          break;
+          
+        default:
+          prompt = `Создай краткое описание события для летописи в формате дневниковой записи. Описание должно быть в формате: "ДАТА - описание события", где ДАТА уже указана и не должна повторяться в тексте.
+          
+          Событие: ${eventType}
+          
+          Контекст:
+          - Краткое содержание: ${documentData.summary || 'не указано'}
+          
+          Создай краткое, информативное описание события в деловом стиле, не включая дату в текст.`;
+          break;
+      }
+      
+      console.log("Prompt для генерации текста летописи:", prompt.substring(0, 200) + "...");
+      
+      const response = await this.queryLocalModel(prompt, {
+        temperature: 0.3,
+        format: "json"
+      });
+      
+      const parsedResponse = this.safeParseResponse(response);
+      console.log("Ответ от модели:", parsedResponse);
+      
+      // Возвращаем результат - либо из поля content, либо сам ответ, либо дефолтное значение
+      const result = typeof parsedResponse === 'object' ? 
+        (parsedResponse.content || parsedResponse.text || parsedResponse) : 
+        parsedResponse;
+        
+      console.log("Сгенерированный текст летописи:", result);
+      return typeof result === 'string' ? result : String(result);
+    } catch (error) {
+      console.error("Ошибка при генерации текста для летописи:", error);
+      // Возвращаем стандартный текст в случае ошибки
+      switch (eventType) {
+        case 'document_analyzed':
+          return `Документ проанализирован. Орган: ${documentData.senderAgency || 'неизвестный'}. Нарушения: ${(documentData.violations && documentData.violations.length) || 0} шт.`;
+        case 'complaint_generated':
+          return `Сформирована жалоба. Основание: ${documentData.summary || 'неизвестно'}.`;
+        default:
+          return `Добавлен документ. Содержание: ${documentData.summary || 'неизвестно'}.`;
+      }
+    }
+  }
+
   extractAgency(text) {
     console.log("Начало extractAgency");
     console.log("Text length:", text ? text.length : 0);
-    // Implementation for agency extraction
-    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
-    const result = agencies.find((agency) => text.includes(agency)) || "";
-    console.log("Extracted agency:", result);
-    return result;
+    // Расширенная реализация для извлечения названий органов
+    const agencies = ["ФССП", "Прокуратура", "Суд", "ГУФССП", "РОСП"];
+    // Проверяем текст на наличие агентств, используя регистронезависимый поиск
+    const foundAgency = agencies.find((agency) => 
+      text.toLowerCase().includes(agency.toLowerCase())
+    ) || "";
+    
+    console.log("Extracted agency:", foundAgency);
+    return foundAgency;
   }
 
   buildAnalysisPrompt(text, instructions, strictMode) {
