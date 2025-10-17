@@ -1,0 +1,4303 @@
+// Файл: vite.config.js
+import { fileURLToPath, URL } from 'node:url'
+import { defineConfig, loadEnv } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
+
+export default defineConfig(({ mode }) => {
+  // Загружаем env переменные
+  const env = loadEnv(mode, process.cwd(), ['VITE_'])
+
+  return {
+    server: {
+      host: '0.0.0.0',
+      port: parseInt(env.VITE_PORT || 5173), // Используем порт из env
+      proxy: {
+        '/ollama': {
+          target: 'http://localhost:11434',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/ollama/, '')
+        },
+        '/api': {
+          target: env.VITE_API_BASE,
+          changeOrigin: true
+        }
+      }
+    },
+    plugins: [
+      vue(),
+      vueDevTools(),
+    ],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url))
+      }
+    },
+    define: {
+      'process.env': {},
+      '__APP_ENV__': JSON.stringify(env)
+    },
+    optimizeDeps: {
+      include: ['uuid']
+    }
+  }
+})
+
+====================
+
+// Файл: index.html
+<!DOCTYPE html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vite App</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
+
+
+====================
+
+// Файл: src\main.js
+import './assets/main.css'
+
+import { createApp } from 'vue'
+import { createPinia } from 'pinia'
+import App from './App.vue'
+import router from './router'
+
+
+const app = createApp(App)
+
+const pinia = createPinia()
+app.use(pinia)
+
+
+app.use(router)
+
+
+app.mount('#app')
+
+====================
+
+// Файл: src\App.vue
+<template>
+  <div class="app">
+    <header class="app-header">
+      <nav class="nav-container">
+        <router-link to="/" class="nav-logo">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" class="logo-icon">
+            <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+          </svg>
+          <span class="logo-text">Юридическая Защита Отцов</span>
+        </router-link>
+        <div class="nav-links">
+          <router-link to="/" class="nav-link" exact-active-class="active">Главная</router-link>
+          <router-link to="/documents" class="nav-link" exact-active-class="active">Документы</router-link>
+          <router-link to="/complaints" class="nav-link" exact-active-class="active">Жалобы</router-link>
+          <router-link to="/fssp" class="nav-link" exact-active-class="active">Отделения ФССП</router-link>
+        </div>
+      </nav>
+    </header>
+
+    <main class="app-main">
+      <router-view v-slot="{ Component }">
+        <transition name="fade" mode="out-in">
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </main>
+
+    <footer class="app-footer">
+      <div class="footer-content">
+        <p>© 2025 Юридический сервис "Защита Отцов".</p>
+      </div>
+    </footer>
+  </div>
+</template>
+
+<script setup>
+import { onMounted } from 'vue'
+import { useDocumentStore } from '@/stores/documentStore'
+import { useComplaintStore } from '@/stores/complaintStore'
+
+const documentStore = useDocumentStore()
+const complaintStore = useComplaintStore()
+
+// Загружаем данные при запуске приложения, если они ещё не загружены
+onMounted(async () => {
+  if (documentStore.documents.length === 0 && !documentStore.isLoading) {
+    await documentStore.fetchDocuments()
+  }
+  if (complaintStore.complaints.length === 0 && !complaintStore.isLoading) {
+    await complaintStore.fetchComplaints()
+  }
+})
+</script>
+
+
+
+====================
+
+// Файл: src\views\HomeView.vue
+<template>
+  <div class="home-view">
+    <h1>Опишите, как именно были нарушены ваши права:</h1>
+    <textarea 
+      v-model="userText" 
+      placeholder="В свободной форме изложите детали нарушения..."
+      class="text-input"
+      rows="15"
+    ></textarea>
+    
+    <div class="region-selection-section">
+      <p>Выберите регион, в котором произошло нарушение:</p>
+      <RegionAutocomplete
+        :regions="regionsList"
+        v-model="selectedRegionName"
+        @region-selected="onRegionSelected"
+        class="region-autocomplete"
+        :disabled="isLoading || regionsList.length === 0"
+      />
+      <div v-if="regionLoading" class="loading-regions">
+        Загрузка списка регионов...
+      </div>
+    </div>
+    
+    <div class="upload-section">
+      <p>Приложите входящие документы (.doc / .docx / .txt / .pdf)</p>
+      <FileUpload 
+        label="Добавить документы"
+        @files-selected="handleFilesSelected"
+        accept=".doc,.docx,.txt,.pdf"
+      />
+      <div v-if="files.length > 0" class="files-preview">
+        <p>Выбранные файлы: {{ files.map(f => f.name).join(', ') }}</p>
+      </div>
+    </div>
+
+    <button 
+      @click="submitData"
+      :disabled="!isFormValid || isLoading || !selectedRegionCode"
+      class="submit-btn"
+    >
+      <span v-if="!isLoading">Продолжить</span>
+      <span v-else>Обработка...</span>
+    </button>
+
+    <div v-if="errorMessage" class="error-message">
+      {{ errorMessage }}
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
+import { v4 as uuidv4 } from 'uuid';
+import FileUpload from '@/components/common/FileUpload.vue';
+import RegionAutocomplete from '@/components/RegionAutocomplete.vue';
+import { useDocumentStore } from '@/stores/documentStore';
+
+const documentStore = useDocumentStore();
+const router = useRouter();
+const userText = ref('');
+const files = ref([]);
+const isLoading = ref(false);
+const errorMessage = ref('');
+const selectedRegionName = ref(''); // Изменяем на имя региона
+const selectedRegionCode = ref(''); // Добавляем отдельное состояние для кода региона
+const regionsList = ref([]);
+const regionLoading = ref(false);
+
+// Загружаем список регионов при монтировании компонента
+onMounted(async () => {
+  await loadRegions();
+});
+
+const loadRegions = async () => {
+  regionLoading.value = true;
+  try {
+    const response = await fetch('http://localhost:3001/api/fssp/regions');
+    const data = await response.json();
+    if (data.success) {
+      regionsList.value = data.regions;
+    } else {
+      console.error('Ошибка загрузки регионов:', data.message);
+      errorMessage.value = 'Ошибка загрузки списка регионов';
+    }
+  } catch (error) {
+    console.error('Ошибка загрузки регионов:', error);
+    errorMessage.value = 'Ошибка соединения с сервером';
+  } finally {
+    regionLoading.value = false;
+  }
+};
+
+// Обработка выбора региона через автозаполнение
+const onRegionSelected = (regionName) => {
+  selectedRegionName.value = regionName;
+  // Найти код региона по имени
+  const region = regionsList.value.find(r => r.name === regionName);
+  selectedRegionCode.value = region ? region.code : '';
+};
+
+const handleFilesSelected = (selectedFiles) => {
+  files.value = selectedFiles;
+  errorMessage.value = '';
+};
+
+const isFormValid = computed(() => {
+  return userText.value.trim() !== '' || files.value.length > 0;
+});
+
+const submitData = async () => {
+  if (!isFormValid.value || isLoading.value) return;
+
+  isLoading.value = true;
+  errorMessage.value = '';
+
+  try {
+    // Инициализируем новый документ с полной структурой (временно, до сохранения)
+    const newDocument = {
+      id: uuidv4(), // Генерируем уникальный ID сразу при создании документа
+      date: new Date().toISOString().split('T')[0],
+      agency: '', // Вначале оставляем пустым, будет заполнено конкретным отделением ФССП позже
+      originalText: userText.value,
+      summary: '',
+      documentDate: '',
+      senderAgency: '',
+      keySentences: [],
+      attachments: [],
+      comments: userText.value,
+      complaints: [],
+      analysisStatus: 'pending',
+      lastAnalyzedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      violations: [],
+      regionCode: selectedRegionCode.value // Сохраняем код региона для загрузки отделений ФССП
+    };
+
+    // Обновляем документ в хранилище
+    documentStore.currentDocument = newDocument;
+
+    // Если есть файлы для загрузки, сначала загружаем их (но документ в базе не создаем)
+    if (files.value.length > 0) {
+      try {
+        // Загружаем файлы и обновляем документ
+        await documentStore.uploadFiles(files.value);
+      } catch (uploadError) {
+        console.error('Ошибка загрузки файлов:', uploadError);
+        errorMessage.value = 'Ошибка загрузки файлов: ' + uploadError.message;
+        return;
+      }
+    }
+    
+    // Обновляем документ в хранилище, чтобы убедиться, что regionCode сохранен
+    // (сервер может не возвращать regionCode в ответе, но он нужен для дальнейшей работы)
+    documentStore.currentDocument = {
+      ...documentStore.currentDocument,
+      regionCode: selectedRegionCode.value
+    };
+
+    // Переходим к предпросмотру без сохранения документа в базе
+    // Используем реальный ID документа
+    router.push({ 
+      name: 'review', 
+      params: { id: newDocument.id }
+    });
+  } catch (error) {
+    console.error('Ошибка при подготовке документа:', error);
+    errorMessage.value = error.response?.data?.message || 
+                         error.message || 
+                         'Произошла ошибка при подготовке документа';
+  } finally {
+    isLoading.value = false;
+  }
+};
+</script>
+
+
+
+====================
+
+// Файл: src\views\FSSPDataView.vue
+<template>
+  <div class="fssp-container">
+    <div class="header">
+      <h1>Отделения Федеральной Службы Судебных Приставов</h1>
+      <div class="controls">
+        <RegionAutocomplete
+          :regions="availableRegions"
+          v-model="selectedRegion"
+          @regionSelected="loadData"
+          class="region-autocomplete"
+        />
+        <button 
+          @click="startParsing" 
+          :disabled="isParsing" 
+          class="parse-button"
+        >
+          {{ isParsing ? 'Парсинг выполняется...' : 'Запустить парсинг данных' }}
+        </button>
+      </div>
+    </div>
+
+    <div v-if="parsingResult" class="parsing-result">
+      <h2>Результаты последнего парсинга</h2>
+      <div v-if="parsingResult.success" class="success-message">
+        <p>✅ {{ parsingResult.message }}</p>
+        <div v-if="parsingResult.statistics" class="statistics">
+          <p><strong>Статистика:</strong></p>
+          <ul>
+            <li>Регионов: {{ parsingResult.statistics.regions }}</li>
+            <li>Городов: {{ parsingResult.statistics.cities }}</li>
+            <li>Отделений: {{ parsingResult.statistics.departments }}</li>
+          </ul>
+        </div>
+      </div>
+      <div v-else class="error-message">
+        <p>❌ {{ parsingResult.message }}</p>
+      </div>
+    </div>
+
+    <div v-if="fsspData" class="data-container">
+      <h2>Данные отделений ФССП</h2>
+      <p class="last-update">Последнее обновление: {{ formatDate(fsspData.timestamp) }}</p>
+      
+      <div class="regions-list">
+        <div 
+          v-for="region in fsspData.regions" 
+          :key="region.region" 
+          class="region-card"
+        >
+          <h3 class="region-name">{{ region.region }}</h3>
+          <div class="cities-list">
+            <div 
+              v-for="city in region.cities" 
+              :key="city.name" 
+              class="city-card"
+            >
+              <h4 class="city-name">{{ city.name }}</h4>
+              <div class="departments-list">
+                <div 
+                  v-for="(dept, index) in city.departments" 
+                  :key="index" 
+                  class="department-card"
+                >
+                  <h5 class="department-name">{{ dept.name }}</h5>
+                  <p class="department-address">📍 {{ dept.address }}</p>
+                  <p class="department-phone">📞 {{ dept.phone }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="no-data">
+      <p>Данные пока не загружены. Нажмите кнопку "Запустить парсинг данных" для получения информации.</p>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, onMounted } from 'vue';
+import axios from 'axios';
+import RegionAutocomplete from '@/components/RegionAutocomplete.vue';
+
+export default {
+  name: 'FSSPDataView',
+  components: {
+    RegionAutocomplete
+  },
+  setup() {
+    const isParsing = ref(false);
+    const fsspData = ref(null);
+    const parsingResult = ref(null);
+    const selectedRegion = ref('Свердловская область');
+    const availableRegions = ref([]);
+
+    // Загрузка списка доступных регионов
+    const loadRegions = async () => {
+      try {
+        const response = await axios.get('http://localhost:3001/api/fssp/regions');
+        if (response.data.success) {
+          // Сохраняем полные данные регионов (имя и код)
+          availableRegions.value = response.data.regions;
+          // Устанавливаем имя региона по умолчанию
+          if (!selectedRegion.value && response.data.regions.length > 0) {
+            selectedRegion.value = response.data.regions.find(r => r.code === 66)?.name || response.data.regions[0].name;
+          }
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки списка регионов:', error);
+      }
+    };
+
+    // Загрузка данных по выбранному региону
+    const loadData = async () => {
+      try {
+        // Находим код выбранного региона
+        const selectedRegionData = availableRegions.value.find(r => r.name === selectedRegion.value);
+        const regionCode = selectedRegionData ? selectedRegionData.code : null;
+        
+        // Формируем URL с кодом региона
+        let url = `http://localhost:3001/api/fssp/data?region=${encodeURIComponent(selectedRegion.value)}`;
+        if (regionCode) {
+          url += `&regionCode=${regionCode}`;
+        }
+        
+        const response = await axios.get(url);
+        if (response.data.success) {
+          fsspData.value = response.data.data;
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки данных ФССП:', error);
+      }
+    };
+
+    // Запуск парсинга по выбранному региону
+    const startParsing = async () => {
+      isParsing.value = true;
+      parsingResult.value = null;
+      
+      try {
+        // Находим код выбранного региона
+        const selectedRegionData = availableRegions.value.find(r => r.name === selectedRegion.value);
+        const regionCode = selectedRegionData ? selectedRegionData.code : null;
+        
+        const response = await axios.post('http://localhost:3001/api/fssp/parse', {
+          region: selectedRegion.value,
+          regionCode: regionCode
+        });
+        parsingResult.value = response.data;
+        
+        // После успешного парсинга перезагружаем данные
+        if (response.data.success) {
+          await loadData();
+        }
+      } catch (error) {
+        parsingResult.value = {
+          success: false,
+          message: 'Ошибка при запуске парсинга: ' + (error.response?.data?.message || error.message)
+        };
+        console.error('Ошибка при запуске парсинга:', error);
+      } finally {
+        isParsing.value = false;
+      }
+    };
+
+    // Форматирование даты
+    const formatDate = (dateString) => {
+      if (!dateString) return 'Неизвестно';
+      const date = new Date(dateString);
+      return date.toLocaleString('ru-RU');
+    };
+
+    // Загрузка данных при монтировании
+    onMounted(async () => {
+      await loadRegions();
+      await loadData();
+    });
+
+    return {
+      isParsing,
+      fsspData,
+      parsingResult,
+      startParsing,
+      formatDate,
+      selectedRegion,
+      availableRegions,
+      loadData
+    };
+  }
+};
+</script>
+
+
+
+====================
+
+// Файл: src\views\DocumentsList.vue
+<template>
+  <div class="documents-list">
+    <div class="header">
+      <h1>Архив входящих документов</h1>
+      <router-link to="/" class="new-doc-btn">+ Новый документ</router-link>
+    </div>
+
+    <div class="filters">
+      <input v-model="searchQuery" type="text" placeholder="Поиск по тексту" class="search-input" />
+      <select v-model="selectedAgency" class="agency-select">
+        <option value="">Все ведомства</option>
+        <option v-for="agency in agenciesList" :key="agency" :value="agency">
+          {{ agency }}
+        </option>
+      </select>
+      <button @click="applyFilters" class="filter-btn">Применить</button>
+      <button @click="resetFilters" class="filter-btn">Сбросить</button>
+    </div>
+
+    <div v-if="isLoading" class="loading">Загрузка документов...</div>
+    <div v-else-if="filteredDocuments.length === 0" class="empty">
+      Нет документов, соответствующих фильтрам
+    </div>
+
+
+    <ul v-else class="documents">
+      <li v-for="doc in filteredDocuments" :key="doc.id" class="document-item">
+        <div class="document-main" @click="viewDocument(doc.id)">
+          <div class="document-meta">
+            <span class="document-date">{{ formatDate(doc.date) }}</span>
+            <span class="document-agency">{{ doc.agency }}</span>
+          </div>
+          <p class="document-summary">
+            {{ doc.summary || doc.originalText.substring(0, 100) + '...' }}
+          </p>
+        </div>
+        <div class="document-actions">
+          <button @click.stop="openComplaintDialog(doc.id)" class="analyze-btn">
+            Проверить законность
+          </button>
+          <button @click.stop="confirmDelete(doc.id)" class="delete-btn">
+            Удалить
+          </button>
+        </div>
+      </li>
+    </ul>
+
+
+    <!-- Модальное окно подтверждения удаления -->
+    <div v-if="showDeleteModal" class="modal-overlay">
+      <div class="modal-content">
+        <h3>Подтверждение удаления</h3>
+        <p>Вы уверены, что хотите удалить этот документ?</p>
+        <div class="modal-actions">
+          <button @click="deleteDocument" class="confirm-btn">Да, удалить</button>
+          <button @click="showDeleteModal = false" class="cancel-btn">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно выбора органа для подачи жалобы -->
+    <div v-if="showComplaintDialog" class="complaint-dialog" @click.self="showComplaintDialog = false">
+      <div class="dialog-content">
+        <h3>Выберите орган для подачи жалобы</h3>
+        <div class="agency-selection">
+          <select v-model="selectedComplaintAgency" class="agency-select">
+            <option value="" disabled hidden>Выберите надзорный орган</option>
+            <option v-for="agency in complaintAgencies" :key="agency" :value="agency">
+              {{ agency }}
+            </option>
+          </select>
+        </div>
+        <div class="dialog-actions">
+          <button 
+            @click="generateComplaint" 
+            class="action-btn primary"
+            :disabled="!selectedComplaintAgency || isGeneratingComplaint"
+          >
+            {{ isGeneratingComplaint ? 'Генерация...' : 'Создать жалобу' }}
+          </button>
+          <button 
+            @click="showComplaintDialog = false" 
+            class="action-btn"
+          >
+            Отмена
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <NotificationToast v-if="showNotification" :message="notificationMessage" :type="notificationType" :duration="1500"
+      @close="showNotification = false" />
+
+    <!-- Индикатор загрузки -->
+    <div v-if="isGeneratingComplaint" class="loading-overlay">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Генерация жалобы...</div>
+        <div class="loading-subtext">Пожалуйста, подождите</div>
+      </div>
+    </div>
+
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useDocumentStore } from '@/stores/documentStore'
+import { useComplaintStore } from '@/stores/complaintStore'
+import { useRouter } from 'vue-router'
+import NotificationToast from '@/components/ui/NotificationToast.vue'
+
+const documentStore = useDocumentStore()
+const complaintStore = useComplaintStore()
+const router = useRouter()
+
+const showNotification = ref(false)
+const notificationMessage = ref('')
+const notificationType = ref('success')
+
+const isLoading = ref(false)
+const searchQuery = ref('')
+const selectedAgency = ref('')
+
+// Для удаления документов
+const showDeleteModal = ref(false)
+const documentToDelete = ref(null)
+
+// Для модального окна жалобы
+const showComplaintDialog = ref(false)
+const selectedComplaintAgency = ref('')
+const currentDocumentId = ref(null)
+const isGeneratingComplaint = ref(false)
+
+// Варианты надзорных органов
+const complaintAgencies = computed(() => complaintStore.agenciesOptions)
+
+// Открытие модального окна для выбора органа
+const openComplaintDialog = (documentId) => {
+  currentDocumentId.value = documentId
+  selectedComplaintAgency.value = ''
+  showComplaintDialog.value = true
+}
+
+// Генерация жалобы
+const generateComplaint = async () => {
+  if (!selectedComplaintAgency.value) return
+
+  isGeneratingComplaint.value = true
+  try {
+    const complaint = await complaintStore.generateComplaint(
+      currentDocumentId.value,
+      selectedComplaintAgency.value
+    )
+
+    // Показываем уведомление
+    notificationMessage.value = 'Жалоба успешно создана'
+    notificationType.value = 'success'
+    showNotification.value = true
+
+    // Закрываем диалог
+    showComplaintDialog.value = false
+
+    // Переходим к подробному просмотру созданной жалобы
+    if (complaint && complaint.id) {
+      router.push(`/complaints/${complaint.id}`)
+    } else {
+      // Если по какой-то причине ID жалобы не доступен, переходим к списку жалоб
+      router.push('/complaints')
+    }
+  } catch (error) {
+    console.error('Ошибка генерации жалобы:', error)
+
+    // Уведомление об ошибке
+    notificationMessage.value = 'Ошибка при создании жалобы'
+    notificationType.value = 'error'
+    showNotification.value = true
+  } finally {
+    isGeneratingComplaint.value = false
+  }
+}
+
+const confirmDelete = (id) => {
+  documentToDelete.value = id
+  showDeleteModal.value = true
+}
+
+const deleteDocument = async () => {
+  if (documentToDelete.value) {
+    try {
+      await documentStore.deleteDocument(documentToDelete.value)
+      await documentStore.fetchDocuments()
+
+      // Показываем уведомление
+      notificationMessage.value = 'Документ успешно удалён'
+      notificationType.value = 'success'
+      showNotification.value = true
+    } catch (error) {
+      console.error('Ошибка удаления:', error)
+
+      // Уведомление об ошибке
+      notificationMessage.value = 'Ошибка при удалении документа'
+      notificationType.value = 'error'
+      showNotification.value = true
+    }
+  }
+  showDeleteModal.value = false
+}
+
+
+const viewDocument = (id) => {
+  router.push(`/documents/${id}`)
+}
+
+// Загружаем документы при монтировании
+onMounted(async () => {
+  isLoading.value = true
+  try {
+    await documentStore.fetchDocuments()
+  } finally {
+    isLoading.value = false
+  }
+})
+
+// Получаем список ведомств
+const agenciesList = computed(() => documentStore.agenciesList)
+
+// Фильтрация документов
+const filteredDocuments = computed(() => {
+  return documentStore.documents.filter((doc) => {
+    const matchesSearch =
+      searchQuery.value === '' ||
+      doc.summary.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+      doc.originalText.toLowerCase().includes(searchQuery.value.toLowerCase())
+
+    const matchesAgency =
+      selectedAgency.value === '' || doc.agency === selectedAgency.value
+
+    return matchesSearch && matchesAgency
+  })
+})
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('ru-RU')
+}
+
+const applyFilters = () => {
+  // Фильтрация происходит автоматически через computed свойство
+}
+
+const resetFilters = () => {
+  searchQuery.value = ''
+  selectedAgency.value = ''
+}
+</script>
+
+
+
+====================
+
+// Файл: src\views\DocumentReview.vue
+<template>
+  <div class="document-review">
+    <div class="header">
+      <h1>Предпросмотр документа</h1>
+      <button @click="goBack" class="back-button">← Назад</button>
+    </div>
+
+    <div v-if="isLoading" class="loading-state">
+      <div class="spinner"></div>
+      <p>Загрузка данных...</p>
+    </div>
+
+    <!-- Индикатор анализа -->
+    <div v-if="isAnalyzing && !isLoading" class="analyzing-overlay">
+      <div class="analyzing-content">
+        <div class="loading-spinner"></div>
+        <div class="analyzing-text">Анализ документа...</div>
+        <div class="analyzing-subtext">Пожалуйста, подождите</div>
+      </div>
+    </div>
+
+    <div v-else class="review-container">
+      <form  class="review-form">
+        <!-- Информация о выбранном регионе -->
+        <div class="region-info" v-if="document.regionCode">
+          <p><strong>Выбранный регион:</strong> {{ documentStore.getRegionNameByCode(document.regionCode) }}</p>
+        </div>
+
+        <!-- Основные поля -->
+        <div class="form-section">
+          <h2>Основная информация</h2>
+          <div class="form-group">
+            <label for="date">Дата поступления:</label>
+            <input type="date" id="date" v-model="document.date" required class="form-input" />
+          </div>
+
+          <div class="form-group">
+            <label for="agency">Отделение ФССП, допустившее нарушение:</label>
+            <div v-if="document.regionCode && agenciesList.length === 0" class="loading-message">
+              Загрузка отделений ФССП для выбранного региона...
+            </div>
+            <div v-else-if="document.regionCode && agenciesList.length === 0 && !isLoadingDepartments" class="no-departments-message">
+              В выбранном регионе нет известных отделений ФССП
+            </div>
+            <AgencyAutocomplete
+              id="agency"
+              :agencies="agenciesList"
+              v-model="document.agency"
+              @agency-selected="onAgencySelected"
+              :placeholder="agenciesList.length > 0 ? 'Выберите отделение ФССП' : 'Отделения недоступны'"
+              class="agency-autocomplete"
+              :disabled="agenciesList.length === 0"
+              :required="agenciesList.length > 0"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="originalText">Текст документа:</label>
+            <textarea id="originalText" v-model="document.originalText" required class="form-textarea" rows="15"
+              placeholder="Введите текст документа"></textarea>
+          </div>
+        </div>
+
+        <!-- Анализ документа -->
+        <div class="form-section" v-if="document.analysisStatus !== 'pending'">
+          <h2>Анализ документа</h2>
+
+          <div class="form-group" v-if="document.analysisStatus === 'completed'">
+            <label>Краткая суть:</label>
+            <div class="summary-container">
+              <textarea v-model="document.summary" required class="form-textarea" rows="12"
+                placeholder="Анализ выполняется..."></textarea>
+              <button type="button" @click="regenerateSummary" class="refresh-btn" :disabled="aiStore.isLoading"
+                title="Перегенерировать краткую суть">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                  <path d="M16 16h5v5" />
+                </svg>
+              </button>
+            </div>
+          </div>
+          
+          <!-- Объединённый текст для отладки -->
+          <div class="form-group" v-if="document.combinedText">
+            <label>Объединённый текст (для отладки):</label>
+            <textarea readonly :value="document.combinedText" class="form-textarea" rows="15" 
+              style="background-color: #f9f9f9; font-family: monospace; white-space: pre-wrap;"></textarea>
+          </div>
+
+          <!-- Важные предложения -->
+          <div class="form-group" v-if="document.analysisStatus === 'completed'">
+            <label>Важные предложения:</label>
+            <div v-for="(sentence, index) in document.keySentences" :key="index" class="paragraph-item">
+              <textarea v-model="document.keySentences[index]" required class="form-textarea" rows="3"></textarea>
+              <button type="button" @click="removeSentence(index)" class="remove-btn" title="Удалить предложение">
+                ×
+              </button>
+            </div>
+            <button type="button" @click="addSentence" class="add-btn" title="Добавить предложение">
+              + Добавить предложение
+            </button>
+          </div>
+        </div>
+
+        <!-- Отправитель вложенного документа (только при наличии вложений) -->
+        <div class="form-section" v-if="document.attachments?.length">
+          <h2>Отправитель вложенного документа</h2>
+          
+          <div class="form-group">
+            <label>Дата отправления документа:</label>
+            <input v-model="document.documentDate" type="date" class="form-input" />
+          </div>
+
+          <div class="form-group">
+            <label>Ведомство-отправитель:</label>
+            <input v-model="document.senderAgency" class="form-input" list="agencies" />
+          </div>
+        </div>
+      </form>
+        <!-- Вложения -->
+        <div class="form-section">
+          <h2>Вложенные документы</h2>
+          
+          <!-- Отладочная информация -->
+          <div class="debug-info" style="background: #e6f7ff; padding: 10px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #91d5ff;">
+            <p>Количество вложений в документе: {{ document.attachments ? document.attachments.length : 0 }}</p>
+            <p v-if="!document.attachments || document.attachments.length === 0">Вложений нет</p>
+            <div v-for="(attachment, idx) in document.attachments" :key="'debug-' + idx">
+              <p>Вложение {{ idx + 1 }}: {{ attachment.name }} ({{ attachment.type }})</p>
+              <p>Размер: {{ formatFileSize(attachment.size) }}, Текст длина: {{ (attachment.text || '').length }}</p>
+              <p v-if="!attachment.text || attachment.text.trim() === ''" style="color: red; font-weight: bold;">ПРЕДУПРЕЖДЕНИЕ: Вложение не содержит текста!</p>
+            </div>
+          </div>
+          
+          <!-- Отображаем секцию вложений только если есть вложения -->
+          <div v-if="document.attachments && document.attachments.length > 0">
+          
+          <div v-for="(attachment, idx) in document.attachments" :key="attachment.id || idx"
+            class="attachment-analysis">
+            <div class="attachment-header">
+              <h3>{{ attachment.name }}</h3>
+              <span class="file-size">{{ formatFileSize(attachment.size) }}</span>
+            </div>
+
+            <div class="attachment-details">
+              <div v-if="attachment.analysis" class="analysis-details">
+                <div class="detail-row">
+                  <span class="detail-label">Тип документа:</span>
+                  <span>{{ attachment.analysis.documentType || 'Не указан' }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Дата отправления:</span>
+                  <input type="date" v-model="attachment.documentDate" class="form-input small">
+                </div>
+                <div class="detail-row">
+                  <span class="detail-label">Ведомство-отправитель:</span>
+                  <input v-model="attachment.senderAgency" class="form-input small" list="agencies">
+                </div>
+                <div class="detail-row full-width">
+                  <span class="detail-label">Краткая суть:</span>
+                  <textarea v-model="attachment.summary" class="form-textarea" rows="3"></textarea>
+                </div>
+              </div>
+              <div class="detail-row full-width">
+                <span class="detail-label">Полный текст:</span>
+                <textarea v-model="attachment.text" class="form-textarea" rows="6" readonly="false"></textarea>
+              </div>
+              <div v-if="attachment.analysis" class="key-paragraphs">
+                <h4>Важные предложения:</h4>
+                <div v-for="(sentence, index) in attachment.keySentences" :key="index" class="paragraph-item">
+                  <textarea v-model="attachment.keySentences[index]" class="form-textarea" rows="2"></textarea>
+                  <button type="button" @click="removeAttachmentSentence(attachment.id, index)" class="remove-btn"
+                    title="Удалить предложение">
+                    ×
+                  </button>
+                </div>
+                <button type="button" @click="addAttachmentSentence(attachment.id)" class="add-btn"
+                  title="Добавить предложение">
+                  + Добавить предложение
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+
+
+        <!-- Кнопки действий -->
+        <div class="form-actions">
+          <button 
+            type="button" 
+            @click="analyzeDocument" 
+            class="analyze-btn" 
+            :disabled="isAnalyzing || documentStore.isCurrentDocumentAnalyzed || (!document.originalText && (!document.attachments || document.attachments.length === 0))"
+            :class="{ 'analyze-btn-completed': documentStore.isCurrentDocumentAnalyzed }"
+          >
+            <span v-if="isAnalyzing" class="button-loader"></span>
+            {{ isAnalyzing ? 'Анализ...' : (documentStore.isCurrentDocumentAnalyzed ? 'Документ проанализирован' : 'Анализировать документ') }}
+          </button>
+
+          <button 
+            type="button" 
+            @click="handleSubmit" 
+            class="save-btn" 
+            :disabled="isSaving"
+            :class="{ 'save-btn-active': documentStore.isCurrentDocumentAnalyzed && !isSaving }"
+          >
+            {{ isSaving ? 'Сохранение...' : 'Сохранить документ' }}
+          </button>
+        </div>
+      </div>
+      
+
+      <!-- Блок статуса -->
+      <div class="status-section">
+        <div class="status-indicator" :class="document.analysisStatus">
+          Статус анализа:
+          <span>{{ getStatusText(document.analysisStatus) }}</span>
+        </div>
+        <div v-if="document.lastAnalyzedAt" class="last-analyzed">
+          Последний анализ: {{ formatDate(document.lastAnalyzedAt) }}
+        </div>
+      </div>
+
+      <!-- Уведомления об ошибках -->
+      <div v-if="error" class="error-message">
+        <div class="error-content">
+          <span class="error-icon">!</span>
+          <span>{{ error }}</span>
+          <button @click="error = null" class="close-error" title="Закрыть">×</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import axios from 'axios'
+import { v4 as uuidv4 } from 'uuid'
+import { useAIStore } from '@/stores/aiStore'
+import { useDocumentStore } from '@/stores/documentStore'
+import AgencyAutocomplete from '@/components/AgencyAutocomplete.vue'
+import FileUpload from '@/components/common/FileUpload.vue' // Добавляем импорт компонента FileUpload
+
+const router = useRouter()
+const route = useRoute() // Добавляем useRoute для получения параметров маршрута
+const aiStore = useAIStore()
+const documentStore = useDocumentStore()
+
+const isLoading = ref(true)
+const isSaving = ref(false)
+const isAnalyzing = ref(false)
+const error = ref(null)
+const fileUploadError = ref(null)
+const isLoadingDepartments = ref(false)
+
+const document = ref({
+  ...documentStore.currentDocument
+})
+
+// Обновляем computed для получения списка отделений ФССП выбранного региона из стора
+const agenciesList = computed(() => {
+  console.log('Обновление agenciesList из стора:', {
+    regionCode: document.value.regionCode,
+    hasDepartments: !!(document.value.regionCode && documentStore.getFSSPDepartmentsList(document.value.regionCode)?.length > 0)
+  });
+  
+  if (!document.value.regionCode) {
+    // Если нет региона, возвращаем пустой массив
+    return [];
+  }
+
+  // Получаем список отделений из стора
+  const departments = documentStore.getFSSPDepartmentsList(document.value.regionCode);
+  
+  // Возвращаем отделения, если они есть, иначе пустой массив
+  // Загрузка отделений происходит в отдельном watcher
+  const result = departments || [];
+  return result;
+});
+
+// Следим за изменениями в currentDocument в хранилище и обновляем локальный документ
+watch(
+  () => documentStore.currentDocument,
+  (newCurrentDocument) => {
+    console.log('Обнаружено изменение в currentDocument в хранилище:', newCurrentDocument);
+    // Сохраняем regionCode до обновления, чтобы не потерять его
+    const savedRegionCode = document.value.regionCode;
+    document.value = {
+      ...newCurrentDocument,
+      // Восстанавливаем regionCode, если он был в локальном документе, но отсутствует в новом
+      regionCode: newCurrentDocument.regionCode || savedRegionCode || "",
+      attachments: newCurrentDocument.attachments?.map(att => ({
+        ...att,
+        analysis: att.analysis || null
+      })) || []
+    };
+    console.log('Локальный документ обновлен, регион:', document.value.regionCode, 'вложения:', document.value.attachments);
+    
+    // Если у нового документа есть regionCode, и он отличается от текущего, загружаем отделения
+    if (document.value.regionCode && document.value.regionCode !== savedRegionCode) {
+      console.log('Обнаружен новый код региона в документе, запускаем загрузку отделений:', document.value.regionCode);
+      loadFSSPDepartments(document.value.regionCode);
+    }
+  },
+  { deep: true }
+);
+
+// Обработка выбора агентства
+const onAgencySelected = (agency) => {
+  document.value.agency = agency;
+  console.log('Выбрано ведомство:', agency);
+};
+
+// Выносим логику загрузки отделений в отдельную функцию для повторного использования
+const loadFSSPDepartments = async (regionCode) => {
+  if (!regionCode) return; // Не загружаем, если нет кода региона
+  
+  console.log('Загрузка отделений ФССП для региона:', regionCode);
+  isLoadingDepartments.value = true;
+  try {
+    await documentStore.fetchFSSPDepartmentsByRegion(regionCode);
+  } catch (err) {
+    console.error('Ошибка загрузки отделений ФССП:', err);
+  } finally {
+    isLoadingDepartments.value = false;
+  }
+};
+
+// Обработка загрузки файлов
+const handleFilesSelected = async (files) => {
+  console.log('Выбраны файлы для загрузки:', files);
+  if (files.length > 0) {
+    try {
+      // Загружаем файлы и обновляем документ
+      const result = await documentStore.uploadFiles(files);
+      console.log('Файлы успешно загружены, результат:', result);
+      fileUploadError.value = null;
+    } catch (err) {
+      console.error('Ошибка загрузки файлов:', err);
+      fileUploadError.value = 'Ошибка загрузки файлов: ' + err.message;
+    }
+  }
+};
+
+onMounted(async () => {
+  try {
+    console.log('Инициализация компонента DocumentReview, текущий document.value.id:', document.value.id);
+    await aiStore.checkServerStatus();
+
+    // Проверяем, существует ли документ в локальном списке (это покажет, что документ уже был сохранен)
+    const routeId = document.value.id;
+    const isDocumentSaved = documentStore.documents.some(doc => doc.id === routeId);
+    
+    if (routeId && isDocumentSaved) {
+      console.log('Проверка наличия документа по ID:', routeId);
+      
+      // Попробуем загрузить документ с сервера только если он уже существует в списке
+      try {
+        await documentStore.fetchDocumentById(routeId);
+        document.value = {
+          ...documentStore.currentDocument,
+          attachments: documentStore.currentDocument.attachments?.map(att => ({
+            ...att,
+            analysis: att.analysis || null
+          })) || []
+        };
+        console.log('Документ загружен с сервера:', document.value, 'Количество вложений:', document.value.attachments?.length);
+      } catch (fetchErr) {
+        console.log('Документ с ID не найден на сервере, используем локальный документ:', document.value);
+        // Если документ не найден на сервере, продолжаем с локальным документом
+        // который уже был инициализирован при создании store
+        // Обновляем локальный документ, чтобы убедиться, что он содержит актуальные данные
+        document.value = {
+          ...documentStore.currentDocument,
+          attachments: documentStore.currentDocument.attachments?.map(att => ({
+            ...att,
+            analysis: att.analysis || null
+          })) || []
+        };
+      }
+    } else {
+      // Если документ не сохранен, используем текущий документ из store
+      console.log('Документ новый, используем локальный документ из стора:', document.value);
+      document.value = {
+        ...documentStore.currentDocument,
+        attachments: documentStore.currentDocument.attachments?.map(att => ({
+          ...att,
+          analysis: att.analysis || null
+        })) || []
+      };
+    }
+
+    // Загружаем отделения ФССП, если есть код региона
+    // Сначала используем код из локального документа
+    let regionCodeToUse = document.value.regionCode;
+    
+    // Если код региона не найден в локальном документе, проверяем store
+    if (!regionCodeToUse) {
+      regionCodeToUse = documentStore.currentDocument.regionCode;
+      if (regionCodeToUse) {
+        // Обновляем локальный документ, чтобы он также содержал regionCode
+        document.value.regionCode = regionCodeToUse;
+        console.log('Код региона найден в store и добавлен в локальный документ:', regionCodeToUse);
+      }
+    }
+    
+    console.log('Попытка загрузки отделений ФССП для региона:', regionCodeToUse);
+    
+    if (regionCodeToUse) {
+      await loadFSSPDepartments(regionCodeToUse);
+    }
+  } catch (err) {
+    console.error('Ошибка загрузки:', err);
+    error.value = 'Ошибка загрузки: ' + err.message;
+  } finally {
+    isLoading.value = false;
+  }
+  
+  // Добавляем отслеживание изменения региона в локальном документе
+  // для синхронизации с хранилищем и загрузки отделений
+  watch(
+    () => document.value.regionCode,
+    (newRegionCode, oldRegionCode) => {
+      console.log('Наблюдение за изменением regionCode в локальном документе:', { newRegionCode, oldRegionCode });
+      if (newRegionCode && newRegionCode !== oldRegionCode) {
+        console.log('Обнаружен новый код региона в локальном документе, обновляем store и запускаем загрузку отделений:', newRegionCode);
+        
+        // Обновляем currentDocument в хранилище, чтобы изменения были синхронизированы
+        documentStore.currentDocument = {
+          ...documentStore.currentDocument,
+          regionCode: newRegionCode
+        };
+        
+        loadFSSPDepartments(newRegionCode);
+      }
+    }
+  );
+});
+
+const addAttachmentSentence = (attachmentId) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment) {
+    if (!attachment.keySentences) {
+      attachment.keySentences = [];
+    }
+    attachment.keySentences.push('');
+  }
+};
+
+const removeAttachmentSentence = (attachmentId, index) => {
+  const attachment = document.value.attachments.find(a => a.id === attachmentId);
+  if (attachment && attachment.keySentences) {
+    attachment.keySentences.splice(index, 1);
+  }
+};
+
+const addSentence = () => {
+  document.value.keySentences.push('')
+}
+
+const removeSentence = (index) => {
+  document.value.keySentences.splice(index, 1)
+}
+
+const analyzeDocument = async () => {
+  isAnalyzing.value = true
+  error.value = null
+
+  try {
+    // Обновляем currentDocument в хранилище перед анализом
+    documentStore.currentDocument = document.value
+    
+    // Выполняем анализ документа
+    const updatedDocument = await documentStore.analyzeDocument(document.value.id)
+
+    // Обновляем локальный документ результатами анализа
+    document.value = {
+      ...updatedDocument
+    }
+    
+    // Обновляем currentDocument в хранилище
+    documentStore.currentDocument = document.value
+    
+    console.log('Анализ завершён, статус:', document.value.analysisStatus, 'isCurrentDocumentAnalyzed:', documentStore.isCurrentDocumentAnalyzed);
+  } catch (err) {
+    error.value = 'Ошибка анализа: ' + err.message
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+
+const regenerateSummary = async () => {
+  isAnalyzing.value = true
+  try {
+    // Обновляем currentDocument в хранилище перед перегенерацией
+    documentStore.currentDocument = document.value;
+    
+    // Вызываем бэкенд для генерации краткой сути только для основного текста  
+    const response = await axios.post('http://localhost:3001/api/documents/analyze', {
+      text: document.value.originalText || "",
+      instructions: "",
+      strictMode: false
+    });
+    const analysis = response.data;
+    
+    // Обновляем поля анализа основного документа
+    document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
+    document.value.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : [];
+    document.value.violations = Array.isArray(analysis.violations) ? analysis.violations : [];
+    // Извлекаем дату в формате YYYY-MM-DD, если она содержит пояснение
+    let cleanDate = analysis.documentDate || '';
+    if (typeof cleanDate === 'string' && cleanDate.includes('(')) {
+      // Извлекаем дату до скобки (если присутствует форматирование с пояснением)
+      cleanDate = cleanDate.split('(')[0].trim();
+    }
+    document.value.documentDate = cleanDate;
+    document.value.senderAgency = analysis.senderAgency || '';
+    
+    // Обновляем currentDocument в хранилище
+    documentStore.currentDocument = { ...document.value };
+    
+    // Показываем сообщение о необходимости сохранения
+    console.log('Анализ обновлен. Нажмите "Сохранить" для сохранения изменений');
+  } catch (err) {
+    error.value = 'Ошибка перегенерации: ' + err.message
+  } finally {
+    isAnalyzing.value = false
+  }
+}
+
+const handleSubmit = async () => {
+  console.log("handleSubmit вызвана, isSaving:", isSaving.value);
+  isSaving.value = true
+  error.value = null
+
+  try {
+    // Убеждаемся, что ID документа является строкой
+    if (document.value.id && typeof document.value.id !== 'string') {
+      console.log("Предупреждение: ID документа не является строкой:", typeof document.value.id, document.value.id);
+      // Преобразуем ID в строку
+      document.value.id = String(document.value.id);
+    }
+    
+    // Очищаем даты от поясняющего текста перед сохранением
+    // Убираем текст после скобок или других пояснений, оставляем только формат YYYY-MM-DD
+    if (document.value.documentDate && typeof document.value.documentDate === 'string') {
+      // Извлекаем дату в формате YYYY-MM-DD из строки, которая может содержать пояснение
+      const dateMatch = document.value.documentDate.match(/^\d{4}-\d{2}-\d{2}/);
+      document.value.documentDate = dateMatch ? dateMatch[0] : '';
+    }
+    
+    // Очищаем даты для вложений
+    if (document.value.attachments && Array.isArray(document.value.attachments)) {
+      document.value.attachments = document.value.attachments.map(attachment => {
+        if (attachment.documentDate && typeof attachment.documentDate === 'string') {
+          const dateMatch = attachment.documentDate.match(/^\d{4}-\d{2}-\d{2}/);
+          return {
+            ...attachment,
+            documentDate: dateMatch ? dateMatch[0] : ''
+          };
+        }
+        return attachment;
+      });
+    }
+    
+    // Обновляем currentDocument в хранилище перед сохранением
+    // но только если данные действительно изменились
+    if (JSON.stringify(documentStore.currentDocument) !== JSON.stringify(document.value)) {
+      documentStore.currentDocument = document.value;
+    }
+    console.log("Сохранение документа начато:", document.value.id);
+    await documentStore.saveDocument()
+    console.log("Документ успешно сохранён, перенаправление на /documents");
+    router.push('/documents')
+  } catch (err) {
+    console.error("Ошибка при сохранении документа:", err);
+    error.value = 'Ошибка сохранения: ' + err.message
+  } finally {
+    console.log("Конец сохранения, сбрасываем isSaving:", isSaving.value);
+    isSaving.value = false
+  }
+}
+
+const goBack = () => {
+  router.push('/')
+}
+
+const formatDate = (dateString) => {
+  if (!dateString) return ''
+  return new Date(dateString).toLocaleDateString('ru-RU')
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 KB'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2) + ' ' + sizes[i]
+  )
+}
+
+const getStatusText = (status) => {
+  const statusMap = {
+    pending: 'Ожидает анализа',
+    processing: 'В процессе',
+    completed: 'Завершён',
+    failed: 'Ошибка'
+  }
+  return statusMap[status] || status
+}
+</script>
+
+
+
+
+====================
+
+// Файл: src\views\DocumentDetail.vue
+<!-- src/views/DocumentDetail.vue -->
+<template>
+  <div class="document-detail">
+    <button @click="goBack" class="back-button">← Назад к списку</button>
+    
+    <div v-if="loading" class="loading-state">
+      <p>Загрузка документа...</p>
+    </div>
+    <div v-else-if="error" class="error-state">
+      <p>Ошибка загрузки: {{ error }}</p>
+    </div>
+    <div v-else-if="!document" class="empty-state">
+      <p>Документ не найден</p>
+    </div>
+    <div v-else class="document-content">
+      <div class="document-header">
+        <h1>Документ #{{ document.id }}</h1>
+        <span class="document-date">{{ formatDate(document.date) }}</span>
+      </div>
+      <div class="document-meta">
+        <div v-if="document.agency" class="meta-field">
+          <span class="meta-label">Ведомство:</span>
+          <span class="meta-value">{{ document.agency }}</span>
+        </div>
+        
+        <div class="meta-field">
+          <span class="meta-label">Дата создания:</span>
+          <span class="meta-value">{{ formatDateTime(document.createdAt) }}</span>
+        </div>
+      </div>
+      
+      <!-- Кнопка создания жалобы -->
+      <div class="complaint-action">
+        <button @click="createComplaint" class="create-complaint-btn">
+          Создать жалобу
+        </button>
+      </div>
+      
+      <div class="document-section">
+        <h2>Исходный текст</h2>
+        <pre class="original-text">{{ document.originalText }}</pre>
+      </div>
+      <div v-if="document.summary" class="document-section">
+        <h2>Краткое содержание</h2>
+        <p class="summary-text">{{ document.summary }}</p>
+      </div>
+      <div v-if="document.keySentences?.length" class="document-section">
+        <h2>Важные предложения</h2>
+        <ul class="paragraphs-list">
+          <li v-for="(sentence, index) in document.keySentences" :key="index">
+            {{ sentence }}
+          </li>
+        </ul>
+      </div>
+      <div v-if="document.attachments?.length" class="document-section">
+        <h2>Прикрепленные файлы</h2>
+        <div class="attachments-list">
+          <div v-for="file in document.attachments" :key="file.id" class="attachment-item">
+            <div class="attachment-info">
+              <span class="attachment-name">{{ file.name }}</span>
+              <span class="attachment-size">{{ formatFileSize(file.size) }}</span>
+            </div>
+            <a 
+              :href="getFileUrl(file.path)" 
+              target="_blank"
+              class="download-button"
+            >
+              Скачать
+            </a>
+          </div>
+        </div>
+      </div>
+      <div v-if="document.comments" class="document-section">
+        <h2>Комментарии</h2>
+        <p class="comments-text">{{ document.comments }}</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useDocumentStore } from '@/stores/documentStore'
+
+const route = useRoute()
+const router = useRouter()
+const documentStore = useDocumentStore()
+
+const document = ref(null)
+const loading = ref(true)
+const error = ref(null)
+
+onMounted(async () => {
+  try {
+    loading.value = true
+    error.value = null
+    await documentStore.fetchDocumentById(route.params.id)
+    document.value = { ...documentStore.currentDocument }
+  } catch (err) {
+    error.value = err.message || 'Не удалось загрузить документ'
+    console.error('Ошибка загрузки документа:', err)
+  } finally {
+    loading.value = false
+  }
+})
+
+const formatDate = (dateString) => {
+  return dateString ? new Date(dateString).toLocaleDateString('ru-RU') : 'Дата не указана'
+}
+
+const formatDateTime = (dateString) => {
+  if (!dateString) return 'Дата не указана'
+  const options = {
+    day: 'numeric',
+    month: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }
+  return new Date(dateString).toLocaleString('ru-RU', options)
+}
+
+const formatFileSize = (bytes) => {
+  if (!bytes) return '0 KB'
+  return `${(bytes / 1024).toFixed(2)} KB`
+}
+
+const getFileUrl = (path) => {
+  return path.startsWith('http') ? path : `http://localhost:3001${path}`
+}
+
+const goBack = () => {
+  router.push('/documents')
+}
+
+const createComplaint = () => {
+  router.push(`/documents/${route.params.id}/complaint`)
+}
+</script>
+
+
+
+====================
+
+// Файл: src\views\ComplaintsList.vue
+<template>
+  <div class="complaints-list">
+    <div class="header">
+      <h1>Сформированные жалобы</h1>
+      <router-link to="/documents" class="back-btn">← К документам</router-link>
+    </div>
+
+    <!-- Отладочная информация -->
+    <div v-if="debugMode" class="debug-info">
+      <pre>Store state: {{ JSON.stringify(complaintStore.$state, null, 2) }}</pre>
+    </div>
+
+    <div v-if="isLoading" class="loading">
+      <p>Загрузка жалоб...</p>
+      <progress indeterminate></progress>
+    </div>
+
+    <div v-else-if="!complaints.length" class="empty">
+      <p>Нет сформированных жалоб</p>
+      <router-link to="/" class="create-link">Создать первую жалобу</router-link>
+    </div>
+
+    <ul v-else class="complaints">
+      <li v-for="complaint in complaints" :key="complaint.id" class="complaint-item">
+        <div class="complaint-card" @click="viewComplaint(complaint.id)">
+          <h3>{{ complaint.agency }}</h3>
+          <p class="date">{{ formatDate(complaint.createdAt) }}</p>
+          <p class="preview">{{ complaint.content.substring(0, 100) }}...</p>
+          <div class="actions">
+            <button @click.stop="viewComplaint(complaint.id)" class="view-btn">
+              Посмотреть
+            </button>
+            <button @click.stop="exportComplaint(complaint.id, 'txt')" class="export-btn">
+              TXT
+            </button>
+            <button @click.stop="exportComplaint(complaint.id, 'doc')" class="export-btn">
+              DOC
+            </button>
+            <button 
+              @click.stop="confirmDelete(complaint)" 
+              class="delete-btn"
+            >
+              Удалить
+            </button>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <!-- Модальное окно подтверждения удаления -->
+    <div v-if="showDeleteModal" class="modal-overlay">
+      <div class="modal-content">
+        <h3>Подтверждение удаления</h3>
+        <p>Вы уверены, что хотите удалить жалобу в "{{ complaintToDelete?.agency }}"?</p>
+        <div class="modal-actions">
+          <button @click="deleteComplaint" class="confirm-btn">Да, удалить</button>
+          <button @click="showDeleteModal = false" class="cancel-btn">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <NotificationToast 
+      v-if="showNotification"
+      :message="notificationMessage"
+      :type="notificationType"
+      :duration="1500"
+      @close="showNotification = false"
+    />
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { useComplaintStore } from '@/stores/complaintStore'
+import { saveAs } from 'file-saver'
+import NotificationToast from '@/components/ui/NotificationToast.vue'
+
+
+// Debug
+const debugMode = ref(false)
+
+// Store
+const complaintStore = useComplaintStore()
+const router = useRouter()
+const isLoading = ref(false)
+const complaints = computed(() => complaintStore.complaints || [])
+
+// Удаление жалоб
+const showDeleteModal = ref(false)
+const complaintToDelete = ref(null)
+const showNotification = ref(false)
+const notificationMessage = ref('')
+const notificationType = ref('success')
+
+const confirmDelete = (complaint) => {
+  complaintToDelete.value = complaint
+  showDeleteModal.value = true
+}
+
+const deleteComplaint = async () => {
+  if (complaintToDelete.value) {
+    try {
+      await complaintStore.deleteComplaint(complaintToDelete.value.id)
+      notificationMessage.value = 'Жалоба успешно удалена'
+      notificationType.value = 'success'
+    } catch (error) {
+      notificationMessage.value = 'Ошибка при удалении жалобы'
+      notificationType.value = 'error'
+      console.error('Ошибка удаления:', error)
+    } finally {
+      showNotification.value = true
+      showDeleteModal.value = false
+    }
+  }
+}
+
+const viewComplaint = (complaintId) => {
+  router.push(`/complaints/${complaintId}`)
+}
+
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('ru-RU')
+}
+
+const exportComplaint = async (complaintId, format) => {
+  try {
+    const blob = await complaintStore.exportComplaint(complaintId, format)
+    const complaint = complaints.value.find(c => c.id === complaintId)
+    const filename = `Жалоба_${complaint.agency}_${formatDate(complaint.createdAt)}.${format}`
+    saveAs(blob, filename)
+  } catch (error) {
+    console.error('Export error:', error)
+    notificationMessage.value = 'Ошибка при экспорте'
+    notificationType.value = 'error'
+    showNotification.value = true
+  }
+}
+
+// Lifecycle
+onMounted(async () => {
+  isLoading.value = true
+  try {
+    await complaintStore.fetchComplaints()
+  } catch (error) {
+    console.error('Failed to load complaints:', error)
+    notificationMessage.value = 'Ошибка загрузки жалоб'
+    notificationType.value = 'error'
+    showNotification.value = true
+  } finally {
+    isLoading.value = false
+  }
+})
+</script>
+
+
+
+====================
+
+// Файл: src\views\ComplaintForm.vue
+<!-- src/components/complaints/ComplaintForm.vue -->
+<template>
+  <div class="complaint-form">
+    <div class="header">
+      <button @click="goBack" class="back-button">← Назад</button>
+      <h1>Создание жалобы</h1>
+    </div>
+
+    <div v-if="loading" class="loading">
+      <p>Загрузка данных...</p>
+    </div>
+    
+    <div v-else-if="error" class="error">
+      <p>Ошибка: {{ error }}</p>
+    </div>
+    
+    <div v-else class="complaint-form-content">
+      <div class="document-preview">
+        <h2>Документ для жалобы</h2>
+        <div class="document-info">
+          <div class="info-row">
+            <span class="label">Дата поступления:</span>
+            <span class="value">{{ formatDate(documentStore.currentDocument.date) }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Ведомство:</span>
+            <span class="value">{{ documentStore.currentDocument.agency || 'Не указано' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Дата документа:</span>
+            <span class="value">{{ documentStore.currentDocument.documentDate || 'Не указана' }}</span>
+          </div>
+          <div class="info-row">
+            <span class="label">Краткая суть:</span>
+            <span class="value">{{ documentStore.currentDocument.summary || 'Нет краткой сводки' }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="agency-selection">
+        <h2>Выберите ведомство</h2>
+        <select v-model="selectedAgency" @change="onAgencyChange" class="agency-select">
+          <option value="">-- Выберите ведомство --</option>
+          <option 
+            v-for="agency in agenciesOptions" 
+            :key="agency" 
+            :value="agency"
+          >
+            {{ agency }}
+          </option>
+        </select>
+      </div>
+
+      <div class="instructions-section">
+        <h2>Дополнительные инструкции</h2>
+        <textarea 
+          v-model="customInstructions" 
+          placeholder="Введите дополнительные инструкции для нейросети (необязательно)"
+          class="instructions-input"
+          rows="4"
+        ></textarea>
+      </div>
+
+      <div class="actions">
+        <button 
+          @click="generateComplaint" 
+          :disabled="isGenerating || !selectedAgency"
+          class="generate-btn"
+        >
+          {{ isGenerating ? 'Генерация...' : 'Создать жалобу' }}
+        </button>
+        <button @click="goBack" class="cancel-btn">Отмена</button>
+      </div>
+
+      <div v-if="generatedComplaint" class="complaint-result">
+        <h2>Сгенерированная жалоба</h2>
+        <div class="complaint-content">
+          <pre>{{ generatedComplaint }}</pre>
+        </div>
+        <div class="result-actions">
+          <button @click="copyToClipboard" class="copy-btn">Копировать</button>
+          <button @click="saveComplaint" class="save-btn">Сохранить в документ</button>
+        </div>
+      </div>
+    </div>
+
+    <NotificationToast 
+      v-if="showNotification"
+      :message="notificationMessage"
+      :type="notificationType"
+      :duration="2000"
+      @close="showNotification = false"
+    />
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useDocumentStore } from '@/stores/documentStore'
+import { useComplaintStore } from '@/stores/complaintStore'
+import NotificationToast from '@/components/ui/NotificationToast.vue'
+
+const route = useRoute()
+const router = useRouter()
+const documentStore = useDocumentStore()
+const complaintStore = useComplaintStore()
+
+// Состояния
+const selectedAgency = ref('')
+const customInstructions = ref('')
+const generatedComplaint = ref(null)
+const showNotification = ref(false)
+const notificationMessage = ref('')
+const notificationType = ref('success')
+
+// Геттеры из store
+const agenciesOptions = computed(() => complaintStore.agenciesOptions)
+const isGenerating = computed(() => complaintStore.isGenerating)
+const loading = computed(() => documentStore.isLoading)
+const error = computed(() => documentStore.error || complaintStore.error)
+
+// Методы
+const formatDate = (dateString) => {
+  return dateString ? new Date(dateString).toLocaleDateString('ru-RU') : 'Дата не указана'
+}
+
+const onAgencyChange = () => {
+  // Логика при изменении выбора ведомства
+}
+
+const generateComplaint = async () => {
+  if (!selectedAgency.value) return
+  
+  try {
+    // Используем метод из store с правильными параметрами
+    const result = await complaintStore.generateComplaint(
+      route.params.id, 
+      selectedAgency.value, 
+      customInstructions.value
+    )
+    generatedComplaint.value = result.content || result
+    
+    // Показываем уведомление об успешной генерации
+    notificationMessage.value = 'Жалоба успешно сгенерирована'
+    notificationType.value = 'success'
+    showNotification.value = true
+    
+    // Сбросим состояние после успешной генерации
+    // selectedAgency.value = ''
+    // customInstructions.value = ''
+  } catch (err) {
+    console.error('Ошибка генерации жалобы:', err)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при генерации жалобы: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
+  }
+}
+
+const copyToClipboard = () => {
+  if (generatedComplaint.value) {
+    navigator.clipboard.writeText(generatedComplaint.value)
+    // Показываем уведомление
+    notificationMessage.value = 'Жалоба скопирована в буфер обмена'
+    notificationType.value = 'success'
+    showNotification.value = true
+  }
+}
+
+const saveComplaint = async () => {
+  if (!generatedComplaint.value) return
+  
+  try {
+    // Обновляем документ с новой жалобой
+    await documentStore.fetchDocumentById(route.params.id)
+    
+    // Добавляем жалобу к документу
+    if (!documentStore.currentDocument.complaints) {
+      documentStore.currentDocument.complaints = []
+    }
+    
+    // Находим сгенерированную жалобу в complaintStore
+    const complaint = complaintStore.complaints.find(c => c.documentId === route.params.id)
+    if (complaint) {
+      documentStore.currentDocument.complaints.push(complaint)
+      await documentStore.saveDocument()
+    }
+    
+    // Показываем уведомление об успешном сохранении
+    notificationMessage.value = 'Жалоба успешно сохранена в документ'
+    notificationType.value = 'success'
+    showNotification.value = true
+    
+    // Переходим к просмотру документа
+    router.push(`/documents/${route.params.id}`)
+  } catch (err) {
+    console.error('Ошибка сохранения жалобы:', err)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при сохранении жалобы: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
+  }
+}
+
+const goBack = () => {
+  router.push(`/documents/${route.params.id}`)
+}
+
+// Загрузка данных документа
+onMounted(async () => {
+  try {
+    await documentStore.fetchDocumentById(route.params.id)
+    // Также загружаем жалобы для документа
+    await complaintStore.fetchComplaints()
+  } catch (err) {
+    console.error('Ошибка загрузки документа:', err)
+    // Показываем уведомление об ошибке
+    notificationMessage.value = 'Ошибка при загрузке документа: ' + (err.message || 'Неизвестная ошибка')
+    notificationType.value = 'error'
+    showNotification.value = true
+  }
+})
+</script>
+
+
+
+====================
+
+// Файл: src\views\ComplaintDetail.vue
+<!-- src/views/ComplaintDetail.vue -->
+<template>
+  <div class="complaint-detail">
+    <button @click="goBack" class="back-button">← Назад к списку</button>
+    
+    <div v-if="loading" class="loading-state">
+      <p>Загрузка жалобы...</p>
+    </div>
+    <div v-else-if="error" class="error-state">
+      <p>Ошибка загрузки: {{ error }}</p>
+    </div>
+    <div v-else-if="!complaint" class="empty-state">
+      <p>Жалоба не найдена</p>
+    </div>
+    <div v-else class="complaint-content">
+      <div class="complaint-header">
+        <h1>Жалоба #{{ complaint.id }}</h1>
+        <span class="complaint-date">{{ formatDate(complaint.createdAt) }}</span>
+      </div>
+      <div class="complaint-meta">
+        <div class="meta-field">
+          <span class="meta-label">Ведомство:</span>
+          <span class="meta-value">{{ complaint.agency }}</span>
+        </div>
+        
+        <div class="meta-field">
+          <span class="meta-label">Статус:</span>
+          <span class="meta-value">{{ complaint.status }}</span>
+        </div>
+      </div>
+      
+      <div class="complaint-section">
+        <h2>Текст жалобы</h2>
+        <div class="complaint-text">{{ complaint.content }}</div>
+      </div>
+      
+      <div v-if="complaint.analysis?.violations?.length" class="complaint-section">
+        <h2>Выявленные нарушения</h2>
+        <ul class="violations-list">
+          <li v-for="(violation, index) in complaint.analysis.violations" :key="index" class="violation-item">
+            <div class="violation-law">Закон: {{ violation.law }}</div>
+            <div class="violation-article">Статья: {{ violation.article }}</div>
+            <div class="violation-description">Описание: {{ violation.description }}</div>
+            <div class="violation-evidence">Доказательство: {{ violation.evidence }}</div>
+          </li>
+        </ul>
+      </div>
+      
+      <div class="complaint-actions">
+        <button @click="exportComplaint('txt')" class="export-btn">Экспорт в TXT</button>
+        <button @click="exportComplaint('doc')" class="export-btn">Экспорт в DOC</button>
+        <button @click="deleteComplaint" class="delete-btn">Удалить жалобу</button>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useComplaintStore } from '@/stores/complaintStore'
+
+const route = useRoute()
+const router = useRouter()
+const complaintStore = useComplaintStore()
+
+const complaint = ref(null)
+const loading = ref(false)
+const error = ref(null)
+
+onMounted(async () => {
+  await loadComplaint()
+})
+
+const loadComplaint = async () => {
+  loading.value = true
+  error.value = null
+  try {
+    // Получаем список всех жалоб
+    await complaintStore.fetchComplaints()
+    // Находим нужную жалобу по ID
+    complaint.value = complaintStore.complaints.find(c => c.id === route.params.id)
+    if (!complaint.value) {
+      error.value = 'Жалоба не найдена'
+    }
+  } catch (err) {
+    console.error('Ошибка загрузки жалобы:', err)
+    error.value = err.message || 'Не удалось загрузить жалобу'
+  } finally {
+    loading.value = false
+  }
+}
+
+const goBack = () => {
+  router.push('/complaints')
+}
+
+const exportComplaint = async (format) => {
+  try {
+    await complaintStore.exportComplaint(complaint.value.id, format)
+  } catch (err) {
+    console.error('Ошибка экспорта:', err)
+    error.value = 'Не удалось экспортировать жалобу'
+  }
+}
+
+const deleteComplaint = async () => {
+  if (confirm('Вы уверены, что хотите удалить эту жалобу?')) {
+    try {
+      await complaintStore.deleteComplaint(complaint.value.id)
+      router.push('/complaints')
+    } catch (err) {
+      console.error('Ошибка удаления:', err)
+      error.value = 'Не удалось удалить жалобу'
+    }
+  }
+}
+
+const formatDate = (dateString) => {
+  return new Date(dateString).toLocaleDateString('ru-RU')
+}
+</script>
+
+
+
+====================
+
+// Файл: src\views\ChronicleView.vue
+<template>
+  <div class="chronicle-container">
+    <!-- Отображение региона в правом верхнем углу страницы -->
+    <div class="page-region-display">
+      <span class="region-name">{{ documentStore.currentDocument?.regionCode ? documentStore.getRegionNameByCode(documentStore.currentDocument.regionCode) : 'Выберите регион' }}</span>
+    </div>
+    
+    <!-- Основная область контента -->
+    <div class="main-content">
+      <!-- Раздел летописи (левая сторона) -->
+      <div class="chronicle-section">
+        <div class="chronicle-header">
+          <h2>История взаимоотношений с ФССП</h2>
+          <div class="header-buttons">
+            <button class="add-info-btn" @click="addInfo">
+              Добавить сведения
+            </button>
+            <button class="refresh-btn" @click="loadChronicleEntries">
+              Обновить
+            </button>
+          </div>
+        </div>
+        
+        <div class="chronicle-entries">
+          <div 
+            v-for="(entry, index) in chronicleEntries" 
+            :key="entry.id || index"
+            class="chronicle-entry"
+          >
+            <div v-if="editingEntryId === entry.id" class="entry-edit">
+              <div class="entry-header">
+                <input 
+                  v-model="editingEntryData.date" 
+                  type="date" 
+                  class="entry-date-input"
+                />
+                <select 
+                  v-model="editingEntryData.eventType" 
+                  class="entry-type-select"
+                >
+                  <option value="document_created">Добавление документа</option>
+                  <option value="document_analyzed">Анализ документа</option>
+                  <option value="complaint_created">Создание жалобы</option>
+                  <option value="complaint_submitted">Отправка жалобы</option>
+                  <option value="response_received">Получен ответ</option>
+                  <option value="generic">Общее событие</option>
+                </select>
+              </div>
+              <textarea 
+                v-model="editingEntryData.content" 
+                class="entry-textarea"
+                rows="4"
+              ></textarea>
+              <div class="entry-actions">
+                <button class="save-btn" @click="saveEntry(entry.id)">Сохранить</button>
+                <button class="cancel-btn" @click="cancelEdit">Отмена</button>
+              </div>
+            </div>
+            
+            <div v-else class="entry-content">
+              <div class="entry-header-info">
+                <div class="entry-date">{{ formatDate(entry.date) }}</div>
+                <div class="entry-date-label">{{ formatEntryDate(entry.createdAt) }}</div>
+                <div class="entry-type">{{ getEventTypeLabel(entry.eventType) }}</div>
+              </div>
+              <div class="entry-text">{{ entry.content }}</div>
+              <div class="entry-actions">
+                <button class="edit-btn" @click="startEdit(entry)">Редактировать</button>
+                <button class="delete-btn" @click="deleteEntry(entry.id)">Удалить</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Раздел чата (правая сторона) -->
+      <div class="chat-section">
+        <div class="chat-header">
+          <h3>Прямой доступ</h3>
+        </div>
+        <div class="chat-messages" ref="messagesContainer">
+          <div 
+            v-for="(message, index) in chatMessages" 
+            :key="index" 
+            :class="['message', message.sender]"
+          >
+            {{ message.text }}
+          </div>
+        </div>
+        <div class="chat-input">
+          <input 
+            v-model="userInput" 
+            @keypress.enter="sendMessage"
+            placeholder="Введите сообщение..."
+            class="full-width-input"
+          />
+          <button @click="sendMessage">Отправить</button>
+        </div>
+      </div>
+      
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, onMounted, nextTick } from 'vue';
+import { useRouter } from 'vue-router';
+import { useDocumentStore } from '@/stores/documentStore';
+import axios from 'axios';
+
+const router = useRouter();
+const documentStore = useDocumentStore();
+
+// Содержимое летописи
+const chronicleEntries = ref([]);
+// Состояние редактирования
+const editingEntryId = ref(null);
+const editingEntryData = ref({
+  date: '',
+  eventType: '',
+  content: ''
+});
+
+// Функциональность чата
+const chatMessages = ref([
+  { sender: 'ai', text: 'Здесь можно внести уточнения в историю взаимодействия с ФССП или спросить юридический совет.' }
+]);
+const userInput = ref('');
+const messagesContainer = ref(null);
+
+const sendMessage = () => {
+  if (userInput.value.trim() === '') return;
+  
+  // Добавить сообщение пользователя
+  chatMessages.value.push({
+    sender: 'user',
+    text: userInput.value
+  });
+  
+  // Симуляция ответа ИИ (в реальной реализации здесь будет вызов API)
+  setTimeout(() => {
+    chatMessages.value.push({
+      sender: 'ai',
+      text: 'Это автоматический ответ от нейросети. В реальной реализации здесь будет анализ вашего запроса.'
+    });
+  }, 1000);
+  
+  userInput.value = '';
+};
+
+// Форматирование типа события
+const getEventTypeLabel = (eventType) => {
+  const labels = {
+    'document_created': 'Добавление документа',
+    'document_analyzed': 'Анализ документа',
+    'complaint_created': 'Создание жалобы',
+    'complaint_submitted': 'Отправка жалобы',
+    'response_received': 'Получен ответ',
+    'generic': 'Общее событие'
+  };
+  return labels[eventType] || eventType;
+};
+
+// Начать редактирование записи
+const startEdit = (entry) => {
+  editingEntryId.value = entry.id;
+  editingEntryData.value = {
+    date: entry.date,
+    eventType: entry.eventType || 'generic',
+    content: entry.content
+  };
+};
+
+// Отменить редактирование
+const cancelEdit = () => {
+  editingEntryId.value = null;
+  editingEntryData.value = {
+    date: '',
+    eventType: '',
+    content: ''
+  };
+};
+
+// Сохранить изменения записи
+const saveEntry = async (entryId) => {
+  try {
+    const response = await axios.put(`http://localhost:3001/api/chronicle/${entryId}`, editingEntryData.value);
+    
+    if (response.data.success) {
+      // Обновляем запись в локальном массиве
+      const index = chronicleEntries.value.findIndex(entry => entry.id === entryId);
+      if (index !== -1) {
+        chronicleEntries.value[index] = {
+          ...chronicleEntries.value[index],
+          ...editingEntryData.value
+        };
+      }
+      
+      // Сбрасываем состояние редактирования
+      cancelEdit();
+    } else {
+      alert('Ошибка при сохранении записи: ' + response.data.message);
+    }
+  } catch (error) {
+    console.error('Ошибка при сохранении записи:', error);
+    alert('Ошибка при сохранении записи: ' + error.message);
+  }
+};
+
+// Удалить запись
+const deleteEntry = async (entryId) => {
+  if (!confirm('Вы уверены, что хотите удалить эту запись из летописи?')) {
+    return;
+  }
+  
+  try {
+    const response = await axios.delete(`http://localhost:3001/api/chronicle/${entryId}`);
+    
+    if (response.data.success) {
+      // Удаляем запись из локального массива
+      chronicleEntries.value = chronicleEntries.value.filter(entry => entry.id !== entryId);
+    } else {
+      alert('Ошибка при удалении записи: ' + response.data.message);
+    }
+  } catch (error) {
+    console.error('Ошибка при удалении записи:', error);
+    alert('Ошибка при удалении записи: ' + error.message);
+  }
+};
+
+// Форматирование даты события с пояснением
+const formatDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0'); // Добавляем ведущий ноль
+  const monthNames = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря"
+  ];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}г - дата описанного события`;
+};
+
+// Форматирование даты внесения записи в журнал
+const formatEntryDate = (dateString) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  const day = String(date.getDate()).padStart(2, '0'); // Добавляем ведущий ноль
+  const monthNames = [
+    "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря"
+  ];
+  const month = monthNames[date.getMonth()];
+  const year = date.getFullYear();
+
+  return `${day} ${month} ${year}г - дата внесения записи в журнал`;
+};
+
+// Загрузка записей летописи
+const loadChronicleEntries = async () => {
+  try {
+    const response = await axios.get('http://localhost:3001/api/chronicle');
+    chronicleEntries.value = response.data.data;
+  } catch (error) {
+    console.error('Ошибка при загрузке летописи:', error);
+    // Если не удалось загрузить с сервера, можно использовать временное решение
+    chronicleEntries.value = [
+      { id: '1', date: new Date().toISOString().split('T')[0], content: 'Здесь будет отображаться история взаимоотношений с судебными приставами...' }
+    ];
+  }
+};
+
+// Автоматическая прокрутка вниз чата
+const scrollToBottom = async () => {
+  await nextTick();
+  if (messagesContainer.value) {
+    messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight;
+  }
+};
+
+// Отслеживание новых сообщений и прокрутка вниз
+import { watch } from 'vue';
+watch(chatMessages, () => {
+  nextTick(() => {
+    scrollToBottom();
+  });
+}, { deep: true });
+
+const addInfo = () => {
+  // Временно открываем страницу создания документа
+  // В реальной реализации здесь будет диалог или переход к добавлению информации
+  router.push('/create');
+};
+
+onMounted(() => {
+  loadChronicleEntries();
+});
+</script>
+
+
+
+====================
+
+// Файл: src\stores\documentStore.js
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import axios from "axios";
+import { useRouter } from "vue-router";
+import { v4 as uuidv4 } from "uuid";
+import { useAIStore } from "@/stores/aiStore";
+
+export const useDocumentStore = defineStore("document", () => {
+  const router = useRouter();
+  const aiStore = useAIStore();
+  const API_BASE = "http://localhost:3001";
+
+  // Состояние хранилища
+  const documents = ref([]);
+  const isLoading = ref(false);
+  const error = ref(null);
+  const isAnalyzing = ref(false);
+
+  // Вспомогательная функция для проверки типа ID документа
+  const validateDocumentId = (doc, source = "unknown") => {
+    if (doc && doc.id !== undefined && doc.id !== null) {
+      if (typeof doc.id !== 'string' && typeof doc.id !== 'number') {
+        console.warn(`ВНИМАНИЕ: ID документа имеет неожиданный тип в ${source}:`, {
+          id: doc.id,
+          type: typeof doc.id,
+          value: doc.id
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const currentDocument = ref({
+    id: uuidv4(), // Устанавливаем ID сразу при создании
+    date: new Date().toISOString().split("T")[0],
+    agency: "",
+    originalText: "",
+    summary: "",
+    keySentences: [],
+    documentDate: "",
+    senderAgency: "",
+    attachments: [],
+    complaints: [],
+    regionCode: "",
+    analysisStatus: "pending",
+    lastAnalyzedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    violations: [],
+  });
+
+  // Геттеры
+  const agenciesList = computed(() => {
+    const complaintAgencies = new Set([
+      "ФССП",
+      "Прокуратура",
+      "Суд",
+      "Омбудсмен",
+    ]);
+    const allAgencies = new Set(complaintAgencies);
+
+    documents.value.forEach((doc) => {
+      const agency = doc.agency || doc.senderAgency;
+      if (
+        agency &&
+        typeof agency === "string" &&
+        !complaintAgencies.has(agency)
+      ) {
+        allAgencies.add(agency);
+      }
+    });
+
+    return Array.from(allAgencies).sort();
+  });
+
+  const hasAttachments = computed(() => {
+    return currentDocument.value.attachments?.length > 0;
+  });
+
+  const analyzedDocuments = computed(() => {
+    return documents.value.filter((doc) => doc.analysisStatus === "completed");
+  });
+
+  const isCurrentDocumentAnalyzed = computed(() => {
+    return currentDocument.value.analysisStatus === "completed";
+  });
+
+  const regionsList = ref([]);
+
+  // Загружаем список регионов при инициализации хранилища
+  const loadRegionsList = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/regions`);
+      if (response.data.success) {
+        regionsList.value = response.data.regions;
+      } else {
+        console.error('Ошибка загрузки списка регионов:', response.data.message);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки списка регионов:', error);
+    }
+  };
+  
+  // Инициализируем список регионов при создании хранилища
+  loadRegionsList();
+
+  const getRegionNameByCode = computed(() => {
+    return (code) => {
+      if (!code) return 'Регион не выбран';
+      const region = regionsList.value.find(r => r.code === code);
+      return region ? region.name : `Регион ${code}`;
+    };
+  });
+
+  // Вычисляемое свойство для получения списка отделений ФССП по региону
+  const fsspDepartmentsByRegion = ref({}); // Кэш для отделений по регионам
+
+  const getFSSPDepartmentsList = computed(() => {
+    return (regionCode) => {
+      if (!regionCode) return [];
+      
+      const regionData = fsspDepartmentsByRegion.value[regionCode];
+      if (!regionData || !regionData.regions) return [];
+
+      const departments = [];
+      // Обрабатываем разные возможные структуры данных
+      if (Array.isArray(regionData.regions)) {
+        // Случай, когда в data.regions содержится массив регионов
+        regionData.regions.forEach(region => {
+          if (region.cities) {
+            region.cities.forEach(city => {
+              if (city.departments) {
+                city.departments.forEach(dept => {
+                  departments.push(dept.name);
+                });
+              }
+            });
+          }
+        });
+      } else if (regionData.cities) {
+        // Стандартный случай
+        const region = regionData;
+        if (region.cities) {
+          region.cities.forEach(city => {
+            if (city.departments) {
+              city.departments.forEach(dept => {
+                departments.push(dept.name);
+              });
+            }
+          });
+        }
+      }
+
+      return departments.sort();
+    };
+  });
+
+  // Вспомогательные функции
+
+  const updateDocumentsList = (savedDocument) => {
+    const index = documents.value.findIndex((d) => d.id === savedDocument.id);
+    if (index !== -1) {
+      documents.value[index] = savedDocument;
+    } else {
+      documents.value.unshift(savedDocument);
+    }
+  };
+
+  const handleApiCall = async (apiFunction) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      return await apiFunction();
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const determineTargetAgency = (text) => {
+    const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
+    if (!violations) return "";
+
+    if (text.includes("ФССП") || text.includes("судебн")) return "ФССП";
+    if (text.includes("прокурор")) return "Прокуратура";
+    if (text.includes("суд")) return "Суд";
+    if (text.includes("омбудсмен")) return "Омбудсмен";
+
+    return "ФССП";
+  };
+
+  const extractDate = (text) => {
+    const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
+    const match = text.match(dateRegex);
+    return match ? match[0] : "";
+  };
+
+  const extractAgency = (text) => {
+    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
+    return agencies.find((agency) => text.includes(agency)) || "";
+  };
+
+  const resetCurrentDocument = () => {
+    currentDocument.value = {
+      id: uuidv4(), // Устанавливаем новый ID при сбросе
+      date: new Date().toISOString().split("T")[0],
+      agency: "",
+      originalText: "",
+      summary: "",
+      keySentences: [],
+      documentDate: "",
+      senderAgency: "",
+      attachments: [],
+      complaints: [],
+      analysisStatus: "pending",
+      lastAnalyzedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      violations: [],
+    };
+    
+    // Проверяем тип ID после сброса
+    validateDocumentId(currentDocument.value, "resetCurrentDocument");
+  };
+
+  // Добавляем функцию для получения отделений ФССП по коду региона
+  const fetchFSSPDepartmentsByRegion = async (regionCode) => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/data?regionCode=${regionCode}`);
+      if (response.data.success) {
+        // Кэшируем данные
+        fsspDepartmentsByRegion.value[regionCode] = response.data.data;
+        return response.data.data;
+      } else {
+        console.error('Ошибка получения данных ФССП:', response.data.message);
+        return null;
+      }
+    } catch (error) {
+      console.error('Ошибка запроса к API ФССП:', error);
+      throw error;
+    }
+  };
+
+  // Действия
+  const fetchDocuments = async () => {
+    return handleApiCall(async () => {
+      const { data } = await axios.get(`${API_BASE}/api/documents`);
+      documents.value = data.items || data;
+    });
+  };
+
+  const fetchDocumentById = async (id) => {
+    
+    return handleApiCall(async () => {
+      const { data } = await axios.get(`${API_BASE}/api/documents/${id}`);
+      
+      // Документ уже в правильной структуре, просто присваиваем
+      // Убедимся, что originalText правильно установлен
+      currentDocument.value = {
+        ...data,
+        originalText: data.originalText !== undefined ? data.originalText : "",
+      };
+      return data;
+    });
+  };
+
+  const uploadFiles = async (files) => {
+    console.log("Загрузка файлов:", files);
+    return handleApiCall(async () => {
+      const formData = new FormData();
+      if (currentDocument.value.originalText) {
+        formData.append("text", currentDocument.value.originalText);
+      }
+
+      Array.from(files).forEach((file) => formData.append("files", file));
+
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/upload`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      console.log("Результат загрузки файлов:", data);
+      
+      // Обновляем только вложения, чтобы не потерять другие поля документа (например, regionCode)
+      if (data.attachments && Array.isArray(data.attachments)) {
+        currentDocument.value.attachments = data.attachments;
+      }
+      
+      // Также обновляем originalText, если он пришел с сервера
+      if (data.originalText !== undefined) {
+        currentDocument.value.originalText = data.originalText;
+      }
+      
+      // Возвращаем обновленные данные (но без ID документа, так как документ еще не создан в базе)
+      return data;
+    });
+  };
+
+  const saveDocument = async () => {
+    console.log("Сохранение документа:", currentDocument.value);
+    
+    // Проверяем тип ID документа
+    validateDocumentId(currentDocument.value, "saveDocument");
+    
+    return handleApiCall(async () => {
+      // Убедимся, что у документа есть все необходимые поля
+      // и актуальная дата обновления
+      currentDocument.value.updatedAt = new Date().toISOString();
+
+      // Убедимся, что originalText не undefined
+      currentDocument.value.originalText =
+        currentDocument.value.originalText !== undefined
+          ? currentDocument.value.originalText
+          : "";
+
+      let savedDocument;
+      
+      // Проверяем, существует ли документ в локальном списке (это означает, что он уже был сохранен)
+      const isDocumentInList = documents.value.some(doc => doc.id === currentDocument.value.id);
+      
+      if (isDocumentInList && currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        // Документ уже существует в списке, обновляем его
+        console.log("Обновление существующего документа");
+        const { data } = await axios.put(
+          `${API_BASE}/api/documents/${currentDocument.value.id}`,
+          currentDocument.value
+        );
+        savedDocument = data;
+      } else {
+        // Документ новый или не в списке, создаем его
+        console.log("Создание нового документа");
+        const newDocToSave = {
+          ...currentDocument.value,
+          createdAt:
+            currentDocument.value.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          originalText:
+            currentDocument.value.originalText !== undefined
+              ? currentDocument.value.originalText
+              : "",
+        };
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents`,
+          newDocToSave
+        );
+        savedDocument = data;
+      }
+
+      updateDocumentsList(savedDocument);
+      // После сохранения обновляем currentDocument значением от сервера
+      currentDocument.value = {
+        ...currentDocument.value,
+        ...savedDocument,
+        // Убедимся, что originalText правильно установлен
+        originalText:
+          savedDocument.originalText !== undefined
+            ? savedDocument.originalText
+            : currentDocument.value.originalText || "",
+      };
+      
+      // Проверяем тип ID после сохранения
+      validateDocumentId(currentDocument.value, "saveDocument (after save)");
+      
+      console.log("Документ сохранен:", savedDocument);
+      return savedDocument;
+    });
+  };
+
+  const deleteDocument = async (id) => {
+    return handleApiCall(async () => {
+      await axios.delete(`${API_BASE}/api/documents/${id}`);
+      documents.value = documents.value.filter((doc) => doc.id !== id);
+
+      if (currentDocument.value.id === id) {
+        resetCurrentDocument();
+      }
+    });
+  };
+
+  const analyzeDocument = async (documentId = null) => {
+    
+    // Если передан ID документа, проверим, существует ли он в локальном списке
+    if (documentId) {
+      const isDocumentInList = documents.value.some(doc => doc.id === documentId);
+      
+      if (isDocumentInList) {
+        // Документ существует в локальном списке, можем безопасно загрузить его с сервера
+        try {
+          await fetchDocumentById(documentId);
+        } catch (fetchErr) {
+          // Если документ не найден на сервере, несмотря на наличие в списке, используем currentDocument
+          console.log("Документ с ID не найден на сервере, используем currentDocument:", fetchErr.message);
+        }
+      } else {
+        // Документ не существует в локальном списке, пропускаем загрузку с сервера
+        console.log("Документ не найден в локальном списке, используем currentDocument (новый документ)");
+      }
+    }
+
+    // Проверяем, есть ли текст для анализа
+    const hasOriginalText = currentDocument.value.originalText && currentDocument.value.originalText.trim().length > 0;
+    const hasAttachmentsWithText = currentDocument.value.attachments?.some((att) => att.text && att.text.trim().length > 0);
+
+    console.log("Проверка текста для анализа:", {
+      hasOriginalText,
+      hasAttachmentsWithText,
+    });
+
+    // Если есть вложения, но нет основного текста (пояснений пользователя), показываем ошибку
+    if (hasAttachmentsWithText && !hasOriginalText) {
+      error.value = "Для анализа вложений необходимо добавить пояснения пользователя в основной текст документа";
+      console.log("Нет пояснений пользователя для анализа вложений");
+      return;
+    }
+
+    if (!hasOriginalText && !hasAttachmentsWithText) {
+      error.value = "Нет текста для анализа";
+      console.log("Нет текста для анализа");
+      return;
+    }
+
+    isAnalyzing.value = true;
+    error.value = null;
+
+    // Объявляем переменную на уровне функции, чтобы она была доступна в catch блоке
+    let documentExistsOnServer = false;
+
+    try {
+      // Проверяем тип ID перед анализом
+      validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
+      
+      // Проверяем, существует ли документ в локальном списке (это означает, что он уже был сохранен)
+      const isDocumentInList = documents.value.some(doc => doc.id === currentDocument.value.id);
+      
+      // Документ считается существующим на сервере, только если он есть в локальном списке
+      documentExistsOnServer = isDocumentInList && currentDocument.value.id && typeof currentDocument.value.id === 'string';
+      
+      if (documentExistsOnServer) {
+        console.log("Документ существует на сервере, анализируем его по ID");
+      } else {
+        console.log("Документ не существует на сервере, анализируем как новый документ");
+      }
+      
+      // Если документ существует на сервере, анализируем его по ID
+      if (documentExistsOnServer) {
+        currentDocument.value.analysisStatus = "processing";
+
+        // Вызываем бэкенд для анализа документа
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+          {
+            instructions: "",
+            strictMode: false
+          }
+        );
+
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          attachments: data.attachments ? 
+            currentDocument.value.attachments.map(attachment => {
+              // Найдем соответствующий анализ в результатах
+              const analysis = data.attachments.find(a => a.id === attachment.id);
+              if (analysis) {
+                return {
+                  ...attachment,
+                  analysis: {
+                    documentType: analysis.documentType || "Документ",
+                    sentDate: analysis.sentDate || "",
+                    senderAgency: analysis.senderAgency || "",
+                    summary: analysis.summary || "",
+                    keySentences: analysis.keySentences || []
+                  },
+                  documentDate: analysis.sentDate || attachment.documentDate || "",
+                  senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                  summary: analysis.summary || attachment.summary || "",
+                  keySentences: analysis.keySentences || attachment.keySentences || [],
+                  text: attachment.text || ""  // Сохраняем исходный текст вложения
+                };
+              }
+              return attachment;
+            }) : 
+            currentDocument.value.attachments,
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
+
+        const savedDocument = await saveDocument();
+        return savedDocument;
+      } 
+      // Если документ не существует на сервере, анализируем его напрямую по тексту
+      else {
+        const textToAnalyze = (currentDocument.value.originalText || "").trim();
+        const attachmentsToAnalyze = currentDocument.value.attachments?.filter(att => att.text && att.text.trim().length > 0) || [];
+        
+        if (textToAnalyze === "" && attachmentsToAnalyze.length === 0) {
+          error.value = "Нет текста для анализа";
+          isAnalyzing.value = false;
+          console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
+          return;
+        }
+
+        console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
+
+        // Подготовим данные для анализа
+        const analyzeData = {
+          text: textToAnalyze,
+          instructions: "",
+          strictMode: false,
+          attachments: attachmentsToAnalyze.map(att => ({
+            id: att.id,
+            name: att.name,
+            text: att.text
+          }))
+        };
+
+        // Вызываем бэкенд для анализа текста напрямую
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents/analyze`,
+          analyzeData
+        );
+
+        // Обновляем документ результатами анализа
+        currentDocument.value = {
+          ...currentDocument.value,
+          summary: data.summary || "Не удалось сгенерировать краткую суть",
+          keySentences: Array.isArray(data.keySentences) ? 
+            data.keySentences : 
+            [],
+          violations: Array.isArray(data.violations) ?
+            data.violations :
+            [],
+          documentDate: data.documentDate || "",
+          senderAgency: data.senderAgency || "",
+          attachments: currentDocument.value.attachments.map(attachment => {
+            // Найдем соответствующий анализ в результатах
+            const analysis = data.attachments?.find(a => a.id === attachment.id);
+            if (analysis) {
+              return {
+                ...attachment,
+                analysis: {
+                  documentType: analysis.documentType || "Документ",
+                  sentDate: analysis.sentDate || "",
+                  senderAgency: analysis.senderAgency || "",
+                  summary: analysis.summary || "",
+                  keySentences: analysis.keySentences || []
+                },
+                documentDate: analysis.sentDate || attachment.documentDate || "",
+                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                summary: analysis.summary || attachment.summary || "",
+                keySentences: analysis.keySentences || attachment.keySentences || [],
+                text: attachment.text || ""  // Сохраняем исходный текст вложения
+              };
+            }
+            return attachment;
+          }),
+          analysisStatus: "completed",
+          lastAnalyzedAt: new Date().toISOString(),
+        };
+
+        // Возвращаем обновленный документ без сохранения
+        return currentDocument.value;
+      }
+    } catch (err) {
+
+      console.error("Ошибка анализа документа:", err);
+      console.error("Статус:", err.response?.status);
+      console.error("Данные ошибки:", err.response?.data);
+
+
+      currentDocument.value.analysisStatus = "failed";
+      // Для новых документов не вызываем saveDocument в случае ошибки
+      if (currentDocument.value.id && typeof currentDocument.value.id === 'string' && documentExistsOnServer) {
+        await saveDocument();
+      }
+      throw err;
+    } finally {
+      isAnalyzing.value = false;
+    }
+  };
+
+  
+
+  const fetchComplaints = async (documentId) => {
+    return handleApiCall(async () => {
+      const { data } = await axios.get(
+        `${API_BASE}/api/documents/${documentId}/complaints`
+      );
+
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = data;
+      }
+
+      return data;
+    });
+  };
+
+  const viewDocument = async (id) => {
+    await fetchDocumentById(id);
+    router.push(`/documents/${id}`);
+  };
+
+  // Экспортируемые значения
+  return {
+    // Состояние
+    currentDocument,
+    documents,
+    isLoading,
+    error,
+    isAnalyzing,
+
+    // Геттеры
+    agenciesList,
+    hasAttachments,
+    analyzedDocuments,
+    getRegionNameByCode,
+    getFSSPDepartmentsList,
+    isCurrentDocumentAnalyzed,
+
+    // Действия
+    fetchDocuments,
+    fetchDocumentById,
+    uploadFiles,
+    saveDocument,
+    deleteDocument,
+    analyzeDocument,
+    fetchComplaints,
+    resetCurrentDocument,
+    viewDocument,
+    fetchFSSPDepartmentsByRegion,
+  };
+});
+
+
+====================
+
+// Файл: src\stores\complaintStore.js
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import axios from "axios";
+import { saveAs } from "file-saver";
+
+const API_BASE = "http://localhost:3001";
+
+export const useComplaintStore = defineStore("complaint", () => {
+  // Состояние
+  const complaints = ref([]);
+  const isLoading = ref(false);
+  const error = ref(null);
+  const isGenerating = ref(false);
+  const isExporting = ref(false);
+
+  // Геттеры
+  const agenciesOptions = computed(() => [
+    "Федеральная служба судебных приставов (ФССП)",
+    "Прокуратура",
+    "Суд (административное исковое заявление)",
+    "Уполномоченный по правам человека (омбудсмен)",
+  ]);
+
+  const getComplaintsByDocument = computed(() => (documentId) => {
+    return complaints.value.filter((c) => c.documentId === documentId);
+  });
+
+  // Действия
+  const fetchComplaints = async () => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const { data } = await axios.get(`${API_BASE}/api/complaints`);
+      complaints.value = data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const generateComplaint = async (documentId, agency, instructions = "") => {
+    isGenerating.value = true;
+    error.value = null;
+
+    try {
+      const { data } = await axios.post(`${API_BASE}/api/complaints/generate`, {
+        documentId,
+        agency,
+        instructions
+      });
+
+      complaints.value.unshift(data);
+      return data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isGenerating.value = false;
+    }
+  };
+
+  const exportComplaint = async (complaintId, format = "txt") => {
+    isExporting.value = true;
+    error.value = null;
+    try {
+      const response = await axios.get(
+        `${API_BASE}/api/complaints/${complaintId}/export?format=${format}`,
+        { responseType: format === "doc" ? "blob" : "text" }
+      );
+
+      const complaint = complaints.value.find(c => c.id === complaintId);
+      const fileName = `Жалоба_${complaint.agency}_${new Date(complaint.createdAt).toLocaleDateString('ru-RU')}.${format}`;
+
+      if (format === "doc") {
+        saveAs(response.data, fileName);
+      } else {
+        const blob = new Blob([response.data], { type: "text/plain;charset=utf-8" });
+        saveAs(blob, fileName);
+      }
+
+      return response.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isExporting.value = false;
+    }
+  };
+
+  const deleteComplaint = async (id) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      await axios.delete(`${API_BASE}/api/complaints/${id}`);
+      complaints.value = complaints.value.filter((c) => c.id !== id);
+      return true;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  return {
+    // Состояние
+    complaints,
+    isLoading,
+    error,
+    isGenerating,
+    isExporting,
+
+    // Геттеры
+    agenciesOptions,
+    getComplaintsByDocument,
+
+    // Действия
+    fetchComplaints,
+    generateComplaint,
+    exportComplaint,
+    deleteComplaint,
+  };
+});
+
+
+====================
+
+// Файл: src\stores\aiStore.js
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import axios from "axios";
+
+export const useAIStore = defineStore("ai", () => {
+  // Состояние
+  const isLoading = ref(false);
+  const error = ref(null);
+  const apiStatus = ref("unknown");
+  
+  const apiUrl = ref("http://localhost:11434/api/generate");
+  const model = ref("llama3.1/18/8192" || "qwen3:30b");
+  
+  const availableModels = ref([
+    {
+      name: "llama3.1/18/8192" || "qwen3:30b",
+      description: "using 18 threads with 8192 num_ctx",
+      parameters: {
+        temperature: 0.3,
+        top_p: 0.9,
+      },
+    },
+  ]);
+
+  const agencies = ref(["ФССП", "Прокуратура", "Суд", "Омбудсмен"]);
+
+  // Действия
+  const checkServerStatus = async () => {
+    try {
+      // Проверяем непосредственно AI сервер (Ollama)
+      const response = await axios.get("http://localhost:11434/api/tags", {
+        timeout: 5000
+      });
+      apiStatus.value = "ready";
+      return true;
+    } catch (error) {
+      apiStatus.value = "offline";
+      throw new Error("AI сервер недоступен");
+    }
+  };
+
+  const analyzeText = async (text, options = {}) => {
+    isLoading.value = true;
+    error.value = null;
+    
+    try {
+      const response = await axios.post(apiUrl.value, {
+        model: model.value,
+        prompt: text,
+        stream: false,
+        options: {
+          temperature: options.temperature || 0.3,
+          top_p: options.top_p || 0.9,
+        }
+      }, { timeout: 30000 });
+      
+      return response.data;
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  // Геттеры
+  const isServerOnline = computed(() => apiStatus.value === "ready");
+  
+  const activeModelName = computed(() => {
+    const modelObj = availableModels.value.find(m => m.name === model.value);
+    return modelObj ? modelObj.description : "Неизвестная модель";
+  });
+
+  return {
+    // Состояние
+    isLoading,
+    error,
+    apiStatus,
+    apiUrl,
+    model,
+    availableModels,
+    agencies,
+
+    // Действия
+    checkServerStatus,
+    analyzeText,
+
+    // Геттеры
+    isServerOnline,
+    activeModelName
+  };
+});
+
+====================
+
+// Файл: src\router\index.js
+import { createRouter, createWebHistory } from "vue-router";
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes: [
+    {
+      path: "/",
+      name: "home",
+      component: () => import("@/views/ChronicleView.vue"),
+    },
+    {
+      path: "/create",
+      name: "create",
+      component: () => import("@/views/HomeView.vue"),
+    },
+    {
+      path: "/review/:id",
+      name: "review",
+      component: () => import("@/views/DocumentReview.vue"),
+      props: true,
+    },
+    {
+      path: "/documents",
+      name: "documents",
+      component: () => import("@/views/DocumentsList.vue"),
+    },
+    {
+      path: "/complaints",
+      name: "complaints",
+      component: () => import("@/views/ComplaintsList.vue"),
+    },
+    {
+      path: "/documents/:id",
+      name: "DocumentDetail",
+      component: () => import("@/views/DocumentDetail.vue"),
+      props: true,
+    },
+    {
+      path: '/documents/:id/complaint',
+      name: 'ComplaintForm',
+      component: () => import('@/views/ComplaintForm.vue'),
+      props: true
+    },
+    {
+      path: '/complaints/:id',
+      name: 'ComplaintDetail',
+      component: () => import('@/views/ComplaintDetail.vue'),
+      props: true
+    },
+    {
+      path: '/fssp',
+      name: 'FSSPData',
+      component: () => import('@/views/FSSPDataView.vue'),
+    }
+  ],
+});
+
+export default router;
+
+
+
+
+
+
+
+
+
+
+
+====================
+
+// Файл: src\composables\useDocumentAnalysis.js
+import { useDocumentStore } from '@/stores/documentStore';
+import { useAIStore } from '@/stores/aiStore';
+
+export const useDocumentAnalysis = () => {
+  const documentStore = useDocumentStore();
+  const aiStore = useAIStore();
+
+  const analyzeCurrentDocument = async () => {
+    return await documentStore.analyzeDocument();
+  };
+
+  const analyzeTextWithLLM = async (text) => {
+    return await aiStore.analyzeText(text);
+  };
+
+  return {
+    analyzeCurrentDocument,
+    analyzeTextWithLLM
+  };
+};
+
+====================
+
+// Файл: src\components\RegionAutocomplete.vue
+<template>
+  <div class="autocomplete-wrapper" ref="wrapperRef">
+    <div class="input-with-code">
+      <input
+        ref="inputRef"
+        v-model="searchTerm"
+        type="text"
+        placeholder="Начните вводить название региона..."
+        class="autocomplete-input"
+        @input="onInput"
+        @focus="onFocus"
+        @click="onClick"
+        @blur="onBlur"
+        @keydown.down.prevent="onArrowDown"
+        @keydown.up.prevent="onArrowUp"
+        @keydown.enter.prevent="onEnter"
+        @keydown.esc="onEscape"
+      />
+      <div v-if="selectedRegionCode" class="region-code">
+        {{ selectedRegionCode }}
+      </div>
+    </div>
+    <div v-if="showSuggestions" class="suggestions-container" @click="onSuggestionsClick">
+      <ul v-if="filteredRegions.length > 0" class="suggestions-list">
+        <li
+          v-for="(region, index) in filteredRegions"
+          :key="region.name"
+          :class="['suggestion-item', { 'selected': index === selectedIndex }]"
+          @click="selectRegion(region)"
+          @mouseenter="selectedIndex = index"
+        >
+          <div class="region-name">{{ region.name }}</div>
+          <div class="region-code-small">{{ region.code }}</div>
+        </li>
+      </ul>
+      <div v-else class="no-suggestions">
+        Регионы не найдены
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+
+export default {
+  name: 'RegionAutocomplete',
+  props: {
+    regions: {
+      type: Array,
+      required: true
+    },
+    modelValue: {
+      type: String,
+      default: ''
+    }
+  },
+  emits: ['update:modelValue', 'regionSelected'],
+  setup(props, { emit }) {
+    const inputRef = ref(null);
+    const wrapperRef = ref(null);
+    const searchTerm = ref(props.modelValue || '');
+    const lastSelectedRegion = ref(props.modelValue || ''); // запоминаем последний выбранный
+    const showSuggestions = ref(false);
+    const selectedIndex = ref(-1);
+
+    // Фильтрация: если пусто — все регионы
+    const filteredRegions = computed(() => {
+      if (!searchTerm.value) return props.regions;
+      const term = searchTerm.value.toLowerCase();
+      return props.regions.filter(r => r.name.toLowerCase().includes(term));
+    });
+
+    // Получение кода выбранного региона
+    const selectedRegionCode = computed(() => {
+      if (!searchTerm.value) return '';
+      const region = props.regions.find(r => r.name === searchTerm.value);
+      return region ? region.code : '';
+    });
+
+    // --- ОСНОВНАЯ ФУНКЦИЯ: Прокрутка к региону по центру ---
+    const scrollToRegionCenter = async (regionName) => {
+      // Убедимся, что список виден
+      await nextTick();
+      let attempts = 0;
+      const maxAttempts = 10;
+
+      const tryScroll = () => {
+        const list = wrapperRef.value?.querySelector('.suggestions-list');
+        if (!list) {
+          if (attempts < maxAttempts) {
+            attempts++;
+            setTimeout(tryScroll, 50); // попробуем снова
+          }
+          return;
+        }
+
+        const items = list.querySelectorAll('.suggestion-item');
+        let targetItem = null;
+
+        for (let item of items) {
+          const nameEl = item.querySelector('.region-name');
+          if (nameEl && nameEl.textContent.trim() === regionName) {
+            targetItem = item;
+            break;
+          }
+        }
+
+        if (!targetItem) {
+          console.warn(`Регион "${regionName}" не найден в списке`);
+          return;
+        }
+
+        const containerHeight = list.clientHeight;
+        const itemHeight = targetItem.offsetHeight;
+        const itemTop = targetItem.offsetTop;
+
+        // Центр: scrollTop = itemTop - половина высоты окна + половина высоты элемента
+        const scrollTop = itemTop - containerHeight / 2 + itemHeight / 2;
+
+        list.scrollTop = Math.max(0, scrollTop);
+        console.log(`Прокручено к "${regionName}", offsetTop=${itemTop}, scrollTop=${scrollTop}`);
+      };
+
+      tryScroll();
+    };
+
+    const onFocus = () => {
+      // Сохраняем текущий регион перед сбросом
+      if (searchTerm.value) {
+        lastSelectedRegion.value = searchTerm.value;
+      }
+      // Сбрасываем текущий регион при фокусе
+      searchTerm.value = '';
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+
+      // Приоритет: текущий ввод → последний выбранный
+      const regionToScroll = searchTerm.value || lastSelectedRegion.value;
+
+      if (regionToScroll) {
+        // Задержка для гарантии отрисовки списка
+        nextTick(() => {
+          scrollToRegionCenter(regionToScroll);
+        });
+      }
+    };
+
+    const onClick = () => {
+      // Сохраняем текущий регион перед сбросом
+      if (searchTerm.value) {
+        lastSelectedRegion.value = searchTerm.value;
+      }
+      // Сбрасываем текущий регион при клике на инпут
+      searchTerm.value = '';
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+    };
+
+    const onInput = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+      emit('update:modelValue', searchTerm.value);
+    };
+
+    const onBlur = (event) => {
+      setTimeout(() => {
+        if (!event.relatedTarget || !event.relatedTarget.closest('.autocomplete-wrapper')) {
+          showSuggestions.value = false;
+          selectedIndex.value = -1;
+          // Восстанавливаем последний выбранный регион, если пользователь не выбрал новый
+          if (!searchTerm.value && lastSelectedRegion.value) {
+            searchTerm.value = lastSelectedRegion.value;
+            emit('update:modelValue', lastSelectedRegion.value);
+          }
+        }
+      }, 200);
+    };
+
+    const selectRegion = (region) => {
+      searchTerm.value = region.name;
+      lastSelectedRegion.value = region.name;
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+      emit('update:modelValue', region.name);
+      emit('regionSelected', region.name);
+    };
+
+    // Обработчик стрелок (для полноты)
+    const onArrowDown = () => {
+      if (!showSuggestions.value) showSuggestions.value = true;
+      if (filteredRegions.value.length > 0) {
+        selectedIndex.value = (selectedIndex.value + 1) % filteredRegions.value.length;
+        nextTick(scrollToSelectedIndex);
+      }
+    };
+
+    const onArrowUp = () => {
+      if (!showSuggestions.value) showSuggestions.value = true;
+      if (filteredRegions.value.length > 0) {
+        selectedIndex.value = selectedIndex.value <= 0
+          ? filteredRegions.value.length - 1
+          : selectedIndex.value - 1;
+        nextTick(scrollToSelectedIndex);
+      }
+    };
+
+    const onEnter = () => {
+      if (showSuggestions.value && selectedIndex.value >= 0) {
+        selectRegion(filteredRegions.value[selectedIndex.value]);
+      } else if (filteredRegions.value.length > 0) {
+        selectRegion(filteredRegions.value[0]);
+      }
+    };
+
+    const onEscape = () => {
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+    };
+
+    const onSuggestionsClick = (event) => {
+      // Если клик был непосредственно на контейнере (а не на элементе списка), сбрасываем регион
+      if (event.target === event.currentTarget) {
+        // Сохраняем текущий регион как последний, если он есть
+        if (searchTerm.value) {
+          lastSelectedRegion.value = searchTerm.value;
+        }
+        // Сбрасываем текущий регион
+        searchTerm.value = '';
+        emit('update:modelValue', '');
+      }
+    };
+
+    const scrollToSelectedIndex = () => {
+      if (selectedIndex.value === -1 || !wrapperRef.value) return;
+      const list = wrapperRef.value.querySelector('.suggestions-list');
+      if (!list) return;
+
+      const items = list.querySelectorAll('.suggestion-item');
+      const selectedRegionName = filteredRegions.value[selectedIndex.value]?.name;
+      let targetItem = null;
+
+      for (let item of items) {
+        const nameEl = item.querySelector('.region-name');
+        if (nameEl && nameEl.textContent.trim() === selectedRegionName) {
+          targetItem = item;
+          break;
+        }
+      }
+
+      if (!targetItem) return;
+
+      const itemTop = targetItem.offsetTop;
+      const itemBottom = itemTop + targetItem.offsetHeight;
+      const containerHeight = list.clientHeight;
+      const scrollTop = list.scrollTop;
+      const scrollBottom = scrollTop + containerHeight;
+
+      if (itemTop < scrollTop) {
+        list.scrollTop = itemTop - containerHeight / 2 + targetItem.offsetHeight / 2;
+      } else if (itemBottom > scrollBottom) {
+        list.scrollTop = itemTop - containerHeight / 2 + targetItem.offsetHeight / 2;
+      }
+    };
+
+    // Синхронизация с внешним значением
+    watch(() => props.modelValue, (newVal) => {
+      if (newVal !== searchTerm.value) {
+        searchTerm.value = newVal || '';
+        if (newVal) lastSelectedRegion.value = newVal;
+      }
+    });
+
+    // Клик вне компонента
+    const handleClickOutside = (event) => {
+      if (wrapperRef.value && !wrapperRef.value.contains(event.target)) {
+        showSuggestions.value = false;
+        selectedIndex.value = -1;
+      }
+    };
+
+    onMounted(() => {
+      document.addEventListener('click', handleClickOutside);
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener('click', handleClickOutside);
+    });
+
+    return {
+      inputRef,
+      wrapperRef,
+      searchTerm,
+      showSuggestions,
+      selectedIndex,
+      filteredRegions,
+      selectedRegionCode,
+      onInput,
+      onFocus,
+      onBlur,
+      onClick,
+      onArrowDown,
+      onArrowUp,
+      onEnter,
+      onEscape,
+      onSuggestionsClick,
+      selectRegion,
+      scrollToRegionCenter,
+      scrollToSelectedIndex
+    };
+  }
+};
+</script>
+
+
+
+====================
+
+// Файл: src\components\AgencyAutocomplete.vue
+<template>
+  <div class="autocomplete-wrapper" ref="wrapperRef">
+    <input
+      ref="inputRef"
+      v-model="searchTerm"
+      type="text"
+      :placeholder="placeholder"
+      class="autocomplete-input"
+      @input="onInput"
+      @focus="onFocus"
+      @click="onClick"
+      @blur="onBlur"
+      @keydown.down.prevent="onArrowDown"
+      @keydown.up.prevent="onArrowUp"
+      @keydown.enter.prevent="onEnter"
+      @keydown.esc="onEscape"
+    />
+    <div v-if="showSuggestions" class="suggestions-container">
+      <ul v-if="filteredAgencies.length > 0" class="suggestions-list">
+        <li
+          v-for="(agency, index) in filteredAgencies"
+          :key="index"
+          :class="['suggestion-item', { 'selected': index === selectedIndex }]"
+          @click="selectAgency(agency)"
+          @mouseenter="selectedIndex = index"
+        >
+          {{ agency }}
+        </li>
+      </ul>
+      <div v-else class="no-suggestions">
+        {{ noSuggestionsText }}
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+
+export default {
+  name: 'AgencyAutocomplete',
+  props: {
+    agencies: {
+      type: Array,
+      required: true,
+      default: () => []
+    },
+    modelValue: {
+      type: String,
+      default: ''
+    },
+    placeholder: {
+      type: String,
+      default: 'Начните вводить название отделения ФССП...'
+    },
+    noSuggestionsText: {
+      type: String,
+      default: 'Отделения ФССП не найдены'
+    }
+  },
+  emits: ['update:modelValue', 'agencySelected'],
+  setup(props, { emit }) {
+    const inputRef = ref(null);
+    const wrapperRef = ref(null);
+    const searchTerm = ref(props.modelValue || '');
+    const showSuggestions = ref(false);
+    const selectedIndex = ref(-1);
+
+    // Фильтрация агентств по введённому тексту
+    const filteredAgencies = computed(() => {
+      if (!searchTerm.value) return props.agencies;
+      const term = searchTerm.value.toLowerCase();
+      return props.agencies.filter(agency => 
+        agency.toLowerCase().includes(term)
+      );
+    });
+
+    const onFocus = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+    };
+
+    const onClick = () => {
+      if (!showSuggestions.value) {
+        showSuggestions.value = true;
+        selectedIndex.value = -1;
+      }
+    };
+
+    const onInput = () => {
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
+      emit('update:modelValue', searchTerm.value);
+    };
+
+    const onBlur = (event) => {
+      setTimeout(() => {
+        if (!event.relatedTarget || !event.relatedTarget.closest('.autocomplete-wrapper')) {
+          showSuggestions.value = false;
+          selectedIndex.value = -1;
+        }
+      }, 200);
+    };
+
+    const selectAgency = (agency) => {
+      searchTerm.value = agency;
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+      emit('update:modelValue', agency);
+      emit('agencySelected', agency);
+    };
+
+    // Обработчик стрелок
+    const onArrowDown = () => {
+      if (!showSuggestions.value) showSuggestions.value = true;
+      if (filteredAgencies.value.length > 0) {
+        selectedIndex.value = (selectedIndex.value + 1) % filteredAgencies.value.length;
+        nextTick(scrollToSelectedIndex);
+      }
+    };
+
+    const onArrowUp = () => {
+      if (!showSuggestions.value) showSuggestions.value = true;
+      if (filteredAgencies.value.length > 0) {
+        selectedIndex.value = selectedIndex.value <= 0
+          ? filteredAgencies.value.length - 1
+          : selectedIndex.value - 1;
+        nextTick(scrollToSelectedIndex);
+      }
+    };
+
+    const onEnter = () => {
+      if (showSuggestions.value && selectedIndex.value >= 0) {
+        selectAgency(filteredAgencies.value[selectedIndex.value]);
+      } else if (filteredAgencies.value.length > 0) {
+        selectAgency(filteredAgencies.value[0]);
+      }
+    };
+
+    const onEscape = () => {
+      showSuggestions.value = false;
+      selectedIndex.value = -1;
+    };
+
+    const scrollToSelectedIndex = () => {
+      if (selectedIndex.value === -1 || !wrapperRef.value) return;
+      const list = wrapperRef.value.querySelector('.suggestions-list');
+      if (!list) return;
+
+      const items = list.querySelectorAll('.suggestion-item');
+      if (items[selectedIndex.value]) {
+        const item = items[selectedIndex.value];
+        const itemTop = item.offsetTop;
+        const itemBottom = itemTop + item.offsetHeight;
+        const containerHeight = list.clientHeight;
+        const scrollTop = list.scrollTop;
+        const scrollBottom = scrollTop + containerHeight;
+
+        if (itemTop < scrollTop) {
+          list.scrollTop = itemTop;
+        } else if (itemBottom > scrollBottom) {
+          list.scrollTop = itemBottom - containerHeight;
+        }
+      }
+    };
+
+    // Синхронизация с внешним значением
+    watch(() => props.modelValue, (newVal) => {
+      if (newVal !== searchTerm.value) {
+        searchTerm.value = newVal || '';
+      }
+    });
+
+    // Клик вне компонента
+    const handleClickOutside = (event) => {
+      if (wrapperRef.value && !wrapperRef.value.contains(event.target)) {
+        showSuggestions.value = false;
+        selectedIndex.value = -1;
+      }
+    };
+
+    onMounted(() => {
+      document.addEventListener('click', handleClickOutside);
+    });
+
+    onUnmounted(() => {
+      document.removeEventListener('click', handleClickOutside);
+    });
+
+    return {
+      inputRef,
+      wrapperRef,
+      searchTerm,
+      showSuggestions,
+      selectedIndex,
+      filteredAgencies,
+      onInput,
+      onFocus,
+      onBlur,
+      onClick,
+      onArrowDown,
+      onArrowUp,
+      onEnter,
+      onEscape,
+      selectAgency,
+      scrollToSelectedIndex
+    };
+  }
+};
+</script>
+
+
+
+====================
+
+// Файл: src\views\__tests__\FSSPDataView.test.js
+// Тест для проверки компонента FSSPDataView
+import { mount } from '@vue/test-utils';
+import { ref } from 'vue';
+import FSSPDataView from '../frontend/src/views/FSSPDataView.vue';
+
+// Мокаем axios
+jest.mock('axios', () => ({
+  get: jest.fn(),
+  post: jest.fn()
+}));
+
+// Мокаем RegionAutocomplete компонент
+jest.mock('../frontend/src/components/RegionAutocomplete.vue', () => ({
+  name: 'RegionAutocomplete',
+  template: '<div class="mock-region-autocomplete"></div>',
+  props: ['regions', 'modelValue'],
+  emits: ['update:modelValue', 'regionSelected']
+}));
+
+describe('FSSPDataView', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('должен загружать список регионов при монтировании', async () => {
+    // Мокаем ответ API для списка регионов
+    const mockRegionsResponse = {
+      data: {
+        success: true,
+        regions: [
+          { name: 'Республика Адыгея', code: 1 },
+          { name: 'Республика Коми', code: 11 },
+          { name: 'Свердловская область', code: 66 }
+        ]
+      }
+    };
+    
+    require('axios').get.mockResolvedValueOnce(mockRegionsResponse);
+    
+    // Мокаем ответ API для данных ФССП
+    const mockDataResponse = {
+      data: {
+        success: true,
+        data: {
+          timestamp: '2023-01-01T00:00:00Z',
+          regions: []
+        }
+      }
+    };
+    
+    require('axios').get.mockResolvedValueOnce(mockDataResponse);
+    
+    const wrapper = mount(FSSPDataView);
+    
+    // Ждем загрузки данных
+    await wrapper.vm.$nextTick();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Проверим, что список регионов загружен
+    expect(wrapper.vm.availableRegions.length).toBe(3);
+    expect(wrapper.vm.availableRegions[1].name).toBe('Республика Коми');
+    expect(wrapper.vm.availableRegions[1].code).toBe(11);
+    
+    console.log('Список регионов загружен корректно');
+    console.log('Количество регионов:', wrapper.vm.availableRegions.length);
+    console.log('Республика Коми в списке:', 
+      wrapper.vm.availableRegions.find(r => r.name === 'Республика Коми'));
+  });
+
+  it('должен позволять выбор региона', async () => {
+    // Мокаем ответы API
+    require('axios').get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        regions: [
+          { name: 'Республика Коми', code: 11 },
+          { name: 'Свердловская область', code: 66 }
+        ]
+      }
+    });
+    
+    require('axios').get.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: {
+          timestamp: '2023-01-01T00:00:00Z',
+          regions: []
+        }
+      }
+    });
+    
+    const wrapper = mount(FSSPDataView);
+    await wrapper.vm.$nextTick();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Проверим начальное значение
+    expect(wrapper.vm.selectedRegion).toBe('Свердловская область');
+    
+    // Изменим выбор региона
+    wrapper.vm.selectedRegion = 'Республика Коми';
+    await wrapper.vm.$nextTick();
+    
+    expect(wrapper.vm.selectedRegion).toBe('Республика Коми');
+    console.log('Выбор региона работает корректно');
+  });
+});
+
+====================
+
+// Файл: src\components\__tests__\RegionAutocomplete.test.js
+// Тест для проверки компонента RegionAutocomplete
+import { createApp } from 'vue';
+import { mount } from '@vue/test-utils';
+import RegionAutocomplete from '../frontend/src/components/RegionAutocomplete.vue';
+
+describe('RegionAutocomplete', () => {
+  const mockRegions = [
+    { name: 'Республика Адыгея', code: 1 },
+    { name: 'Республика Башкортостан', code: 2 },
+    { name: 'Республика Коми', code: 11 },
+    { name: 'Свердловская область', code: 66 }
+  ];
+
+  it('должен отображать список регионов', async () => {
+    const wrapper = mount(RegionAutocomplete, {
+      props: {
+        regions: mockRegions,
+        modelValue: ''
+      }
+    });
+
+    // Проверим, что компонент существует
+    expect(wrapper.exists()).toBe(true);
+    
+    // Выведем информацию для отладки
+    console.log('Компонент RegionAutocomplete загружен успешно');
+    console.log('Количество регионов в props:', mockRegions.length);
+    
+    // Проверим, что регионы передаются правильно
+    const vm = wrapper.vm;
+    console.log('Количество регионов в filteredRegions:', vm.filteredRegions.length);
+    
+    // Проверим наличие Республики Коми
+    const komiRegion = vm.filteredRegions.find(r => r.name === 'Республика Коми');
+    console.log('Республика Коми в списке:', !!komiRegion);
+    if (komiRegion) {
+      console.log('Код Республики Коми:', komiRegion.code);
+    }
+  });
+
+  it('должен фильтровать регионы по вводу', async () => {
+    const wrapper = mount(RegionAutocomplete, {
+      props: {
+        regions: mockRegions,
+        modelValue: ''
+      }
+    });
+
+    const input = wrapper.find('input');
+    await input.setValue('Коми');
+    
+    const vm = wrapper.vm;
+    expect(vm.filteredRegions.length).toBe(1);
+    expect(vm.filteredRegions[0].name).toBe('Республика Коми');
+    console.log('Фильтрация работает корректно');
+  });
+});
+
+====================
+
+// Файл: src\components\ui\NotificationToast.vue
+<template>
+  <transition name="fade">
+    <div v-if="show" class="notification-center">
+      <div class="notification-content">
+        {{ message }}
+      </div>
+    </div>
+  </transition>
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue'
+
+const props = defineProps({
+  message: String,
+  type: {
+    type: String,
+    default: 'success'
+  },
+  duration: {
+    type: Number,
+    default: 3000
+  }
+})
+
+const show = ref(false)
+
+onMounted(() => {
+  show.value = true
+  setTimeout(() => {
+    show.value = false
+  }, props.duration)
+})
+</script>
+
+
+
+====================
+
+// Файл: src\components\layout\Header.vue
+
+
+====================
+
+// Файл: src\components\layout\Footer.vue
+
+
+====================
+
+// Файл: src\components\icons\IconTooling.vue
+<!-- This icon is from <https://github.com/Templarian/MaterialDesign>, distributed under Apache 2.0 (https://www.apache.org/licenses/LICENSE-2.0) license-->
+<template>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    xmlns:xlink="http://www.w3.org/1999/xlink"
+    aria-hidden="true"
+    role="img"
+    class="iconify iconify--mdi"
+    width="24"
+    height="24"
+    preserveAspectRatio="xMidYMid meet"
+    viewBox="0 0 24 24"
+  >
+    <path
+      d="M20 18v-4h-3v1h-2v-1H9v1H7v-1H4v4h16M6.33 8l-1.74 4H7v-1h2v1h6v-1h2v1h2.41l-1.74-4H6.33M9 5v1h6V5H9m12.84 7.61c.1.22.16.48.16.8V18c0 .53-.21 1-.6 1.41c-.4.4-.85.59-1.4.59H4c-.55 0-1-.19-1.4-.59C2.21 19 2 18.53 2 18v-4.59c0-.32.06-.58.16-.8L4.5 7.22C4.84 6.41 5.45 6 6.33 6H7V5c0-.55.18-1 .57-1.41C7.96 3.2 8.44 3 9 3h6c.56 0 1.04.2 1.43.59c.39.41.57.86.57 1.41v1h.67c.88 0 1.49.41 1.83 1.22l2.34 5.39z"
+      fill="currentColor"
+    ></path>
+  </svg>
+</template>
+
+
+====================
+
+// Файл: src\components\icons\IconSupport.vue
+<template>
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor">
+    <path
+      d="M10 3.22l-.61-.6a5.5 5.5 0 0 0-7.666.105 5.5 5.5 0 0 0-.114 7.665L10 18.78l8.39-8.4a5.5 5.5 0 0 0-.114-7.665 5.5 5.5 0 0 0-7.666-.105l-.61.61z"
+    />
+  </svg>
+</template>
+
+
+====================
+
+// Файл: src\components\icons\IconEcosystem.vue
+<template>
+  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="20" fill="currentColor">
+    <path
+      d="M11.447 8.894a1 1 0 1 0-.894-1.789l.894 1.789zm-2.894-.789a1 1 0 1 0 .894 1.789l-.894-1.789zm0 1.789a1 1 0 1 0 .894-1.789l-.894 1.789zM7.447 7.106a1 1 0 1 0-.894 1.789l.894-1.789zM10 9a1 1 0 1 0-2 0h2zm-2 2.5a1 1 0 1 0 2 0H8zm9.447-5.606a1 1 0 1 0-.894-1.789l.894 1.789zm-2.894-.789a1 1 0 1 0 .894 1.789l-.894-1.789zm2 .789a1 1 0 1 0 .894-1.789l-.894 1.789zm-1.106-2.789a1 1 0 1 0-.894 1.789l.894-1.789zM18 5a1 1 0 1 0-2 0h2zm-2 2.5a1 1 0 1 0 2 0h-2zm-5.447-4.606a1 1 0 1 0 .894-1.789l-.894 1.789zM9 1l.447-.894a1 1 0 0 0-.894 0L9 1zm-2.447.106a1 1 0 1 0 .894 1.789l-.894-1.789zm-6 3a1 1 0 1 0 .894 1.789L.553 4.106zm2.894.789a1 1 0 1 0-.894-1.789l.894 1.789zm-2-.789a1 1 0 1 0-.894 1.789l.894-1.789zm1.106 2.789a1 1 0 1 0 .894-1.789l-.894 1.789zM2 5a1 1 0 1 0-2 0h2zM0 7.5a1 1 0 1 0 2 0H0zm8.553 12.394a1 1 0 1 0 .894-1.789l-.894 1.789zm-1.106-2.789a1 1 0 1 0-.894 1.789l.894-1.789zm1.106 1a1 1 0 1 0 .894 1.789l-.894-1.789zm2.894.789a1 1 0 1 0-.894-1.789l.894 1.789zM8 19a1 1 0 1 0 2 0H8zm2-2.5a1 1 0 1 0-2 0h2zm-7.447.394a1 1 0 1 0 .894-1.789l-.894 1.789zM1 15H0a1 1 0 0 0 .553.894L1 15zm1-2.5a1 1 0 1 0-2 0h2zm12.553 2.606a1 1 0 1 0 .894 1.789l-.894-1.789zM17 15l.447.894A1 1 0 0 0 18 15h-1zm1-2.5a1 1 0 1 0-2 0h2zm-7.447-5.394l-2 1 .894 1.789 2-1-.894-1.789zm-1.106 1l-2-1-.894 1.789 2 1 .894-1.789zM8 9v2.5h2V9H8zm8.553-4.894l-2 1 .894 1.789 2-1-.894-1.789zm.894 0l-2-1-.894 1.789 2 1 .894-1.789zM16 5v2.5h2V5h-2zm-4.553-3.894l-2-1-.894 1.789 2 1 .894-1.789zm-2.894-1l-2 1 .894 1.789 2-1L8.553.106zM1.447 5.894l2-1-.894-1.789-2 1 .894 1.789zm-.894 0l2 1 .894-1.789-2-1-.894 1.789zM0 5v2.5h2V5H0zm9.447 13.106l-2-1-.894 1.789 2 1 .894-1.789zm0 1.789l2-1-.894-1.789-2 1 .894 1.789zM10 19v-2.5H8V19h2zm-6.553-3.894l-2-1-.894 1.789 2 1 .894-1.789zM2 15v-2.5H0V15h2zm13.447 1.894l2-1-.894-1.789-2 1 .894 1.789zM18 15v-2.5h-2V15h2z"
+    />
+  </svg>
+</template>
+
+
+====================
+
+// Файл: src\components\icons\IconDocumentation.vue
+<template>
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="17" fill="currentColor">
+    <path
+      d="M11 2.253a1 1 0 1 0-2 0h2zm-2 13a1 1 0 1 0 2 0H9zm.447-12.167a1 1 0 1 0 1.107-1.666L9.447 3.086zM1 2.253L.447 1.42A1 1 0 0 0 0 2.253h1zm0 13H0a1 1 0 0 0 1.553.833L1 15.253zm8.447.833a1 1 0 1 0 1.107-1.666l-1.107 1.666zm0-14.666a1 1 0 1 0 1.107 1.666L9.447 1.42zM19 2.253h1a1 1 0 0 0-.447-.833L19 2.253zm0 13l-.553.833A1 1 0 0 0 20 15.253h-1zm-9.553-.833a1 1 0 1 0 1.107 1.666L9.447 14.42zM9 2.253v13h2v-13H9zm1.553-.833C9.203.523 7.42 0 5.5 0v2c1.572 0 2.961.431 3.947 1.086l1.107-1.666zM5.5 0C3.58 0 1.797.523.447 1.42l1.107 1.666C2.539 2.431 3.928 2 5.5 2V0zM0 2.253v13h2v-13H0zm1.553 13.833C2.539 15.431 3.928 15 5.5 15v-2c-1.92 0-3.703.523-5.053 1.42l1.107 1.666zM5.5 15c1.572 0 2.961.431 3.947 1.086l1.107-1.666C9.203 13.523 7.42 13 5.5 13v2zm5.053-11.914C11.539 2.431 12.928 2 14.5 2V0c-1.92 0-3.703.523-5.053 1.42l1.107 1.666zM14.5 2c1.573 0 2.961.431 3.947 1.086l1.107-1.666C18.203.523 16.421 0 14.5 0v2zm3.5.253v13h2v-13h-2zm1.553 12.167C18.203 13.523 16.421 13 14.5 13v2c1.573 0 2.961.431 3.947 1.086l1.107-1.666zM14.5 13c-1.92 0-3.703.523-5.053 1.42l1.107 1.666C11.539 15.431 12.928 15 14.5 15v-2z"
+    />
+  </svg>
+</template>
+
+
+====================
+
+// Файл: src\components\icons\IconCommunity.vue
+<template>
+  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor">
+    <path
+      d="M15 4a1 1 0 1 0 0 2V4zm0 11v-1a1 1 0 0 0-1 1h1zm0 4l-.707.707A1 1 0 0 0 16 19h-1zm-4-4l.707-.707A1 1 0 0 0 11 14v1zm-4.707-1.293a1 1 0 0 0-1.414 1.414l1.414-1.414zm-.707.707l-.707-.707.707.707zM9 11v-1a1 1 0 0 0-.707.293L9 11zm-4 0h1a1 1 0 0 0-1-1v1zm0 4H4a1 1 0 0 0 1.707.707L5 15zm10-9h2V4h-2v2zm2 0a1 1 0 0 1 1 1h2a3 3 0 0 0-3-3v2zm1 1v6h2V7h-2zm0 6a1 1 0 0 1-1 1v2a3 3 0 0 0 3-3h-2zm-1 1h-2v2h2v-2zm-3 1v4h2v-4h-2zm1.707 3.293l-4-4-1.414 1.414 4 4 1.414-1.414zM11 14H7v2h4v-2zm-4 0c-.276 0-.525-.111-.707-.293l-1.414 1.414C5.42 15.663 6.172 16 7 16v-2zm-.707 1.121l3.414-3.414-1.414-1.414-3.414 3.414 1.414 1.414zM9 12h4v-2H9v2zm4 0a3 3 0 0 0 3-3h-2a1 1 0 0 1-1 1v2zm3-3V3h-2v6h2zm0-6a3 3 0 0 0-3-3v2a1 1 0 0 1 1 1h2zm-3-3H3v2h10V0zM3 0a3 3 0 0 0-3 3h2a1 1 0 0 1 1-1V0zM0 3v6h2V3H0zm0 6a3 3 0 0 0 3 3v-2a1 1 0 0 1-1-1H0zm3 3h2v-2H3v2zm1-1v4h2v-4H4zm1.707 4.707l.586-.586-1.414-1.414-.586.586 1.414 1.414z"
+    />
+  </svg>
+</template>
+
+
+====================
+
+// Файл: src\components\common\TextEditor.vue
+
+
+====================
+
+// Файл: src\components\common\FileUpload.vue
+<template>
+  <div class="file-upload">
+    <input 
+      type="file" 
+      id="fileInput"
+      ref="fileInput"
+      :accept="allowedExtensions"
+      @change="handleFileUpload"
+      multiple
+      hidden
+    />
+    <label for="fileInput" class="upload-button">
+      {{ label }}
+    </label>
+    <div v-if="files.length > 0" class="file-list">
+      <div v-for="(file, index) in files" :key="index" class="file-item">
+        <span class="file-name">{{ file.name }}</span>
+        <span class="file-size">{{ formatFileSize(file.size) }}</span>
+        <button @click="removeFile(index)" class="remove-btn">×</button>
+      </div>
+    </div>
+    <div v-if="error" class="error-message">{{ error }}</div>
+  </div>
+</template>
+
+<script setup>
+import { ref } from 'vue';
+
+const props = defineProps({
+  label: {
+    type: String,
+    default: 'Выберите файлы'
+  },
+  maxSize: {
+    type: Number,
+    default: 10 * 1024 * 1024 // 10MB по умолчанию
+  }
+});
+
+const emit = defineEmits(['files-selected', 'upload-error']);
+
+const fileInput = ref(null);
+const files = ref([]);
+const error = ref(null);
+const allowedExtensions = '.pdf,.txt,.doc,.docx';
+
+const handleFileUpload = (event) => {
+  error.value = null;
+  const newFiles = Array.from(event.target.files);
+  
+  // Проверка каждого файла
+  for (const file of newFiles) {
+    // 1. Проверка расширения
+    const extension = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'txt', 'doc', 'docx'].includes(extension)) {
+      error.value = `Файл ${file.name}: недопустимое расширение`;
+      emit('upload-error', error.value);
+      return;
+    }
+
+    // 2. Проверка MIME-типа (клиентская проверка ненадежна, но лучше чем ничего)
+    const allowedMimes = [
+      'application/pdf',
+      'text/plain',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    ];
+    
+    if (file.type && !allowedMimes.includes(file.type)) {
+      error.value = `Файл ${file.name}: недопустимый тип`;
+      emit('upload-error', error.value);
+      return;
+    }
+
+    // 3. Проверка размера
+    if (file.size > props.maxSize) {
+      error.value = `Файл ${file.name}: превышен максимальный размер (${props.maxSize / 1024 / 1024}MB)`;
+      emit('upload-error', error.value);
+      return;
+    }
+  }
+
+  // Если все проверки пройдены
+  files.value = [...files.value, ...newFiles];
+  updateFileInput();
+  emit('files-selected', files.value);
+};
+
+const removeFile = (index) => {
+  files.value.splice(index, 1);
+  updateFileInput();
+  emit('files-selected', files.value);
+};
+
+const updateFileInput = () => {
+  const dataTransfer = new DataTransfer();
+  files.value.forEach(file => dataTransfer.items.add(file));
+  fileInput.value.files = dataTransfer.files;
+};
+
+const formatFileSize = (bytes) => {
+  if (bytes === 0) return '0 Bytes';
+  const k = 1024;
+  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+};
+</script>
+
+
+
+====================
+

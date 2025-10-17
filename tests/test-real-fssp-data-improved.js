@@ -62,7 +62,7 @@ const testData = {
     id: doc.id,
     date: doc.documentDate || doc.date,
     summary: doc.summary,
-    agency: doc.agency
+    fsspDepartment: doc.fsspDepartment
   }))
 };
 

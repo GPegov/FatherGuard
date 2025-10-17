@@ -1,0 +1,2906 @@
+Это код файла (N:\3_VueProjects\FatherGuard\frontend\src\stores\documentStore.js):
+import { defineStore } from "pinia";
+import { ref, computed } from "vue";
+import axios from "axios";
+import { useRouter } from "vue-router";
+import { v4 as uuidv4 } from "uuid";
+import { useAIStore } from "@/stores/aiStore";
+
+export const useDocumentStore = defineStore("document", () => {
+  const router = useRouter();
+  const aiStore = useAIStore();
+  const API_BASE = "http://localhost:3001";
+
+  // Состояние хранилища
+  const documents = ref([]);
+  const isLoading = ref(false);
+  const error = ref(null);
+  const isAnalyzing = ref(false);
+
+  // Вспомогательная функция для проверки типа ID документа
+  const validateDocumentId = (doc, source = "unknown") => {
+    if (doc && doc.id !== undefined && doc.id !== null) {
+      if (typeof doc.id !== 'string' && typeof doc.id !== 'number') {
+        console.warn(`ВНИМАНИЕ: ID документа имеет неожиданный тип в ${source}:`, {
+          id: doc.id,
+          type: typeof doc.id,
+          value: doc.id
+        });
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const currentDocument = ref({
+    id: uuidv4(), // Устанавливаем ID сразу при создании
+    date: new Date().toISOString().split("T")[0],
+    agency: "",
+    originalText: "",
+    summary: "",
+    keySentences: [],
+    documentDate: "",
+    senderAgency: "",
+    attachments: [],
+    complaints: [],
+    regionCode: "",
+    analysisStatus: "pending",
+    lastAnalyzedAt: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    violations: [],
+  });
+
+  // Геттеры
+  const agenciesList = computed(() => {
+    const complaintAgencies = new Set([
+      "ФССП",
+      "Прокуратура",
+      "Суд",
+      "Омбудсмен",
+    ]);
+    const allAgencies = new Set(complaintAgencies);
+
+    documents.value.forEach((doc) => {
+      const agency = doc.agency || doc.senderAgency;
+      if (
+        agency &&
+        typeof agency === "string" &&
+        !complaintAgencies.has(agency)
+      ) {
+        allAgencies.add(agency);
+      }
+    });
+
+    return Array.from(allAgencies).sort();
+  });
+
+  const hasAttachments = computed(() => {
+    return currentDocument.value.attachments?.length > 0;
+  });
+
+  const analyzedDocuments = computed(() => {
+    return documents.value.filter((doc) => doc.analysisStatus === "completed");
+  });
+
+  const isCurrentDocumentAnalyzed = computed(() => {
+    return currentDocument.value.analysisStatus === "completed";
+  });
+
+  const regionsList = ref([]);
+
+  // Загружаем список регионов при инициализации хранилища
+  const loadRegionsList = async () => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/regions`);
+      if (response.data.success) {
+        regionsList.value = response.data.regions;
+      } else {
+        console.error('Ошибка загрузки списка регионов:', response.data.message);
+      }
+    } catch (error) {
+      console.error('Ошибка загрузки списка регионов:', error);
+    }
+  };
+  
+  // Инициализируем список регионов при создании хранилища
+  loadRegionsList();
+
+  const getRegionNameByCode = computed(() => {
+    return (code) => {
+      if (!code) return 'Регион не выбран';
+      const region = regionsList.value.find(r => r.code === code);
+      return region ? region.name : `Регион ${code}`;
+    };
+  });
+
+  // Вычисляемое свойство для получения списка отделений ФССП по региону
+  const fsspDepartmentsByRegion = ref({}); // Кэш для отделений по регионам
+
+  const getFSSPDepartmentsList = computed(() => {
+    return (regionCode) => {
+      if (!regionCode) return [];
+      
+      const regionData = fsspDepartmentsByRegion.value[regionCode];
+      if (!regionData || !regionData.regions) return [];
+
+      const departments = [];
+      // Обрабатываем разные возможные структуры данных
+      if (Array.isArray(regionData.regions)) {
+        // Случай, когда в data.regions содержится массив регионов
+        regionData.regions.forEach(region => {
+          if (region.cities) {
+            region.cities.forEach(city => {
+              if (city.departments) {
+                city.departments.forEach(dept => {
+                  departments.push(dept.name);
+                });
+              }
+            });
+          }
+        });
+      } else if (regionData.cities) {
+        // Стандартный случай
+        const region = regionData;
+        if (region.cities) {
+          region.cities.forEach(city => {
+            if (city.departments) {
+              city.departments.forEach(dept => {
+                departments.push(dept.name);
+              });
+            }
+          });
+        }
+      }
+
+      return departments.sort();
+    };
+  });
+
+  // Вспомогательные функции
+
+  const updateDocumentsList = (savedDocument) => {
+    const index = documents.value.findIndex((d) => d.id === savedDocument.id);
+    if (index !== -1) {
+      documents.value[index] = savedDocument;
+    } else {
+      documents.value.unshift(savedDocument);
+    }
+  };
+
+  const handleApiCall = async (apiFunction) => {
+    isLoading.value = true;
+    error.value = null;
+    try {
+      return await apiFunction();
+    } catch (err) {
+      error.value = err.response?.data?.message || err.message;
+      throw err;
+    } finally {
+      isLoading.value = false;
+    }
+  };
+
+  const determineTargetAgency = (text) => {
+    const violations = text.match(/нарушен[ия]|незаконн|жалоб[аы]/gi);
+    if (!violations) return "";
+
+    if (text.includes("ФССП") || text.includes("судебн")) return "ФССП";
+    if (text.includes("прокурор")) return "Прокуратура";
+    if (text.includes("суд")) return "Суд";
+    if (text.includes("омбудсмен")) return "Омбудсмен";
+
+    return "ФССП";
+  };
+
+  const extractDate = (text) => {
+    const dateRegex = /(\d{2}\.\d{2}\.\d{4})|(\d{4}-\d{2}-\d{2})/;
+    const match = text.match(dateRegex);
+    return match ? match[0] : "";
+  };
+
+  const extractAgency = (text) => {
+    const agencies = ["ФССП", "Прокуратура", "Суд", "Омбудсмен"];
+    return agencies.find((agency) => text.includes(agency)) || "";
+  };
+
+  const resetCurrentDocument = () => {
+    currentDocument.value = {
+      id: uuidv4(), // Устанавливаем новый ID при сбросе
+      date: new Date().toISOString().split("T")[0],
+      agency: "",
+      originalText: "",
+      summary: "",
+      keySentences: [],
+      documentDate: "",
+      senderAgency: "",
+      attachments: [],
+      complaints: [],
+      analysisStatus: "pending",
+      lastAnalyzedAt: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      violations: [],
+    };
+    
+    // Проверяем тип ID после сброса
+    validateDocumentId(currentDocument.value, "resetCurrentDocument");
+  };
+
+  // Добавляем функцию для получения отделений ФССП по коду региона
+  const fetchFSSPDepartmentsByRegion = async (regionCode) => {
+    try {
+      const response = await axios.get(`${API_BASE}/api/fssp/data?regionCode=${regionCode}`);
+      if (response.data.success) {
+        // Кэшируем данные
+        fsspDepartmentsByRegion.value[regionCode] = response.data.data;
+        return response.data.data;
+      } else {
+        console.error('Ошибка получения данных ФССП:', response.data.message);
+        return null;
+      }
+    } catch (error) {
+      console.error('Ошибка запроса к API ФССП:', error);
+      throw error;
+    }
+  };
+
+  // Действия
+  const fetchDocuments = async () => {
+    return handleApiCall(async () => {
+      const { data } = await axios.get(`${API_BASE}/api/documents`);
+      documents.value = data.items || data;
+    });
+  };
+
+  const fetchDocumentById = async (id) => {
+    
+    return handleApiCall(async () => {
+      const { data } = await axios.get(`${API_BASE}/api/documents/${id}`);
+      
+      // Документ уже в правильной структуре, просто присваиваем
+      // Убедимся, что originalText правильно установлен
+      currentDocument.value = {
+        ...data,
+        originalText: data.originalText !== undefined ? data.originalText : "",
+      };
+      return data;
+    });
+  };
+
+  const uploadFiles = async (files) => {
+    console.log("Загрузка файлов:", files);
+    return handleApiCall(async () => {
+      const formData = new FormData();
+      if (currentDocument.value.originalText) {
+        formData.append("text", currentDocument.value.originalText);
+      }
+
+      Array.from(files).forEach((file) => formData.append("files", file));
+
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/upload`,
+        formData,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      );
+
+      console.log("Результат загрузки файлов:", data);
+      
+      // Обновляем только вложения, чтобы не потерять другие поля документа (например, regionCode)
+      if (data.attachments && Array.isArray(data.attachments)) {
+        currentDocument.value.attachments = data.attachments;
+      }
+      
+      // Также обновляем originalText, если он пришел с сервера
+      if (data.originalText !== undefined) {
+        currentDocument.value.originalText = data.originalText;
+      }
+      
+      // Возвращаем обновленные данные (но без ID документа, так как документ еще не создан в базе)
+      return data;
+    });
+  };
+
+  const saveDocument = async () => {
+    console.log("Сохранение документа:", currentDocument.value);
+    
+    // Проверяем тип ID документа
+    validateDocumentId(currentDocument.value, "saveDocument");
+    
+    return handleApiCall(async () => {
+      // Убедимся, что у документа есть все необходимые поля
+      // и актуальная дата обновления
+      currentDocument.value.updatedAt = new Date().toISOString();
+
+      // Убедимся, что originalText не undefined
+      currentDocument.value.originalText =
+        currentDocument.value.originalText !== undefined
+          ? currentDocument.value.originalText
+          : "";
+
+      let savedDocument;
+      
+      // Проверяем, существует ли документ в локальном списке (это означает, что он уже был сохранен)
+      const isDocumentInList = documents.value.some(doc => doc.id === currentDocument.value.id);
+      
+      if (isDocumentInList && currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        // Документ уже существует в списке, обновляем его
+        console.log("Обновление существующего документа");
+        const { data } = await axios.put(
+          `${API_BASE}/api/documents/${currentDocument.value.id}`,
+          currentDocument.value
+        );
+        savedDocument = data;
+      } else {
+        // Документ новый или не в списке, создаем его
+        console.log("Создание нового документа");
+        const newDocToSave = {
+          ...currentDocument.value,
+          createdAt:
+            currentDocument.value.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          originalText:
+            currentDocument.value.originalText !== undefined
+              ? currentDocument.value.originalText
+              : "",
+        };
+        const { data } = await axios.post(
+          `${API_BASE}/api/documents`,
+          newDocToSave
+        );
+        savedDocument = data;
+      }
+
+      updateDocumentsList(savedDocument);
+      // После сохранения обновляем currentDocument значением от сервера
+      currentDocument.value = {
+        ...currentDocument.value,
+        ...savedDocument,
+        // Убедимся, что originalText правильно установлен
+        originalText:
+          savedDocument.originalText !== undefined
+            ? savedDocument.originalText
+            : currentDocument.value.originalText || "",
+      };
+      
+      // Проверяем тип ID после сохранения
+      validateDocumentId(currentDocument.value, "saveDocument (after save)");
+      
+      console.log("Документ сохранен:", savedDocument);
+      return savedDocument;
+    });
+  };
+
+  const deleteDocument = async (id) => {
+    return handleApiCall(async () => {
+      await axios.delete(`${API_BASE}/api/documents/${id}`);
+      documents.value = documents.value.filter((doc) => doc.id !== id);
+
+      if (currentDocument.value.id === id) {
+        resetCurrentDocument();
+      }
+    });
+  };
+
+  const analyzeDocument = async (documentId = null) => {
+    // Защита от повторного вызова во время анализа
+    if (isAnalyzing.value) {
+      console.log("Анализ уже выполняется, пропускаем повторный вызов");
+      return;
+    }
+    
+    // Если передан ID документа, проверим, существует ли он в локальном списке
+    if (documentId) {
+      const isDocumentInList = documents.value.some(doc => doc.id === documentId);
+      
+      if (isDocumentInList) {
+        // Документ существует в локальном списке, можем безопасно загрузить его с сервера
+        try {
+          await fetchDocumentById(documentId);
+        } catch (fetchErr) {
+          // Если документ не найден на сервере, несмотря на наличие в списке, используем currentDocument
+          console.log("Документ с ID не найден на сервере, используем currentDocument:", fetchErr.message);
+        }
+      } else {
+        // Документ не существует в локальном списке, пропускаем загрузку с сервера
+        console.log("Документ не найден в локальном списке, используем currentDocument (новый документ)");
+      }
+    }
+
+    // Проверяем, есть ли текст для анализа
+    const hasOriginalText = currentDocument.value.originalText && currentDocument.value.originalText.trim().length > 0;
+    const hasAttachmentsWithText = currentDocument.value.attachments?.some((att) => att.text && att.text.trim().length > 0);
+
+    console.log("Проверка текста для анализа:", {
+      hasOriginalText,
+      hasAttachmentsWithText,
+    });
+
+    // Если есть вложения, но нет основного текста (пояснений пользователя), показываем ошибку
+    if (hasAttachmentsWithText && !hasOriginalText) {
+      error.value = "Для анализа вложений необходимо добавить пояснения пользователя в основной текст документа";
+      console.log("Нет пояснений пользователя для анализа вложений");
+      return;
+    }
+
+    if (!hasOriginalText && !hasAttachmentsWithText) {
+      error.value = "Нет текста для анализа";
+      console.log("Нет текста для анализа");
+      return;
+    }
+
+    isAnalyzing.value = true;
+    error.value = null;
+
+    try {
+      // Проверяем тип ID перед анализом
+      validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
+      
+      // Всегда используем один и тот же эндпоинт для анализа - по ID
+      // Даже если документ не сохранен, мы передаем все необходимые данные в теле запроса
+      currentDocument.value.analysisStatus = "processing";
+
+      // Подготовим данные для анализа
+      const analyzeData = {
+        originalText: currentDocument.value.originalText || "",
+        attachments: currentDocument.value.attachments || [],
+        instructions: "",
+        strictMode: false
+      };
+
+      // Вызываем бэкенд для анализа документа по ID
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+        analyzeData
+      );
+
+      currentDocument.value = {
+        ...currentDocument.value,
+        summary: data.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(data.keySentences) ? 
+          data.keySentences : 
+          [],
+        violations: Array.isArray(data.violations) ?
+          data.violations :
+          [],
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        attachments: data.attachments ? 
+          currentDocument.value.attachments.map(attachment => {
+            // Найдем соответствующий анализ в результатах
+            const analysis = data.attachments.find(a => a.id === attachment.id);
+            if (analysis) {
+              return {
+                ...attachment,
+                analysis: {
+                  documentType: analysis.documentType || "Документ",
+                  sentDate: analysis.sentDate || "",
+                  senderAgency: analysis.senderAgency || "",
+                  summary: analysis.summary || "",
+                  keySentences: analysis.keySentences || []
+                },
+                documentDate: analysis.sentDate || attachment.documentDate || "",
+                senderAgency: analysis.senderAgency || attachment.senderAgency || "",
+                summary: analysis.summary || attachment.summary || "",
+                keySentences: analysis.keySentences || attachment.keySentences || [],
+                text: attachment.text || ""  // Сохраняем исходный текст вложения
+              };
+            }
+            return attachment;
+          }) : 
+          currentDocument.value.attachments,
+        // Сохраняем объединённый текст для отладки
+        combinedText: data.combinedText || currentDocument.value.combinedText || "",
+        analysisStatus: "completed",
+        lastAnalyzedAt: new Date().toISOString(),
+      };
+
+      // Возвращаем обновленный документ
+      return currentDocument.value;
+    } catch (err) {
+      console.error("Ошибка анализа документа:", err);
+      console.error("Статус:", err.response?.status);
+      console.error("Данные ошибки:", err.response?.data);
+
+      currentDocument.value.analysisStatus = "failed";
+      throw err;
+    } finally {
+      isAnalyzing.value = false;
+    }
+  };
+
+  
+
+  const fetchComplaints = async (documentId) => {
+    return handleApiCall(async () => {
+      const { data } = await axios.get(
+        `${API_BASE}/api/documents/${documentId}/complaints`
+      );
+
+      if (currentDocument.value.id === documentId) {
+        currentDocument.value.complaints = data;
+      }
+
+      return data;
+    });
+  };
+
+  const viewDocument = async (id) => {
+    await fetchDocumentById(id);
+    router.push(`/documents/${id}`);
+  };
+
+  // Экспортируемые значения
+  return {
+    // Состояние
+    currentDocument,
+    documents,
+    isLoading,
+    error,
+    isAnalyzing,
+
+    // Геттеры
+    agenciesList,
+    hasAttachments,
+    analyzedDocuments,
+    getRegionNameByCode,
+    getFSSPDepartmentsList,
+    isCurrentDocumentAnalyzed,
+
+    // Действия
+    fetchDocuments,
+    fetchDocumentById,
+    uploadFiles,
+    saveDocument,
+    deleteDocument,
+    analyzeDocument,
+    fetchComplaints,
+    resetCurrentDocument,
+    viewDocument,
+    fetchFSSPDepartmentsByRegion,
+  };
+});
+
+
+Это код файла (N:\3_VueProjects\FatherGuard\backend\services\documentService.js):
+import AIService from './aiService.js';
+
+// Создаем экземпляр AIService
+const aiService = new AIService();
+
+class DocumentService {
+  constructor() {
+    // Привязка методов
+    this.analyzeText = this.analyzeText.bind(this);
+    this.analyzeDocument = this.analyzeDocument.bind(this);
+
+  }
+
+  /**
+   * Анализ произвольного текста
+   * @param {string} text - Текст для анализа
+   * @param {string} instructions - Дополнительные инструкции для анализа
+   * @param {boolean} strictMode - Режим строгого анализа
+   * @returns {Promise<Object>} Результат анализа
+   */
+  async analyzeText(text, instructions = "", strictMode = false) {
+    try {
+      console.log("=== НАЧАЛО ANALYZE TEXT ===");
+      console.log('Анализ текста, длина текста:', text ? text.length : 0);
+      
+      // Проверка входных данных
+      if (!text || typeof text !== 'string') {
+        console.log('Предупреждение: текст не является строкой или отсутствует');
+        return {
+          success: true,
+          data: {
+            summary: "Текст не содержит данных для анализа",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: ""
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Удаляем пробельные символы по краям
+      const trimmedText = text.trim();
+      console.log('Текст после trim, длина:', trimmedText.length);
+      
+      if (trimmedText.length === 0) {
+        console.log('Предупреждение: текст пуст после обрезки пробелов');
+        return {
+          success: true,
+          data: {
+            summary: "Текст не содержит данных для анализа",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: ""
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+
+      console.log('Анализ текста (первые 100 символов):', trimmedText.substring(0, 100) + '...');
+      
+      // Проверяем доступность Ollama перед вызовом
+      try {
+        console.log('Проверка доступности Ollama API:', aiService.apiUrl);
+        // Используем AbortController для установки таймаута
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        const response = await fetch(aiService.apiUrl.replace('/api/generate', '/api/tags'), { 
+          method: 'GET',
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        console.log('Ollama API доступен');
+      } catch (ollamaError) {
+        console.error('Ollama API недоступен:', olлamaError.message);
+        console.error('Stack trace:', olлamaError.stack);
+        return {
+          success: true,
+          data: {
+            summary: "Сервис анализа временно недоступен. Пожалуйста, убедитесь, что Ollama запущена.",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: ""
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Анализируем текст через AI-сервис
+      console.log('Вызов aiService.analyzeLegalText');
+      const analysisResult = await aiService.analyzeLegalText(
+        trimmedText,
+        instructions,
+        strictMode
+      );
+      console.log('Результат анализа текста:', analysisResult);
+      
+      // Теперь analyzeLegalText возвращает результат напрямую без обертки
+      // Убедимся, что все поля присутствуют
+      const cleanResult = {
+        summary: analysisResult.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(analysisResult.keySentences) ? analysisResult.keySentences : [],
+        violations: Array.isArray(analysisResult.violations) ? analysisResult.violations : [],
+        documentDate: analysisResult.documentDate || "",
+        senderAgency: analysisResult.senderAgency || ""
+      };
+      
+      console.log('Возвращаем результат анализа:', cleanResult);
+      return {
+        success: true,
+        data: cleanResult,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('Ошибка анализа текста:', error);
+      console.error('Стек ошибки:', error.stack);
+      return {
+        success: true,
+        data: {
+          summary: "Ошибка анализа текста: " + error.message,
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: ""
+        },
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  /**
+   * Комплексный анализ документа с вложениями
+   * @param {Object} document - Объект документа
+   * @param {string} instructions - Дополнительные инструкции для анализа
+   * @param {boolean} strictMode - Режим строгого анализа
+   * @returns {Promise<Object>} Результат анализа документа
+   */
+  async analyzeDocument(document, instructions = "", strictMode = false) {
+    try {
+      console.log("Начало analyzeDocument");
+      console.log('Анализ документа, ID:', document.id);
+      
+      // Проверка входных данных
+      if (!document || typeof document !== 'object') {
+        console.log('Предупреждение: документ не является объектом или отсутствует');
+        return {
+          success: true,
+          data: {
+            summary: "Документ не содержит данных для анализа",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: ""
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Собираем весь текст для объединенного анализа
+      let combinedText = "СПРАВКА: Ниже представлены пояснения пользователя и вложенные официальные документы. Объедините всю информацию в краткое содержание в дневниковом стиле.\n\n";
+      let hasOriginalText = false;
+      let hasAttachmentText = false;
+      
+      // Добавляем основной текст документа
+      if (document.originalText && typeof document.originalText === 'string' && document.originalText.trim()) {
+        combinedText += `ПОЯСНЕНИЯ ПОЛЬЗОВАТЕЛЯ:\n${document.originalText.trim()}\n\n`;
+        hasOriginalText = true;
+      }
+      
+      // Добавляем тексты вложений
+      if (Array.isArray(document.attachments) && document.attachments.length > 0) {
+        for (const attachment of document.attachments) {
+          if (attachment.text && typeof attachment.text === 'string' && attachment.text.trim()) {
+            combinedText += `ВЛОЖЕНИЕ "${attachment.name || 'Без названия'}" (официальный документ):\n${attachment.text.trim()}\n\n`;
+            hasAttachmentText = true;
+          }
+        }
+      }
+      
+      // Если нет ни основного текста, ни вложений, возвращаем ошибку
+      if (!combinedText.trim()) {
+        console.log('Нет текста для анализа');
+        return {
+          success: true,
+          data: {
+            summary: "Документ не содержит текста для анализа",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: ""
+          },
+          timestamp: new Date().toISOString()
+        };
+      }
+      
+      // Теперь анализируем объединенный текст с указанием, что нужно генерировать краткую суть в дневниковом стиле
+      console.log('Анализ объединенного текста, длина:', combinedText.length);
+      console.log('Текст (первые 200 символов):', combinedText.substring(0, 200));
+      
+      // Модифицируем инструкции, чтобы получить краткую суть в дневниковом стиле и ключевые предложения
+      const diaryStyleInstructions = `На основе всех представленных текстов (пояснений пользователя и вложений) создайте краткое содержание в дневниковом стиле. 
+      Стиль должен быть: "Месяц назад я написал жалобу на действия Заводского РОСП и сегодня от них пришёл ответ. В нём говорится, что они приняли к расчёту предоставленные мной чеки об уплате алиментов почтой и теперь мой долг по алиментам составляет 0 рублей.".
+      ВАЖНО: Обязательно включите информацию из ВЛОЖЕНИЙ в краткое содержание. Вложения содержат официальные документы, которые требуют особого внимания.
+      Также извлеките ВАЖНЫЕ ПРЕДЛОЖЕНИЯ из ОБОИХ источников: пояснений пользователя И вложений. Ключевые предложения должны отражать как основную информацию из текста пользователя, так и важные юридические формулировки из вложений.
+      Основной фокус должен быть на защите прав пользователя. ${instructions || ''}`;
+      
+      const result = await this.analyzeText(combinedText, diaryStyleInstructions, strictMode);
+      console.log('Результат объединенного анализа:', result);
+      
+      let combinedAnalysis = {
+        summary: "Не удалось сгенерировать объединенную краткую суть",
+        keySentences: [],
+        violations: [],
+        documentDate: "",
+        senderAgency: ""
+      };
+      
+      if (result.success) {
+        combinedAnalysis = result.data;
+      }
+      
+      // Комбинируем результаты - теперь у нас есть только объединённый анализ
+      const combinedResult = {
+        summary: combinedAnalysis.summary,
+        keySentences: combinedAnalysis.keySentences,
+        violations: combinedAnalysis.violations,
+        documentDate: combinedAnalysis.documentDate || "",
+        senderAgency: combinedAnalysis.senderAgency || "",
+        attachments: [], // Убрали отдельный анализ вложений
+        combinedText: combinedText  // Добавляем объединённый текст для отладки
+      };
+      
+      console.log('Возвращаем результат анализа документа:', JSON.stringify(combinedResult, null, 2));
+      return {
+        success: true,
+        data: combinedResult,
+        timestamp: new Date().toISOString()
+      };
+
+    } catch (error) {
+      console.error('Ошибка анализа документа:', error);
+      console.error('Стек ошибки:', error.stack);
+      return {
+        success: true,
+        data: {
+          summary: "Ошибка анализа документа: " + error.message,
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: ""
+        },
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+}
+
+// Создаем экземпляр сервиса
+const documentService = new DocumentService();
+
+// Экспортируем методы
+export const analyzeText = documentService.analyzeText.bind(documentService);
+export const analyzeDocument = documentService.analyzeDocument.bind(documentService);
+
+
+// Экспортируем класс для тестирования
+export { DocumentService };
+
+// Экспортируем экземпляр сервиса для прямого использования
+export default documentService;
+
+
+Это код файла (N:\3_VueProjects\FatherGuard\backend\services\aiService.js):
+// backend/services/aiService.js
+import PromptService from './promptService.js';
+import axios from 'axios';
+import crypto from 'crypto';
+
+class AIService {
+  constructor(apiUrl, activeModel) {
+    console.log("Инициализация AIService с параметрами:", { apiUrl, activeModel });
+    this.apiUrl = apiUrl || "http://localhost:11434/api/generate";
+    this.activeModel = activeModel || process.env.MODEL_NAME || "llama3.1/18/8192";
+    this.defaultOptions = {
+      temperature: 0.3,
+      repeat_penalty: 1.2,
+      format: "json",
+    };
+    this.analysisCache = new Map();
+    this.cacheTimestamps = new Map(); // Stores timestamps for cache entries
+    this.maxCacheSize = 100; // Cache size limit
+    this.cacheTTL = 30 * 60 * 1000; // 30 minutes TTL in milliseconds
+    this.maxRetries = 2;
+    console.log("AIService инициализирован с параметрами:", {
+      apiUrl: this.apiUrl,
+      activeModel: this.activeModel,
+      defaultOptions: this.defaultOptions
+    });
+    // Explicit method binding
+    this.queryLocalModel = this.queryLocalModel.bind(this);
+    this.analyzeLegalText = this.analyzeLegalText.bind(this);
+    this.safeParseResponse = this.safeParseResponse.bind(this);
+    
+  }
+
+  async queryLocalModel(prompt, customOptions = {}) {
+    try {
+      console.log("=== НАЧАЛО QUERY LOCAL MODEL ===");
+      console.log("API URL:", this.apiUrl);
+      console.log("Model:", this.activeModel);
+      console.log("Prompt type:", typeof prompt);
+      console.log("Custom options:", customOptions);
+      
+      // Limit prompt length
+      let processedPrompt = prompt;
+      if (typeof prompt === 'string' && prompt.length > 25000) {
+        processedPrompt = prompt.substring(0, 25000);
+        console.log("Prompt truncated to 25000 characters");
+      } else if (typeof prompt === 'object' && JSON.stringify(prompt).length > 25000) {
+        // For objects, limit JSON string length
+        processedPrompt = JSON.stringify(prompt).substring(0, 25000);
+        console.log("Prompt object truncated to 25000 characters");
+      }
+
+      // Prepare parameters for Ollama API
+      const ollamaOptions = {
+        temperature: customOptions.temperature || this.defaultOptions.temperature,
+        repeat_penalty: customOptions.repeat_penalty || this.defaultOptions.repeat_penalty,
+        // max_tokens is not used in Ollama API, there are other parameters instead
+      };
+
+      console.log("Sending request to AI model:", {
+        url: this.apiUrl,
+        model: this.activeModel,
+        prompt: typeof processedPrompt === 'object' ? JSON.stringify(processedPrompt, null, 2) : processedPrompt.substring(0, 200) + '...',
+        options: ollamaOptions
+      });
+
+      try {
+        // Подготавливаем параметры напрямую, а не вложенным объектом
+        // Всегда отправляем prompt как строку
+        let finalPrompt = typeof processedPrompt === 'string' ? processedPrompt : String(processedPrompt);
+        
+        // If format=json, add clear instruction to prompt for JSON return
+        if (customOptions.format === "json") {
+          finalPrompt += "\n\nSTRICT RESPONSE REQUIREMENTS:\n" +
+            "1. RESPOND ONLY IN JSON FORMAT\n" +
+            "2. DO NOT ADD ANY ADDITIONAL TEXTS OR COMMENTS\n" +
+            "3. DO NOT USE Markdown OR OTHER FORMATS\n" +
+            "4. RETURN ONLY VALID JSON\n" +
+            "RESPONSE FORMAT EXAMPLE:\n" +
+            "{\n" +
+            "  \"summary\": \"here is the brief summary\",\n" +
+            "  \"keySentences\": [\"sentence 1\", \"sentence 2\"],\n" +
+            "  \"violations\": []\n" +
+            "}";
+        }
+
+        const requestData = {
+          model: this.activeModel,
+          prompt: finalPrompt,
+          stream: false,
+          ...ollamaOptions, // Параметры передаем напрямую
+        };
+
+        // If format=json, add format directly to requestData
+        if (customOptions.format === "json") {
+          requestData.format = "json";
+        }
+
+        console.log("=== ОТПРАВКА ЗАПРОСА К OLLAMA API ===");
+        console.log("Request data:", JSON.stringify(requestData, null, 2));
+        console.log("Prompt length:", requestData.prompt.length);
+        console.log("Prompt preview (first 500 chars):", requestData.prompt.substring(0, 500));
+        
+        const response = await axios.post(
+          this.apiUrl,
+          requestData,
+          { 
+            timeout: 500000,
+            headers: {
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        console.log("Response from Ollama API received");
+        console.log("=== КОНЕЦ ОТПРАВКИ ЗАПРОСА К OLLAMA API ===");
+
+        console.log("Response from AI model:", response.data);
+        const result = this.safeParseResponse(response.data);
+        console.log("Parsed response:", result);
+        return result;
+      } catch (error) {
+        console.error("Error requesting model:", error);
+        console.error("Error stack:", error.stack);
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error("Не удалось подключиться к Ollama. Пожалуйста, убедитесь, что Ollama запущена и доступна по адресу " + this.apiUrl);
+        }
+        if (error.code === 'ECONNRESET') {
+          throw new Error("Соединение с Ollama было сброшено. Пожалуйста, проверьте стабильность подключения.");
+        }
+        if (error.response) {
+          // Server responded with error status
+          console.error("Response error data:", error.response.data);
+          console.error("Response error status:", error.response.status);
+          console.error("Response error headers:", error.response.headers);
+          throw new Error(`AI Model error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+        } else if (error.request) {
+          // Request was made but no response received
+          console.error("No response received:", error.request);
+          throw new Error("No response received from AI Model. Please check if the service is running.");
+        } else {
+          // Something else happened
+          console.error("Error message:", error.message);
+          throw new Error(`Error in AI Model request: ${error.message}`);
+        }
+      }
+    } catch (error) {
+      console.error("Unexpected error in queryLocalModel:", error);
+      console.error("Error stack:", error.stack);
+      throw error;
+    }
+  }
+
+  // Метод для анализа юридических пояснений пользователя
+  async analyzeLegalText(text, instructions = "", strictMode = false) {
+    try {
+      console.log("=== НАЧАЛО ANALYZE LEGAL TEXT ===");
+      console.log("analyzeLegalText called with text length:", text ? text.length : 0);
+      console.log("Instructions:", instructions);
+      console.log("Strict mode:", strictMode);
+      
+      if (!text || typeof text !== 'string') {
+        console.log("Invalid text input");
+        return {
+          summary: "Invalid text input",
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: "",
+        };
+      }
+      
+      // Limit text length for processing
+      let processedText = text;
+      if (text.length > 25000) {
+        processedText = text.substring(0, 25000);
+        console.log("Text truncated to 25000 characters");
+      }
+      
+      console.log("Sending text:", processedText.substring(0, 200) + "...");
+      
+      // Clean up expired cache entries
+      this.cleanupExpiredCache();
+      
+      const cacheKey = this.generateCacheKey(processedText, instructions);
+
+      // Check cache with TTL consideration
+      if (this.analysisCache.has(cacheKey)) {
+        const timestamp = this.cacheTimestamps.get(cacheKey);
+        if (timestamp && (Date.now() - timestamp <= this.cacheTTL)) {
+          console.log("Returning cached result");
+          return this.analysisCache.get(cacheKey);
+        } else {
+          // Remove expired entry
+          this.analysisCache.delete(cacheKey);
+          this.cacheTimestamps.delete(cacheKey);
+        }
+      }
+
+      try {
+        // Используем PromptService для генерации промпта
+        const prompt = PromptService.getAnalysisPrompt(processedText, {
+          sourceType: 'user_explanation',
+          instructions,
+          strictMode
+        });
+
+        console.log("Prompt built, calling queryLocalModel");
+        console.log("Prompt data preview:", typeof prompt === 'string' ? prompt.substring(0, 200) : JSON.stringify(prompt, null, 2));
+        console.log("=== КОНЕЦ ANALYZE LEGAL TEXT ===");
+        
+        // Основной запрос с температурой 0.4 для получения краткой сути, нарушений и другой информации
+        const mainResult = await this.queryLocalModel(prompt, {
+          temperature: 0.4,
+          format: "json"
+        });
+
+        console.log("Main model response received:", typeof mainResult);
+        if (typeof mainResult === 'string') {
+          console.log("Main model response (first 200 chars):", mainResult.substring(0, 200));
+        }
+
+        const parsedMainResult = this.safeParseResponse(mainResult);
+        console.log("Parsed main result:", parsedMainResult);
+
+        // If parsing failed, return error object
+        if (!parsedMainResult) {
+          console.log("Failed to parse main model response");
+          return {
+            summary: "Failed to parse model response",
+            keySentences: [],
+            violations: [],
+            documentDate: "",
+            senderAgency: "",
+          };
+        }
+
+        // Извлекаем основную информацию из результата
+        const summary = parsedMainResult.summary || parsedMainResult.content || "Failed to generate brief summary";
+        const violations = Array.isArray(parsedMainResult.violations) 
+          ? parsedMainResult.violations
+          : [];
+        const documentDate = parsedMainResult.eventDate || parsedMainResult.documentDate || parsedMainResult.sentDate || "";
+        const senderAgency = parsedMainResult.senderAgency || parsedMainResult.agency || "";
+
+        // Извлечение ключевых предложений с использованием PromptService
+        const keySentences = await this.extractKeySentences(processedText, 'user_explanation');
+
+        const enhancedResult = {
+          summary,
+          keySentences,
+          violations,
+          eventDate: documentDate, // Use the extracted date as eventDate for chronicle purposes
+          documentDate: documentDate,
+          senderAgency,
+        };
+
+        // Cache size management
+        if (this.analysisCache.size >= this.maxCacheSize) {
+          // Remove first element (least recently used)
+          const firstKey = this.analysisCache.keys().next().value;
+          if (firstKey) {
+            this.analysisCache.delete(firstKey);
+            this.cacheTimestamps.delete(firstKey);
+          }
+        }
+        
+        // Save result to cache with timestamp
+        this.analysisCache.set(cacheKey, enhancedResult);
+        this.cacheTimestamps.set(cacheKey, Date.now());
+        
+        console.log("Analysis completed successfully:", enhancedResult);
+        return enhancedResult;
+      } catch (error) {
+        console.error("Error in analyzeLegalText:", error);
+        console.error("Error stack:", error.stack);
+        // Return default object in case of error with same format as successful result
+        return {
+          summary: "Error analyzing document: " + error.message,
+          keySentences: [],
+          violations: [],
+          documentDate: "",
+          senderAgency: "",
+        };
+      }
+    } catch (error) {
+      console.error("Unexpected error in analyzeLegalText:", error);
+      console.error("Error stack:", error.stack);
+      // Return default object in case of error with same format as successful result
+      return {
+        summary: "Unexpected error: " + error.message,
+        keySentences: [],
+        violations: [],
+        documentDate: "",
+        senderAgency: "",
+      };
+    }
+  }
+
+  // Универсальный метод анализа текста через PromptService
+  async analyzeText(text, options = {}) {
+    const { sourceType = 'user_explanation', instructions = '', strictMode = false, ...otherOptions } = options;
+    
+    const prompt = PromptService.getAnalysisPrompt(text, {
+      sourceType,
+      instructions,
+      strictMode,
+      ...otherOptions
+    });
+    
+    const result = await this.queryLocalModel(prompt, {
+      temperature: 0.4,
+      format: "json"
+    });
+
+    // Добавляем тип источника в результат
+    return {
+      ...result,
+      sourceType,
+      analyzedAt: new Date().toISOString()
+    };
+  }
+
+  // Генерация текста для летописи
+  async generateChronicleText(documentData, eventType, existingTimeline = []) {
+    const sourceType = documentData.sourceType || 'user_explanation'; // Default to user_explanation if not specified
+    
+    const prompt = PromptService.getChroniclePrompt(
+      documentData, 
+      eventType, 
+      existingTimeline,
+      sourceType // Pass sourceType to PromptService
+    );
+    
+    // Для летописи используем JSON формат, чтобы получить структурированный ответ
+    const response = await this.queryLocalModel(prompt, {
+      temperature: 0.6,
+      format: "json"
+    });
+    
+    // Обработка ответа от ИИ - ожидаем JSON с полем content
+    if (typeof response === 'object' && response !== null) {
+      // Возвращаем только поле content из JSON ответа
+      return response.content || response.text || response.summary || JSON.stringify(response);
+    } else if (typeof response === 'string') {
+      // Если получили строку, пробуем распарсить как JSON и извлечь content
+      try {
+        const parsed = JSON.parse(response);
+        return parsed.content || parsed.text || parsed.summary || response;
+      } catch (e) {
+        // Если не удалось распарсить, возвращаем строку как есть
+        return response;
+      }
+    } else {
+      return String(response);
+    }
+  }
+
+  // Извлечение ключевых предложений
+  async extractKeySentences(text, sourceType) {
+    const prompt = PromptService.getKeySentencesPrompt(text, sourceType);
+    const result = await this.queryLocalModel(prompt, {
+      temperature: 0.1,
+      format: "json"
+    });
+    
+    // Возвращаем результат, который должен быть массивом предложений
+    if (Array.isArray(result)) {
+      return result.filter((p) => p && p.length > 5);
+    } else if (typeof result === 'object' && result !== null && Array.isArray(result.keySentences)) {
+      return result.keySentences.filter((p) => p && p.length > 5);
+    } else {
+      // Если не получили массив, возвращаем пустой массив
+      return [];
+    }
+  }
+
+  // Генерация жалобы
+  async generateComplaint(analysisData, targetAgency, sourceType) {
+    const prompt = PromptService.getComplaintPrompt(analysisData, targetAgency, sourceType);
+    return await this.queryLocalModel(prompt, {
+      temperature: 0.5,
+      format: "json"
+    });
+  }
+
+
+
+
+
+  // Вспомогательные методы
+
+
+
+
+
+
+  // Методы управления кэшем
+  generateCacheKey(text, instructions) {
+    // Создаем более уникальный ключ, используя хэш от полного текста и инструкций
+    const hash = crypto.createHash('md5');
+    hash.update(text + instructions);
+    return hash.digest('hex');
+  }
+
+  cleanupExpiredCache() {
+    console.log("Начало cleanupExpiredCache");
+    // Implementation for cleaning up expired cache
+    const now = Date.now();
+    let cleanedCount = 0;
+    for (const [key, timestamp] of this.cacheTimestamps.entries()) {
+      if (now - timestamp > this.cacheTTL) {
+        this.analysisCache.delete(key);
+        this.cacheTimestamps.delete(key);
+        cleanedCount++;
+      }
+    }
+    console.log("Очищено записей из кэша:", cleanedCount);
+  }
+
+  clearCache() {
+    console.log("Начало clearCache");
+    // Implementation for clearing cache
+    this.analysisCache.clear();
+    this.cacheTimestamps.clear();
+    console.log("Cache cleared");
+  }
+
+  getCacheStats() {
+    console.log("Начало getCacheStats");
+    // Implementation for getting cache stats
+    const stats = {
+      size: this.analysisCache.size,
+      max_size: this.maxCacheSize,
+      ttl: this.cacheTTL
+    };
+    console.log("Cache stats:", stats);
+    return stats;
+  }
+
+  safeParseResponse(response) {
+    console.log("=== НАЧАЛО SAFE PARSE RESPONSE ===");
+    console.log("Тип ответа:", typeof response);
+    console.log("Ответ (первые 500 символов):", typeof response === 'string' ? response.substring(0, 500) : JSON.stringify(response, null, 2));
+    
+    // If response is an object from Ollama API, extract the actual response
+    if (typeof response === "object" && response !== null && response.response) {
+      console.log("Ответ является объектом Ollama API, извлекаем response");
+      // Check if response.response is already parsed
+      if (typeof response.response === "object") {
+        console.log("response.response уже является объектом");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+        return response.response;
+      }
+      
+      // If response.response is a string, parse it
+      if (typeof response.response === "string") {
+        console.log("response.response является строкой, парсим её");
+        try {
+          const parsed = JSON.parse(response.response);
+          console.log("Успешный парсинг JSON из response.response");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+          return parsed;
+        } catch (parseError) {
+          console.error("Failed to parse response.response:", parseError);
+          // Fall through to string parsing logic
+          response = response.response;
+        }
+      }
+    }
+    
+    // If response is already an object, return it as is
+    if (typeof response === "object" && response !== null) {
+      console.log("Ответ уже является объектом");
+      console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+      return response;
+    }
+    
+    // If response is a string
+    if (typeof response === "string") {
+      console.log("Ответ является строкой, попытка парсинга");
+      // Attempt 1: Direct parsing of entire string as JSON
+      try {
+        const parsed = JSON.parse(response);
+        console.log("Успешный парсинг JSON");
+        console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+        return parsed;
+      } catch (directParseError) {
+        console.error("Direct JSON parse failed:", directParseError);
+        // Attempt 2: Extract JSON from markdown code blocks
+        try {
+          const jsonMatch = response.match(/```(?:json)?\s*({.*?})\s*```/s);
+          if (jsonMatch && jsonMatch[1]) {
+            const parsed = JSON.parse(jsonMatch[1]);
+            console.log("Успешный парсинг JSON из markdown");
+            console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+            return parsed;
+          }
+        } catch (markdownParseError) {
+          console.error("Markdown JSON parse failed:", markdownParseError);
+        }
+        
+        // Attempt 3: Manual extraction of key fields
+        try {
+          const summaryMatch = response.match(/"summary"\s*:\s*"([^\\\"]+)"/);
+          const keySentencesMatch = response.match(/"keySentences"\s*:\s*(\[.*?\])/);
+          const violationsMatch = response.match(/"violations"\s*:\s*(\[.*?\])/);
+          
+          const result = {
+            summary: summaryMatch ? summaryMatch[1] : "Failed to extract summary",
+            keySentences: keySentencesMatch ? JSON.parse(keySentencesMatch[1]) : [],
+            violations: violationsMatch ? JSON.parse(violationsMatch[1]) : []
+          };
+          console.log("Успешная ручная распаковка ответа");
+          console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+          return result;
+        } catch (manualParseError) {
+          console.error("Manual JSON parse failed:", manualParseError);
+        }
+      }
+    }
+    
+    // If all parsing attempts failed
+    console.error("All parsing attempts failed for response:", response);
+    console.log("=== КОНЕЦ SAFE PARSE RESPONSE ===");
+    return null;
+  }
+
+  normalizeError(error) {
+    console.log("Начало normalizeError");
+    console.log("Error:", error);
+    // Implementation for normalizing error
+    return error;
+  }
+}
+export default AIService
+
+
+
+Это код файла (N:\3_VueProjects\FatherGuard\backend\services\promptService.js):
+// backend/services/promptService.js
+class PromptService {
+  static getAnalysisPrompt(text, options = {}) {
+  const {
+    sourceType = 'user_explanation', // 'user_explanation' или 'official_document'
+    instructions = '',
+    strictMode = false
+  } = options;
+
+  const baseTemplates = {
+    user_explanation: `Ты — юрист, защищающий права отца-плательщика алиментов.  
+Проанализируй ПОЯСНЕНИЯ ПОЛЬЗОВАТЕЛЯ, написанные его словами.
+
+ОСОБЕННОСТИ:
+- Это субъективное описание ситуации
+- Могут быть эмоции, но выделяй только факты
+- Фокус: действия пользователя и ответы госорганов
+- Выявляй ПОТЕНЦИАЛЬНЫЕ нарушения прав
+
+ИЗВЛЕКИ:
+- Ключевые события и даты
+- Упомянутые госорганы (ФССП, суд и т.д.)
+- Конкретные действия пользователя
+- Ответы или бездействие органов
+- Возможные нарушения процедур
+
+Верни JSON:
+{
+  "summary": "Краткое описание ситуации от первого лица в прошедшем времени, как в дневнике",
+  "keySentences": ["5 самых важных фактологических предложений"],
+  "violations": ["Потенциальные нарушения прав пользователя"],
+  "eventDate": "YYYY-MM-DD (дата основного события)",
+  "senderAgency": "Ведомство, с которым взаимодействовал пользователь"
+}`,
+
+    official_document: `Ты — юрист, защищающий права отца-плательщика алиментов.  
+Проанализируй ОФИЦИАЛЬНЫЙ ДОКУМЕНТ от государственного органа.
+
+ОСОБЕННОСТИ:
+- Это юридически значимый документ
+- Требуется точное изложение фактов
+- Выявляй ФОРМАЛЬНЫЕ нарушения законодательства
+- Обращай внимание на даты, номера, подписи, ссылки на законы
+
+ИЗВЛЕКИ:
+- Тип и дата документа
+- Ведомство-отправитель
+- Суть решения или ответа
+- Юридические основания
+- Конкретные нарушения (со ссылками на статьи, если есть)
+
+Верни JSON:
+{
+  "documentType": "Тип документа (ответ, постановление, уведомление)",
+  "summary": "Объективное краткое изложение содержания",
+  "keySentences": ["5 самых важных юридически значимых предложений"],
+  "violations": ["Конкретные нарушения законодательства"],
+  "eventDate": "YYYY-MM-DD (дата документа)",
+  "senderAgency": "Полное название ведомства-отправителя"
+}`
+  };
+
+  let prompt = baseTemplates[sourceType] || baseTemplates.user_explanation;
+  prompt += `\n\nТЕКСТ ДЛЯ АНАЛИЗА:\n${text.substring(0, 20000)}`;
+
+  if (instructions) {
+    prompt += `\n\nДОПОЛНИТЕЛЬНЫЕ ИНСТРУКЦИИ:\n${instructions}`;
+  }
+
+  return prompt;
+}
+
+
+
+
+
+
+
+
+
+  static getChroniclePrompt(documentData, eventType, existingTimeline = [], sourceType = 'user_explanation') {
+  // Передаём ВСЮ летопись, а не только последние записи
+  const fullChronicleText = this.formatFullChronicle(existingTimeline);
+  
+  let promptTemplate = '';
+  
+  switch(eventType) {
+    case 'document_created':
+      const userOrOfficialCreated = sourceType === 'official_document' ? 'ОФИЦИАЛЬНОГО ДОКУМЕНТА' : 'ПОЯСНЕНИЙ ПОЛЬЗОВАТЕЛЯ';
+      const addedTypeCreated = sourceType === 'official_document' ? 'официальный документ' : 'описание ситуации';
+      promptTemplate = `Ты ведёшь дневник взаимодействия пользователя с государственными органами по делу об алиментах.
+На основе ${userOrOfficialCreated} создай новую запись в дневнике.
+
+ПОЛНАЯ ЛЕТОПИСЬ ДО ЭТОГО МОМЕНТА:
+${fullChronicleText || "Летопись пуста."}
+
+НОВОЕ СОБЫТИЕ:
+- Тип: пользователь добавил ${addedTypeCreated}
+- Дата события: ${documentData.eventDate || 'не указана'}
+- Суть: "${documentData.summary || documentData.content || 'не указано'}"
+- Ведомство: ${documentData.senderAgency || 'не указано'}
+
+ТВОИ ЗАДАЧИ:
+1. Напиши запись в дневниковом стиле от первого лица, в прошедшем времени.
+2. Учитывай ВСЮ предыдущую историю: ищи связи, повторяющиеся действия, нарушения сроков, противоречия.
+3. Если новое событие связано с предыдущим (например, ответ на жалобу), прямо укажи это.
+4. Формат: "DD MMMM YYYYг — [текст записи]"
+5. Не используй шаблонные фразы. Пиши как человек, ведущий дневник.
+
+ВАЖНО: Ответь в формате JSON с полем "content", содержащим полную дневниковую запись. Пример:
+{
+  "content": "08 октября 2025г — Подал документы на установление алиментов в суд. Жду рассмотрения в течение 1 месяца."
+}`;
+      break;
+      
+    case 'document_analyzed':
+      const userOrOfficialAnalyzed = sourceType === 'official_document' ? 'ОФИЦИАЛЬНОГО ДОКУМЕНТА' : 'ПОЯСНЕНИЙ ПОЛЬЗОВАТЕЛЯ';
+      const baseTypeAnalyzed = sourceType === 'official_document' ? 'Основа - официальный документ' : 'Основа - пояснения пользователя';
+      const baseMarkerAnalyzed = sourceType === 'official_document' ? 'ОФИЦИАЛЬНЫЙ ДОКУМЕНТ' : 'ПОЯСНЕНИЯ ПОЛЬЗОВАТЕЛЯ (субъективное описание проблемы)';
+      promptTemplate = `Ты ведёшь дневник взаимодействия пользователя с государственными органами по делу об алиментах.
+Ты — юрист, защищающий права отца-плательщика алиментов.
+На основе предоставленных ${userOrOfficialAnalyzed} (субъективное описание проблемы) и ОФИЦИАЛЬНЫХ ДОКУМЕНТОВ создай аналитическую запись в летописи.
+
+ПОЛНАЯ ЛЕТОПИСЬ ДО ЭТОГО МОМЕНТА:
+${fullChronicleText || "Летопись пуста."}
+
+НОВЫЙ МАТЕРИАЛ:
+${documentData.combinedText || "Нет предоставленного текста"}
+
+СПРАВКА:
+- ${baseTypeAnalyzed} помечена как "${baseMarkerAnalyzed}"
+- Официальные документы помечены как "ВЛОЖЕНИЕ (официальный документ)"
+- Отстаивай интересы пользователя, но если он неправ, объясни это и посоветуй, как поступить, чтобы не нарушать закон
+
+ТВОИ ЗАДАЧИ:
+1. Напиши запись в дневниковом стиле, но с юридической точностью.
+2. Проанализируй ситуацию в контексте ВСЕЙ предыдущей истории: ищи связи, повторяющиеся действия, нарушения сроков, противоречия.
+3. Выдели потенциальные нарушения со стороны государственных органов.
+4. Объясни, если пользователь неправ, и посоветуй, как законно поступить.
+5. Формат: "DD MMMM YYYYг — [текст записи]"
+
+ВАЖНО: Ответь в формате JSON с полем "content", содержащим полную дневниковую запись. Пример:
+{
+  "content": "08 октября 2025г — Проанализировал поступившее уведомление от судебных приставов. Обнаружил, что сроки рассмотрения были нарушены на 5 дней."
+}`;
+      break;
+      
+    case 'complaint_created':
+      promptTemplate = `Ты ведёшь дневник взаимодействия пользователя с государственными органами по делу об алиментах.
+Запиши факт подачи жалобы.
+
+ПОЛНАЯ ЛЕТОПИСЬ ДО ЭТОГО МОМЕНТА:
+${fullChronicleText || "Летопись пуста."}
+
+НОВОЕ СОБЫТИЕ:
+- Тип: подана жалоба
+- Дата: ${documentData.eventDate || 'не указана'}
+- Адресат: ${documentData.targetAgency || 'не указано'}
+- Основание: "${documentData.summary || 'не указано'}"
+
+ТВОИ ЗАДАЧИ:
+1. Запиши событие как эскалацию ситуации.
+2. Укажи, на какие именно предыдущие действия (или бездействие) реагирует пользователь.
+3. Назови ожидаемый результат.
+4. Формат: "DD MMMM YYYYг — [текст записи]"
+
+ВАЖНО: Ответь в формате JSON с полем "content", содержащим полную дневниковую запись. Пример:
+{
+  "content": "08 октября 2025г — Подал жалобу в прокуратуру на бездействие судебных приставов. Жалоба направлена по факту нарушения сроков рассмотрения документов."
+}`;
+      break;
+      
+    default:
+      // Default to document_created template
+      const userOrOfficialDefault = sourceType === 'official_document' ? 'ОФИЦИАЛЬНОГО ДОКУМЕНТА' : 'ПОЯСНЕНИЙ ПОЛЬЗОВАТЕЛЯ';
+      const addedTypeDefault = sourceType === 'official_document' ? 'официальный документ' : 'описание ситуации';
+      promptTemplate = `Ты ведёшь дневник взаимодействия пользователя с государственными органами по делу об алиментах.
+На основе ${userOrOfficialDefault} создай новую запись в дневнике.
+
+ПОЛНАЯ ЛЕТОПИСЬ ДО ЭТОГО МОМЕНТА:
+${fullChronicleText || "Летопись пуста."}
+
+НОВОЕ СОБЫТИЕ:
+- Тип: пользователь добавил ${addedTypeDefault}
+- Дата события: ${documentData.eventDate || 'не указана'}
+- Суть: "${documentData.summary || documentData.content || 'не указано'}"
+- Ведомство: ${documentData.senderAgency || 'не указано'}
+
+ТВОИ ЗАДАЧИ:
+1. Напиши запись в дневниковом стиле от первого лица, в прошедшем времени.
+2. Учитывай ВСЮ предыдущую историю: ищи связи, повторяющиеся действия, нарушения сроков, противоречия.
+3. Если новое событие связано с предыдущим (например, ответ на жалобу), прямо укажи это.
+4. Формат: "DD MMMM YYYYг — [текст записи]"
+5. Не используй шаблонные фразы. Пиши как человек, ведущий дневник.
+
+ВАЖНО: Ответь в формате JSON с полем "content", содержащим полную дневниковую запись. Пример:
+{
+  "content": "08 октября 2025г — Добавил информацию о получении нового документа от ФССП. Нужно изучить содержание и определить дальнейшие действия."
+}`;
+      break;
+  }
+
+  return promptTemplate;
+}
+
+
+
+
+
+
+
+
+
+static formatFullChronicle(entries) {
+  if (!entries || entries.length === 0) {
+    return "";
+  }
+  return entries
+    .map(entry => {
+      const date = PromptService.formatDateForChronicle(entry.date);
+      return `\\${date} — \\${entry.content}`;
+    })
+    .join('\\n');
+}
+
+
+
+
+
+
+
+
+
+  static buildDateContext(existingTimeline) {
+    if (!existingTimeline.length) {
+      return "Это первая запись в летописи.";
+    }
+
+    const recentEntries = existingTimeline
+      .slice(0, 3)
+      .map((entry) => `- \\${entry.date}: \\${entry.content.substring(0, 100)}...`)
+      .join("\n");
+
+    return `Последние записи в хронологическом порядке:\n\\${recentEntries}\n\nУчти эту последовательность событий при создании новой записи.`;
+  }
+
+  static getKeySentencesPrompt(text, sourceType) {
+    const context =
+      sourceType === "official_document"
+        ? "официального документа (обрати внимание на юридические формулировки, решения, сроки)"
+        : "пояснений пользователя (выдели фактические описания событий, даты, действия госорганов)";
+
+    return `Извлеки 5 самых информативных предложений из \\${context}:
+
+ТЕКСТ:
+\\${text.substring(0, 15000)}
+
+Верни ТОЛЬКО массив JSON с предложениями, которые наиболее точно отражают суть:
+["предложение 1", "предложение 2", "предложение 3", "предложение 4", "предложение 5"]`;
+  }
+
+  static getComplaintPrompt(analysisData, targetAgency, sourceType) {
+    const documentContext =
+      sourceType === "official_document"
+        ? "На основании анализа официального документа выявлены следующие нарушения:"
+        : "На основании пояснений пользователя установлены следующие проблемы:";
+
+    return `СОЗДАЙ ОФИЦИАЛЬНУЮ ЖАЛОБУ в \\${targetAgency}
+
+\\${documentContext}
+\\${JSON.stringify(analysisData, null, 2).substring(0, 8000)}
+
+ТРЕБОВАНИЯ К ЖАЛОБЕ:
+- Строго официальный стиль
+- Конкретные ссылки на нарушения законов
+- Четкие требования по устранению нарушений
+- Учет правового статуса документа-основания
+
+Верни JSON: {"content": "полный текст жалобы"}`;
+  }
+  
+  static formatDateForChronicle(dateString) {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const monthNames = [
+      "января", "февраля", "марта", "апреля", "мая", "июня",
+      "июля", "августа", "сентября", "октября", "ноября", "декабря"
+    ];
+    const month = monthNames[date.getMonth()];
+    const year = date.getFullYear();
+
+    return `${day} ${month} ${year}г`;
+  }
+}
+export default PromptService;
+
+
+Это код файла (N:\3_VueProjects\FatherGuard\backend\services\chronicleService.js):
+// backend/services/chronicleService.js
+import { v4 as uuidv4 } from "uuid";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
+import AIService from "./aiService.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+class ChronicleService {
+  constructor(chronicleDbPath) {
+    this.chronicleDbPath = chronicleDbPath;
+    // Создаем экземпляр AIService для генерации текста летописи
+    this.aiService = new AIService();
+  }
+
+  /**
+   * Чтение данных летописи из файла
+   */
+  async readChronicleData() {
+    try {
+      const data = await fs.readFile(this.chronicleDbPath, "utf8");
+      return JSON.parse(data);
+    } catch (error) {
+      // Если файл не существует или поврежден, создаем пустую структуру
+      console.warn(
+        "Ошибка при чтении файла летописи, создаем пустую структуру:",
+        error.message
+      );
+      const defaultData = { entries: [] };
+      try {
+        await this.writeChronicleData(defaultData);
+      } catch (writeError) {
+        console.error(
+          "Ошибка при создании файла летописи:",
+          writeError.message
+        );
+        // Возвращаем данные в памяти, даже если не удалось записать в файл
+        return defaultData;
+      }
+      return defaultData;
+    }
+  }
+
+  /**
+   * Запись данных летописи в файл
+   */
+  async writeChronicleData(data) {
+    try {
+      await fs.writeFile(this.chronicleDbPath, JSON.stringify(data, null, 2));
+    } catch (error) {
+      console.error("Ошибка при записи файла летописи:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Получить все записи летописи в хронологическом порядке (от новых к старым)
+   * @returns {Array} Отсортированные по дате события записи летописи (от новых к старым)
+   */
+  async getAllChronicleEntries() {
+    const data = await this.readChronicleData();
+    // Сортируем по дате события (от новых к старым)
+    return data.entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  /**
+   * Получить все записи летописи в хронологическом порядке (от старых к новым)
+   * @returns {Array} Отсортированные по дате события записи летописи (от старых к новым)
+   */
+  async getChronicleEntriesChronologically() {
+    const data = await this.readChronicleData();
+    // Сортируем по дате события (от старых к новым)
+    return data.entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }
+
+  /**
+   * Получить все записи летописи в хронологическом порядке (от старых к новым)
+   * @returns {Array} Отсортированные по дате события записи летописи (от старых к новым)
+   */
+  async getChronologicallySortedChronicle() {
+    const data = await this.readChronicleData();
+    // Сортируем по дате события (от старых к новым)
+    return data.entries.sort((a, b) => new Date(a.date) - new Date(b.date));
+  }
+
+  /**
+   * Создать новую запись летописи
+   * @param {Object} entryData - Данные для записи
+   * @returns {Object} Созданная запись
+   */
+  async createChronicleEntry(entryData, options = {}) {
+    const { integrateChronologically = true } = options;
+    const data = await this.readChronicleData();
+
+    const newEntry = {
+      id: entryData.id || uuidv4(),
+      date: entryData.date || new Date().toISOString().split("T")[0],
+      eventType: entryData.eventType || "generic",
+      title: entryData.title || "",
+      content: entryData.content || "",
+      documentId: entryData.documentId || null,
+      sourceType: entryData.sourceType || "user_explanation", // новый параметр
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (integrateChronologically) {
+      const existingTimeline = await this.getChronicleEntriesChronologically(); // от старых к новым
+      // Передаём ВСЮ летопись
+      const chronicleContent = await this.aiService.generateChronicleText(
+        { ...entryData, sourceType: entryData.sourceType },
+        entryData.eventType,
+        existingTimeline // ← вся история
+      );
+      newEntry.content = chronicleContent;
+    }
+
+    // Вставляем в правильную хронологическую позицию
+    const insertIndex = this.findChronologicalInsertIndex(
+      data.entries,
+      newEntry
+    );
+    data.entries.splice(insertIndex, 0, newEntry);
+
+    await this.writeChronicleData(data);
+    return newEntry;
+  }
+
+  /**
+   * Обновить запись летописи
+   * @param {string} id - ID записи
+   * @param {Object} updateData - Данные для обновления
+   * @returns {Object} Обновленная запись или null если не найдена
+   */
+  async updateChronicleEntry(id, updateData) {
+    const data = await this.readChronicleData();
+
+    const entryIndex = data.entries.findIndex((entry) => entry.id === id);
+    if (entryIndex === -1) {
+      return null;
+    }
+
+    const existingEntry = data.entries[entryIndex];
+    const updatedEntry = {
+      ...existingEntry,
+      ...updateData,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Удаляем существующую запись
+    data.entries.splice(entryIndex, 1);
+
+    // Находим новое правильное место для обновленной записи по дате события
+    const insertIndex = this.findChronologicalInsertIndex(
+      data.entries,
+      updatedEntry
+    );
+    data.entries.splice(insertIndex, 0, updatedEntry);
+
+    await this.writeChronicleData(data);
+    return updatedEntry;
+  }
+
+  /**
+   * Удалить запись летописи
+   * @param {string} id - ID записи
+   * @returns {boolean} true если запись была удалена
+   */
+  async deleteChronicleEntry(id) {
+    const data = await this.readChronicleData();
+
+    const initialLength = data.entries.length;
+    data.entries = data.entries.filter((entry) => entry.id !== id);
+
+    if (data.entries.length === initialLength) {
+      return false; // Запись не найдена
+    }
+
+    await this.writeChronicleData(data);
+    return true;
+  }
+
+  /**
+   * Генерировать текст записи летописи для нового документа
+   * @param {Object} document - Документ, для которого создается запись
+   * @param {string} userComment - Комментарий пользователя (если есть)
+   * @returns {string} Текст записи летописи
+   */
+  async generateEntryTextForDocument(document, userComment = null) {
+    // Пример: "08 октября 2025г - [комментарий пользователя или описание документа]"
+    const date = this.formatDate(
+      document.date || document.createdAt.split("T")[0]
+    );
+    let action = "";
+
+    // Если есть комментарий пользователя, добавляем его
+    if (userComment && userComment.trim()) {
+      action = userComment;
+    } else {
+      // Если нет комментария, создаем базовое описание на основе заголовка или типа документа
+      if (document.summary && document.summary.trim()) {
+        action = document.summary;
+      } else {
+        action = "Добавил информацию для анализа";
+      }
+    }
+
+    return `${date} - ${action}`;
+  }
+
+  /**
+   * Генерировать текст записи летописи для проанализированного документа
+   * @param {Object} document - Проанализированный документ
+   * @returns {string} Текст записи летописи
+   */
+  async generateEntryTextForAnalysis(document) {
+    const date = this.formatDate(
+      document.updatedAt
+        ? document.updatedAt.split("T")[0]
+        : new Date().toISOString().split("T")[0]
+    );
+
+    // Если у документа есть краткое содержание в дневниковом стиле, используем его как основу для записи летописи
+    if (document.summary && document.summary.trim()) {
+      // Убираем дату из начала, если она там есть (чтобы не дублировать)
+      let summary = document.summary.trim();
+      // Убираем возможные префиксы с датой, оставляя только содержательную часть
+      const datePattern = /^\d{1,2}\s[а-яё]+\s\d{4}г\s*-?\s*/i;
+      summary = summary.replace(datePattern, "");
+
+      return `${date} - ${summary}`;
+    }
+
+    let action = "Проанализировал полученный документ";
+
+    // Добавляем информацию о результатах анализа (резервный вариант)
+    if (document.senderAgency && document.senderAgency.trim()) {
+      action += ` от ${document.senderAgency}`;
+    }
+    if (
+      document.violations &&
+      Array.isArray(document.violations) &&
+      document.violations.length > 0
+    ) {
+      action += `. Обнаружено нарушений: ${document.violations.length}`;
+    }
+
+    return `${date} - ${action}`;
+  }
+
+  /**
+   * Генерировать текст записи летописи для созданной жалобы
+   * @param {Object} complaint - Созданная жалоба
+   * @param {Object} document - Документ, для которого создается жалоба
+   * @returns {string} Текст записи летописи
+   */
+  async generateEntryTextForComplaint(complaint, document) {
+    const date = this.formatDate(new Date().toISOString().split("T")[0]);
+    let action = `Подал официальную жалобу`;
+
+    if (complaint.targetAgency && complaint.targetAgency.trim()) {
+      action += ` в ${complaint.targetAgency}`;
+    }
+
+    if (document && document.summary) {
+      action += `. Основание: ${document.summary}`;
+    }
+
+    return `${date} - ${action}`;
+  }
+
+  /**
+   * Форматировать дату в нужный формат (например, "08 октября 2025г")
+   * @param {string} dateString - Дата в формате YYYY-MM-DD
+   * @returns {string} Форматированная дата
+   */
+  formatDate(dateString) {
+    const date = new Date(dateString);
+    const day = date.getDate();
+    const monthNames = [
+      "января",
+      "февраля",
+      "марта",
+      "апреля",
+      "мая",
+      "июня",
+      "июля",
+      "августа",
+      "сентября",
+      "октября",
+      "ноября",
+      "декабря",
+    ];
+    const month = monthNames[date.getMonth()];
+    const year = date.getFullYear();
+
+    return `${day} ${month} ${year}г`;
+  }
+
+  /**
+   * Найти подходящую дату для события из документа
+   * @param {Object} document - Документ для анализа
+   * @returns {string} Дата события в формате YYYY-MM-DD
+   */
+  findEventDate(document) {
+    // Сначала пытаемся использовать дату из анализа документа (если она была извлечена)
+    if (document.documentDate && document.documentDate.trim()) {
+      // Если дата в формате DD.MM.YYYY, конвертируем в YYYY-MM-DD
+      const dateRegex = /(\d{1,2})[.\-\/](\d{1,2})[.\-\/](\d{4})/;
+      const match = document.documentDate.match(dateRegex);
+      if (match) {
+        const day = match[1].padStart(2, "0");
+        const month = match[2].padStart(2, "0");
+        const year = match[3];
+        return `${year}-${month}-${day}`;
+      }
+      // Если уже в формате YYYY-MM-DD, возвращаем как есть
+      if (document.documentDate.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        return document.documentDate;
+      }
+    }
+
+    // Затем используем дату создания документа
+    if (document.createdAt) {
+      return document.createdAt.split("T")[0];
+    }
+
+    // В крайнем случае, используем текущую дату
+    return new Date().toISOString().split("T")[0];
+  }
+
+  /**
+   * Создать хронологическую запись для нового документа
+   * @param {Object} document - Новый документ
+   * @param {string} userComment - Комментарий пользователя (если есть)
+   * @returns {Object} Созданная запись летописи
+   */
+  async createEntryForNewDocument(document, userComment = null) {
+    const eventDate = this.findEventDate(document);
+    const sourceType = this.determineSourceType(document);
+
+    return await this.createChronicleEntry(
+      {
+        date: eventDate,
+        eventType: "document_created",
+        title: "Добавление документа",
+        content: "", // сгенерируется автоматически с учетом хронологии
+        documentId: document.id,
+        sourceType: sourceType,
+        // Не передаем анализ результатов, только основные данные документа
+      },
+      { integrateChronologically: true }
+    );
+  }
+
+  /**
+   * Создать хронологическую запись для проанализированного документа
+   * @param {Object} document - Проанализированный документ
+   * @returns {Object} Созданная запись летописи
+   */
+  async createEntryForAnalyzedDocument(document) {
+    const eventDate = this.findEventDate(document);
+    const sourceType = this.determineSourceType(document);
+
+    // ИСПОЛЬЗУЕМ ГОТОВЫЙ combinedText ИЗ ДОКУМЕНТА!
+    const combinedText = document.combinedText || "СПРАВКА: Данные для анализа отсутствуют.";
+    
+    return await this.createChronicleEntry(
+      {
+        date: eventDate,
+        eventType: "document_analyzed",
+        title: "Анализ документа завершен",
+        content: "", // сгенерется автоматически
+        documentId: document.id,
+        sourceType: sourceType,
+        combinedText: combinedText // ← передаём готовый текст
+      },
+      { integrateChronologically: true }
+    );
+  }
+
+  /**
+   * Создать хронологическую запись для созданной жалобы
+   * @param {Object} complaint - Созданная жалоба
+   * @param {Object} document - Документ, для которого создается жалоба
+   * @returns {Object} Созданная запись летописи
+   */
+  async createEntryForComplaint(complaint, document) {
+    const eventDate = new Date().toISOString().split("T")[0];
+    const content = await this.generateEntryTextForComplaint(
+      complaint,
+      document
+    );
+
+    return await this.createChronicleEntry({
+      date: eventDate,
+      eventType: "complaint_created",
+      title: "Создание жалобы",
+      content: content,
+      documentId: document ? document.id : null,
+    });
+  }
+
+  /**
+   * Получить летопись для конкретного документа
+   * @param {string} documentId - ID документа
+   * @returns {Array} Записи летописи, связанные с документом
+   */
+  async getChronicleForDocument(documentId) {
+    const data = await this.readChronicleData();
+    return data.entries
+      .filter((entry) => entry.documentId === documentId)
+      .sort((a, b) => new Date(b.date) - new Date(a.date));
+  }
+
+  /**
+   * Найти правильное место для вставки новой записи в хронологическом порядке
+   * @param {Array} entries - Существующие записи летописи
+   * @param {Object} newEntry - Новая запись
+   * @returns {number} Индекс для вставки
+   */
+  findChronologicalInsertIndex(entries, newEntry) {
+    // Находим правильное место для новой записи по дате события
+    for (let i = 0; i < entries.length; i++) {
+      if (new Date(entries[i].date) > new Date(newEntry.date)) {
+        continue;
+      } else {
+        return i;
+      }
+    }
+    // Если не нашли подходящее место, вставляем в конец
+    return entries.length;
+  }
+
+  determineSourceType(document) {
+    // Определяем тип источника на основе данных документа
+    if (document.documentType || document.attachments?.length > 0) {
+      return "official_document";
+    }
+    return "user_explanation";
+  }
+}
+
+export default ChronicleService;
+
+
+Это код файла (N:\3_VueProjects\FatherGuard\backend\routes\documentRoutes.js):
+import { Router } from 'express';
+import express from 'express';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
+import fs from 'fs/promises';
+import iconv from 'iconv-lite';
+
+import pdfService from '../services/pdfService.js';
+import { fileURLToPath } from 'url';
+import { analyzeText, analyzeDocument } from '../services/documentService.js';
+import ChronicleService from '../services/chronicleService.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+export default function documentRoutes({ db, upload }) {
+  const router = Router();
+  
+  // Создаем экземпляр ChronicleService
+  const chronicleService = new ChronicleService(path.join(__dirname, '../dataBase/chronicle.json'));
+
+  // Middleware для проверки JSON только для POST и PUT запросов с JSON телом
+  // Так как express.json() уже применяется в app.mjs, здесь мы просто добавим дополнительную проверку
+  router.use((req, res, next) => {
+    if ((req.method === 'POST' || req.method === 'PUT') && req.is('application/json')) {
+      // Если есть тело запроса и оно не является объектом, значит возникла ошибка парсинга
+      if (req.body && typeof req.body !== 'object') {
+        console.error('Invalid JSON body:', req.body);
+        return res.status(400).json({ message: 'Invalid JSON' });
+      }
+    }
+    next();
+  });
+
+  // Извлечение текста из файла
+  const extractFileContent = async (file) => {
+    console.log('Извлечение текста из файла:', file);
+    if (file.mimetype === 'application/pdf') {
+      const dataBuffer = await fs.readFile(file.path);
+      const pdfData = await pdfService.extractTextFromPdf(dataBuffer);
+      console.log('Извлеченный текст из PDF:', pdfData.text ? pdfData.text.substring(0, 100) + '...' : 'null');
+      
+      // Проверка типа текста из PDF
+      if (pdfData.text !== undefined && pdfData.text !== null) {
+        if (typeof pdfData.text === 'string') {
+          return pdfData.text;
+        } else {
+          console.log("Предупреждение: текст из PDF не является строкой:", typeof pdfData.text);
+          return String(pdfData.text);
+        }
+      }
+      return "";
+    } else if (file.mimetype === 'text/plain') {
+      // Чтение файла в бинарном виде для определения кодировки
+      const buffer = await fs.readFile(file.path);
+      
+      // Определяем кодировку и конвертируем в UTF-8
+      // Попробуем сначала UTF-8
+      let text;
+      try {
+        text = buffer.toString('utf-8');
+        
+        // Проверяем, есть ли подозрение на неправильную кодировку (например, крякозябры)
+        // Если текст содержит много вопросительных знаков или непечатных символов, 
+        // возможно, это ошибка кодировки
+        const nonPrintableChars = text.match(/[^\\x20-\\x7E\\x0A\\x0D\\x09\\u0400-\\u04FF\\u00C0-\\u017F]/g);
+        if (nonPrintableChars && nonPrintableChars.length > text.length * 0.3) { // если больше 30% непечатных символов
+          // Попробуем кодировку Windows-1251 для кириллицы
+          text = iconv.decode(buffer, 'win1251');
+        }
+      } catch (error) {
+        console.log("Ошибка декодирования UTF-8, пробуем win1251:", error.message);
+        // Если UTF-8 не сработал, используем win1251
+        text = iconv.decode(buffer, 'win1251');
+      }
+      
+      console.log('Извлеченный текст из TXT:', text ? text.substring(0, 100) + '...' : 'null');
+      
+      // Проверка типа текста из TXT
+      if (text !== undefined && text !== null) {
+        if (typeof text === 'string') {
+          return text;
+        } else {
+          console.log("Предупреждение: текст из TXT не является строкой:", typeof text);
+          return String(text);
+        }
+      }
+      return "";
+    }
+    throw new Error('Неподдерживаемый тип файла');
+  };
+
+  // Обработка загруженных файлов
+  const processUploadedFiles = async (files, userText, userComments) => {
+    console.log('Обработка загруженных файлов:', { files, userText, userComments });
+    if (!files || files.length === 0) {
+      throw new Error('Нет файлов для загрузки');
+    }
+
+    // Проверяем тип userText
+    let validUserText = "";
+    if (userText !== undefined && userText !== null) {
+      if (typeof userText === 'string') {
+        validUserText = userText;
+      } else {
+        console.log("Предупреждение: userText не является строкой:", typeof userText);
+        validUserText = String(userText);
+      }
+    }
+
+    const filesData = [];
+    
+    for (const file of files) {
+      try {
+        console.log('Обработка файла:', file);
+        console.log('MIME-тип файла:', file.mimetype);
+        const fileContent = await extractFileContent(file);
+        console.log('Извлеченный текст из файла:', fileContent ? fileContent.substring(0, 100) + '...' : 'null');
+        console.log('Длина текста файла:', fileContent ? fileContent.length : 0);
+        
+        console.log('Создание вложения с текстом:', fileContent ? fileContent.substring(0, 100) + '...' : 'null (length: ' + (fileContent ? fileContent.length : 0) + ')');
+        const newDocument = {
+          id: uuidv4(),
+          date: new Date().toISOString().split('T')[0],
+          agency: '',
+          originalText: validUserText, 
+          summary: '',
+          documentDate: '',
+          senderAgency: '',
+          keySentences: [],
+          attachments: [{
+            id: uuidv4(),
+            name: Buffer.from(file.originalname, 'latin1').toString('utf8'), // Исправляем кодировку
+            type: file.mimetype,
+            size: file.size,
+            path: `/uploads/${file.filename}`,
+            text: fileContent || '', 
+            analysis: null,
+            documentDate: '',
+            senderAgency: '',
+            summary: '',
+            keySentences: []
+          }],
+          complaints: [],
+          analysisStatus: 'pending',
+          lastAnalyzedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          violations: []
+        };
+
+        console.log('Созданный документ из файла:', newDocument);
+
+        // Инициализация коллекции документов, если её нет
+        if (!db.data) {
+          db.data = {};
+        }
+        if (!db.data.documents) {
+          db.data.documents = [];
+        }
+
+        db.data.documents.push(newDocument);
+        await db.write();
+        filesData.push(newDocument);
+        try {
+          await fs.unlink(file.path);
+        } catch (unlinkError) {
+          console.error(`Не удалось удалить временный файл ${file.path}:`, unlinkError);
+          // Не прерываем выполнение, просто логируем ошибку
+        }
+      } catch (fileError) {
+        console.error(`Ошибка обработки файла ${Buffer.from(file.originalname, 'latin1').toString('utf8')}:`, fileError);
+        continue;
+      }
+    }
+
+    console.log('Обработанные файлы:', filesData);
+    return filesData;
+  };
+
+  // Обновление данных анализа
+  const updateDocumentAnalysis = (doc, analysis) => {
+    console.log("Обновление данных анализа для документа", doc.id);
+    console.log("Анализ:", analysis);
+    
+    // Проверяем, что analysis является объектом
+    if (!analysis || typeof analysis !== 'object') {
+      console.log("Предупреждение: analysis не является объектом:", typeof analysis);
+      // Используем пустой объект как значение по умолчанию
+      analysis = {};
+    }
+    
+    doc.summary = analysis.summary || doc.summary || "";
+    doc.documentDate = analysis.documentDate || doc.documentDate || "";
+    doc.senderAgency = analysis.senderAgency || doc.senderAgency || "";
+    doc.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : 
+                      (Array.isArray(doc.keySentences) ? doc.keySentences : []);
+    // Добавляем обработку нарушений
+    doc.violations = Array.isArray(analysis.violations) ? analysis.violations : 
+                    (Array.isArray(doc.violations) ? doc.violations : []);
+    // Сохраняем объединённый текст для отладки
+    doc.combinedText = analysis.combinedText || doc.combinedText || "";
+    doc.analysisStatus = 'completed';
+    doc.lastAnalyzedAt = new Date().toISOString();
+    doc.updatedAt = new Date().toISOString();
+    // Сохраняем regionCode, чтобы он не потерялся при анализе
+    // (regionCode устанавливается при создании/редактировании документа)
+    doc.regionCode = doc.regionCode || "";
+    console.log("Данные анализа обновлены для документа", doc.id);
+    console.log('Saved combinedText:', doc.combinedText.substring(0, 200));
+  };
+
+  // Сохранение жалобы
+  const saveComplaint = (doc, complaint) => {
+    if (!db.data.complaints) {
+      db.data.complaints = [];
+    }
+    db.data.complaints.push(complaint);
+
+    if (!doc.complaints) {
+      doc.complaints = [];
+    }
+    doc.complaints.push(complaint.id);
+    doc.updatedAt = new Date().toISOString();
+  };
+
+  // Загрузка файлов для временного хранения (без создания документа в базе)
+  router.post('/upload', upload.array('files'), async (req, res) => {
+    try {
+      // Проверка типа userText
+      let userText = "";
+      if (req.body.text !== undefined && req.body.text !== null) {
+        if (typeof req.body.text === 'string') {
+          userText = req.body.text;
+        } else {
+          console.log("Предупреждение: userText не является строкой:", typeof req.body.text);
+          userText = String(req.body.text);
+        }
+      }
+      
+      const userComments = req.body.comments || "";
+      console.log('Получены данные для загрузки:', { userText, userComments, files: req.files });
+
+      // Если есть файлы для обработки
+      if (req.files && req.files.length > 0) {
+        const processedAttachments = [];
+        
+        for (const file of req.files) {
+          try {
+            console.log('Обработка файла:', file);
+            console.log('MIME-тип файла:', file.mimetype);
+            const fileContent = await extractFileContent(file);
+            console.log('Извлеченный текст из файла:', fileContent ? fileContent.substring(0, 100) + '...' : 'null');
+            console.log('Длина текста файла:', fileContent ? fileContent.length : 0);
+            
+            const attachment = {
+              id: uuidv4(),
+              name: Buffer.from(file.originalname, 'latin1').toString('utf8'), // Исправляем кодировку
+              type: file.mimetype,
+              size: file.size,
+              path: `/uploads/${file.filename}`,
+              text: fileContent || '', 
+              analysis: null,
+              documentDate: '',
+              senderAgency: '',
+              summary: '',
+              keySentences: []
+            };
+            
+            processedAttachments.push(attachment);
+            
+            // Удаляем временный файл
+            try {
+              await fs.unlink(file.path);
+            } catch (unlinkError) {
+              console.error(`Не удалось удалить временный файл ${file.path}:`, unlinkError);
+              // Не прерываем выполнение, просто логируем ошибку
+            }
+          } catch (fileError) {
+            console.error(`Ошибка обработки файла ${Buffer.from(file.originalname, 'latin1').toString('utf8')}:`, fileError);
+            continue;
+          }
+        }
+        
+        // Возвращаем только обработанные вложения и текст, без создания документа в базе
+        return res.status(201).json({
+          attachments: processedAttachments,
+          originalText: userText,
+          comments: userComments
+        });
+      }
+      
+      // Если есть только текст без файлов
+      if (userText) {
+        return res.status(201).json({
+          attachments: [],
+          originalText: userText,
+          comments: userComments
+        });
+      }
+      
+      // Если нет ни текста, ни файлов
+      return res.status(400).json({ 
+        message: 'Необходимо предоставить текст или файлы для загрузки' 
+      });
+    } catch (err) {
+      console.error('Ошибка загрузки:', err);
+      res.status(500).json({ 
+        message: err.message || 'Ошибка сервера при обработке документа'
+      });
+    }
+  });
+
+  // Создание документа
+  router.post('/', async (req, res) => {
+    try {
+      const docData = req.body;
+      console.log('Получены данные для создания документа:', docData);
+      
+      // Базовая валидация структуры
+      if (!docData.id) {
+        docData.id = uuidv4();
+      }
+      if (!docData.date) {
+        docData.date = new Date().toISOString().split('T')[0];
+      }
+      if (!docData.createdAt) {
+        docData.createdAt = new Date().toISOString();
+      }
+      docData.updatedAt = new Date().toISOString();
+      
+      // Проверка и коррекция типов полей
+      let validOriginalText = "";
+      if (docData.originalText !== undefined && docData.originalText !== null) {
+        if (typeof docData.originalText === 'string') {
+          validOriginalText = docData.originalText;
+        } else {
+          console.log("Предупреждение: originalText не является строкой:", typeof docData.originalText);
+          validOriginalText = String(docData.originalText);
+        }
+      }
+      
+      // Установка значений по умолчанию для отсутствующих полей
+      const newDocument = {
+        id: docData.id,
+        date: docData.date,
+        agency: docData.agency || '',
+        regionCode: docData.regionCode || '',
+        originalText: validOriginalText,
+        summary: docData.summary || '',
+        documentDate: docData.documentDate || '',
+        senderAgency: docData.senderAgency || '',
+        keySentences: Array.isArray(docData.keySentences) ? docData.keySentences : [],
+        attachments: Array.isArray(docData.attachments) ? docData.attachments.map(att => {
+          // Проверка и коррекция типов полей вложения
+          let validAttachmentText = "";
+          if (att.text !== undefined && att.text !== null) {
+            if (typeof att.text === 'string') {
+              validAttachmentText = att.text;
+            } else {
+              console.log("Предупреждение: attachment text не является строкой:", typeof att.text);
+              validAttachmentText = String(att.text);
+            }
+          }
+          
+          return {
+            id: att.id || uuidv4(),
+            name: att.name || '',
+            type: att.type || '',
+            size: att.size || 0,
+            path: att.path || '',
+            text: validAttachmentText,
+            analysis: att.analysis || null,
+            documentDate: att.documentDate || '',
+            senderAgency: att.senderAgency || '',
+            summary: att.summary || '',
+            keySentences: Array.isArray(att.keySentences) ? att.keySentences : []
+          };
+        }) : [],
+        complaints: Array.isArray(docData.complaints) ? docData.complaints : [],
+        analysisStatus: docData.analysisStatus || 'pending',
+        lastAnalyzedAt: docData.lastAnalyzedAt || null,
+        createdAt: docData.createdAt,
+        updatedAt: docData.updatedAt,
+        violations: Array.isArray(docData.violations) ? docData.violations : [],
+        combinedText: docData.combinedText || ""
+      };
+      
+      console.log('Созданный документ:', newDocument);
+      
+      // Инициализация коллекции документов, если её нет
+      if (!db.data) {
+        db.data = {};
+      }
+      if (!db.data.documents) {
+        db.data.documents = [];
+      }
+      
+      db.data.documents.push(newDocument);
+      await db.write();
+      
+      // Создаем запись в летописи
+      try {
+        await chronicleService.createEntryForNewDocument(newDocument);
+      } catch (chronicleErr) {
+        console.error('Ошибка создания записи в летописи:', chronicleErr);
+        // Не прерываем выполнение основного запроса из-за ошибки летописи
+      }
+      
+      res.status(201).json(newDocument);
+    } catch (err) {
+      console.error('Ошибка создания документа:', err);
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Получение списка документов
+  router.get('/', async (req, res) => {
+    try {
+      await db.read();
+      const { limit = 50, offset = 0 } = req.query;
+      
+      const documents = db.data.documents
+        .slice(parseInt(offset), parseInt(offset) + parseInt(limit))
+        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+      res.json({
+        total: db.data.documents.length,
+        items: documents
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Получение документа по ID
+  router.get('/:id', async (req, res) => {
+    try {
+      const doc = db.data.documents.find(d => d.id === req.params.id);
+      if (!doc) return res.status(404).json({ message: 'Документ не найден' });
+      res.json(doc);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  
+
+  // Удаление документа
+  router.delete('/:id', async (req, res) => {
+    try {
+      await db.read();
+      const initialLength = db.data.documents.length;
+      db.data.documents = db.data.documents.filter(d => d.id !== req.params.id);
+      
+      if (db.data.documents.length === initialLength) {
+        return res.status(404).json({ message: 'Document not found' });
+      }
+      
+      await db.write();
+      res.status(204).end();
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Получение жалоб для документа
+  router.get('/:id/complaints', async (req, res) => {
+    try {
+      const complaints = db.data.complaints?.filter(c => c.documentId === req.params.id) || [];
+      res.json(complaints);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Обновление документа
+  router.put('/:id', async (req, res) => {
+    try {
+      console.log(`Получен запрос на обновление документа с ID: ${req.params.id}`);
+      console.log('Данные для обновления:', req.body);
+      
+      const docIndex = db.data.documents.findIndex(d => d.id === req.params.id);
+      if (docIndex === -1) {
+        console.log(`Документ с ID ${req.params.id} не найден`);
+        return res.status(404).json({ message: 'Document not found' });
+      }
+      
+      // Глубокое объединение данных документа
+      const existingDoc = db.data.documents[docIndex];
+      const updateData = req.body;
+      console.log('Существующий документ:', existingDoc);
+      console.log('Данные для обновления:', updateData);
+      
+      // Проверка и коррекция типов полей
+      let validOriginalText = existingDoc.originalText || "";
+      if (updateData.originalText !== undefined && updateData.originalText !== null) {
+        if (typeof updateData.originalText === 'string') {
+          validOriginalText = updateData.originalText;
+        } else {
+          console.log("Предупреждение: originalText не является строкой:", typeof updateData.originalText);
+          validOriginalText = String(updateData.originalText);
+        }
+      }
+      
+      // Создаем обновленный документ, начиная с копии существующего
+      // Используем только известные поля, игнорируем неизвестные
+      const updatedDoc = {
+        ...existingDoc,
+        // Обновляем простые поля (игнорируем неизвестные)
+        id: updateData.id || existingDoc.id,
+        date: updateData.date || existingDoc.date,
+        agency: updateData.agency || existingDoc.agency,
+        regionCode: updateData.regionCode || existingDoc.regionCode,
+        originalText: validOriginalText,
+        summary: updateData.summary || existingDoc.summary,
+        documentDate: updateData.documentDate || existingDoc.documentDate,
+        senderAgency: updateData.senderAgency || existingDoc.senderAgency,
+        keySentences: Array.isArray(updateData.keySentences) ? updateData.keySentences : existingDoc.keySentences,
+        complaints: Array.isArray(updateData.complaints) ? updateData.complaints : existingDoc.complaints,
+        analysisStatus: updateData.analysisStatus || existingDoc.analysisStatus,
+        lastAnalyzedAt: updateData.lastAnalyzedAt || existingDoc.lastAnalyzedAt,
+        createdAt: updateData.createdAt || existingDoc.createdAt,
+        updatedAt: new Date().toISOString(),
+        violations: Array.isArray(updateData.violations) ? updateData.violations : existingDoc.violations,
+        // Обновляем вложения с глубоким объединением
+        attachments: Array.isArray(updateData.attachments) ? 
+          updateData.attachments.map(newAttachment => {
+            // Ищем существующее вложение по ID
+            const existingAttachment = existingDoc.attachments.find(a => a.id === newAttachment.id);
+            if (existingAttachment) {
+              // Проверка и коррекция типов полей вложения
+              let validAttachmentText = existingAttachment.text || "";
+              if (newAttachment.text !== undefined && newAttachment.text !== null) {
+                if (typeof newAttachment.text === 'string') {
+                  validAttachmentText = newAttachment.text;
+                } else {
+                  console.log("Предупреждение: attachment text не является строкой:", typeof newAttachment.text);
+                  validAttachmentText = String(newAttachment.text);
+                }
+              }
+              
+              // Если вложение существует, объединяем данные
+              return {
+                ...existingAttachment,
+                ...newAttachment,
+                // Для вложенных объектов analysis также делаем объединение
+                analysis: newAttachment.analysis ? {
+                  ...existingAttachment.analysis,
+                  ...newAttachment.analysis
+                } : existingAttachment.analysis,
+                // Убедимся, что текст корректный
+                text: validAttachmentText
+              };
+            } else {
+              // Если это новое вложение, добавляем его как есть
+              // Убеждаемся, что у него есть все необходимые поля
+              // Проверка и коррекция типов полей вложения
+              let validNewAttachmentText = "";
+              if (newAttachment.text !== undefined && newAttachment.text !== null) {
+                if (typeof newAttachment.text === 'string') {
+                  validNewAttachmentText = newAttachment.text;
+                } else {
+                  console.log("Предупреждение: new attachment text не является строкой:", typeof newAttachment.text);
+                  validNewAttachmentText = String(newAttachment.text);
+                }
+              }
+              
+              return {
+                id: newAttachment.id || uuidv4(),
+                name: newAttachment.name || '',
+                type: newAttachment.type || '',
+                size: newAttachment.size || 0,
+                path: newAttachment.path || '',
+                text: validNewAttachmentText,
+                analysis: newAttachment.analysis || null,
+                documentDate: newAttachment.documentDate || '',
+                senderAgency: newAttachment.senderAgency || '',
+                summary: newAttachment.summary || '',
+                keySentences: Array.isArray(newAttachment.keySentences) ? newAttachment.keySentences : []
+              };
+            }
+          }) : existingDoc.attachments
+      };
+      
+      console.log('Обновленный документ:', updatedDoc);
+      
+      db.data.documents[docIndex] = updatedDoc;
+      
+      await db.write();
+      res.json(updatedDoc);
+    } catch (err) {
+      console.error('Ошибка обновления документа:', err);
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  // Анализ документа по ID (может быть как сохранённый, так и временный документ)
+  router.post('/:id/analyze', async (req, res) => {
+    try {
+      console.log("Начало обработки запроса на анализ документа");
+      const { id } = req.params;
+      console.log("Параметры запроса:", req.params);
+      
+      // Корректная обработка типа для strictMode
+      let { instructions = "", strictMode = false, model, originalText, attachments = [] } = req.body;
+      console.log("Тело запроса:", req.body);
+      
+      // Преобразуем strictMode в boolean, если он пришел как строка
+      if (typeof strictMode === 'string') {
+        strictMode = strictMode.toLowerCase() === 'true';
+      } else if (typeof strictMode !== 'boolean') {
+        // Если strictMode не boolean и не строка, используем значение по умолчанию
+        strictMode = false;
+      }
+      
+      console.log(`Получен запрос на анализ документа с ID: ${id}`);
+      console.log(`Параметры анализа: model=${model}, instructions=${instructions}, strictMode=${strictMode}`);
+      
+      // Проверка наличия БД
+      if (!db || !db.data || !db.data.documents) {
+        console.error("Ошибка: БД не инициализирована правильно");
+        return res.status(500).json({ 
+          message: 'Ошибка сервера: БД не инициализирована' 
+        });
+      }
+      
+      // Сначала проверяем, существует ли документ в базе данных
+      let doc = db.data.documents.find(d => d.id === id);
+      
+      if (doc) {
+        // Документ существует в базе данных
+        console.log(`Найден документ в базе:`, {
+          id: doc.id,
+          hasOriginalText: !!doc.originalText,
+          originalTextLength: doc.originalText ? doc.originalText.length : 0,
+          attachmentsCount: doc.attachments ? doc.attachments.length : 0
+        });
+      } else {
+        // Документ не существует в базе данных, используем данные из тела запроса
+        console.log(`Документ с ID ${id} не найден в базе, используем данные из тела запроса`);
+        
+        // Проверяем, что основной текст и вложения переданы в теле запроса
+        if (!originalText && (!attachments || !Array.isArray(attachments) || attachments.length === 0)) {
+          return res.status(400).json({ 
+            message: 'Для анализа временного документа обязательно должны быть переданы originalText или attachments',
+            documentId: id
+          });
+        }
+        
+        // Создаем временный документ для анализа
+        doc = {
+          id: id,
+          date: new Date().toISOString().split('T')[0],
+          agency: '',
+          originalText: originalText || '',
+          summary: '',
+          documentDate: '',
+          senderAgency: '',
+          keySentences: [],
+          attachments: attachments.map(att => ({
+            id: att.id || uuidv4(),
+            name: att.name || 'Без названия',
+            type: att.type || '',
+            size: att.size || 0,
+            path: att.path || '',
+            text: att.text || '',
+            analysis: null,
+            documentDate: '',
+            senderAgency: '',
+            summary: '',
+            keySentences: []
+          })),
+          complaints: [],
+          analysisStatus: 'pending',
+          lastAnalyzedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          violations: []
+        };
+        
+        console.log(`Создан временный документ для анализа:`, {
+          id: doc.id,
+          hasOriginalText: !!doc.originalText,
+          originalTextLength: doc.originalText ? doc.originalText.length : 0,
+          attachmentsCount: doc.attachments ? doc.attachments.length : 0
+        });
+      }
+      
+      // Проверяем, что документ содержит текст или вложения
+      const hasOriginalText = doc.originalText && doc.originalText.trim().length > 0;
+      const hasAttachmentsWithText = doc.attachments && doc.attachments.some(att => att.text && att.text.trim().length > 0);
+      
+      console.log(`Проверка содержимого: hasOriginalText=${hasOriginalText}, hasAttachmentsWithText=${hasAttachmentsWithText}`);
+      
+      if (!hasOriginalText && !hasAttachmentsWithText) {
+        console.log(`Документ не содержит текста для анализа`);
+        return res.status(400).json({ 
+          message: 'Документ должен содержать текст или вложения с текстом для анализа',
+          documentId: id
+        });
+      }
+      
+      // Обновление статуса, если документ существует в базе
+      if (doc.id && db.data.documents.some(d => d.id === doc.id)) {
+        doc.analysisStatus = 'processing';
+        doc.updatedAt = new Date().toISOString();
+        await db.write();
+        console.log(`Статус документа обновлен на 'processing'`);
+      }
+
+      console.log("Вызов analyzeDocument");
+      const analysisResult = await analyzeDocument(doc, instructions, strictMode);
+      console.log("Результат analyzeDocument:", analysisResult);
+      
+      if (analysisResult.success) {
+        // Если документ существует в базе, обновляем его
+        if (doc.id && db.data.documents.some(d => d.id === doc.id)) {
+          // Обновление документа в базе данных
+          console.log("Вызов updateDocumentAnalysis");
+          updateDocumentAnalysis(doc, analysisResult.data);
+          await db.write();
+          console.log(`Документ обновлен после анализа`);
+
+          // Создаем запись в летописи
+          try {
+            await chronicleService.createEntryForAnalyzedDocument(doc);
+          } catch (chronicleErr) {
+            console.error('Ошибка создания записи в летописи:', chronicleErr);
+            // Не прерываем выполнение основного запроса из-за ошибки летописи
+          }
+        }
+
+        res.json({
+          ...analysisResult.data,
+          modelUsed: model || process.env.AI_MODEL || process.env.MODEL_NAME || "qwen3:30b",
+          analyzedAt: doc.lastAnalyzedAt,
+          combinedText: analysisResult.data.combinedText || doc.combinedText || ""
+        });
+      } else {
+        throw new Error(analysisResult.error || "Неизвестная ошибка анализа");
+      }
+    } catch (err) {
+      console.error(`Ошибка анализа документа:`, err);
+      console.error("Стек ошибки:", err.stack);
+      
+      // Обновление статуса документа в случае ошибки (только если документ существует в базе)
+      try {
+        const { id } = req.params;
+        if (db && db.data && db.data.documents) {
+          const doc = db.data.documents.find(d => d.id === id);
+          if (doc) {
+            doc.analysisStatus = 'failed';
+            doc.updatedAt = new Date().toISOString();
+            await db.write();
+          }
+        }
+      } catch (dbError) {
+        console.error("Ошибка при обновлении статуса документа:", dbError);
+      }
+      
+      res.status(500).json({ 
+        message: 'Ошибка при анализе документа',
+        error: err.message 
+      });
+    }
+  });
+
+
+
+
+  return router; 
+}

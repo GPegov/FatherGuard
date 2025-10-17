@@ -28,7 +28,7 @@ const testData = {
     documentDate: realDocument.documentDate,
     senderAgency: realDocument.senderAgency,
     date: realDocument.date,
-    agency: realDocument.agency,
+    fsspDepartment: realDocument.fsspDepartment,
     // Добавляем данные заявителя
     applicantFullName: 'Иванов Иван Иванович',
     applicantAddress: '677000, Республика Саха (Якутия), г. Якутск, ул. Ленина, д. 10, кв. 5',

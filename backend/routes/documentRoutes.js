@@ -3,11 +3,13 @@ import express from 'express';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs/promises';
+import iconv from 'iconv-lite';
 
 import pdfService from '../services/pdfService.js';
 import { fileURLToPath } from 'url';
-import { analyzeText, analyzeDocument, analyzeAttachment } from '../services/documentService.js';
+import { analyzeText, analyzeDocument } from '../services/documentService.js';
 import ChronicleService from '../services/chronicleService.js';
+import { AIConfig } from '../config/aiConfig.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -16,6 +18,60 @@ export default function documentRoutes({ db, upload }) {
   
   // Создаем экземпляр ChronicleService
   const chronicleService = new ChronicleService(path.join(__dirname, '../dataBase/chronicle.json'));
+
+  // Вспомогательная функция для генерации combinedText в том же формате, что и в documentService.js
+  const generateCombinedText = (document) => {
+    // Собираем весь текст для объединенного анализа
+    let combinedText = `СПРАВКА ДЛЯ ИИ:
+Вы — юрист, защищающий права отца-плательщика алиментов.
+ВАША ЗАДАЧА:
+1. Проанализировать ВСЕ представленные материалы.
+2. Отличать субъективные пояснения пользователя от официальных документов.
+3. Оценивать действия обеих сторон на соответствие законодательству РФ.
+4. Выявлять нарушения со стороны госорганов, а также указывать, если пользователь сам нарушает закон.
+5. Сформировать краткую суть, ключевые предложения, список нарушений и дневниковую запись.
+
+ИНСТРУКЦИИ ПО ФОРМАТАМ:
+- ПОЯСНЕНИЯ ПОЛЬЗОВАТЕЛЯ: субъективны, могут содержать эмоции, неточности, но отражают его восприятие ситуации.
+- ОФИЦИАЛЬНЫЕ ДОКУМЕНТЫ: юридически значимы, но могут содержать ошибки, нарушения сроков, неправомерные действия.
+
+ТЕКСТЫ ДЛЯ АНАЛИЗА:
+`;
+
+    let hasOriginalText = false;
+    let hasAttachmentText = false;
+    
+    // Добавляем основной текст документа
+    if (document.originalText && typeof document.originalText === 'string' && document.originalText.trim()) {
+      combinedText += `
+[НАЧАЛО ПОЯСНЕНИЙ ПОЛЬЗОВАТЕЛЯ]
+${document.originalText.trim()}
+[КОНЕЦ ПОЯСНЕНИЙ ПОЛЬЗОВАТЕЛЯ]
+`;
+      hasOriginalText = true;
+    }
+    
+    // Добавляем тексты вложений
+    if (Array.isArray(document.attachments) && document.attachments.length > 0) {
+      for (const attachment of document.attachments) {
+        if (attachment.text && typeof attachment.text === 'string' && attachment.text.trim()) {
+          combinedText += `
+[НАЧАЛО ОФИЦИАЛЬНОГО ДОКУМЕНТА: "${attachment.name || 'Без названия'}"]
+${attachment.text.trim()}
+[КОНЕЦ ОФИЦИАЛЬНОГО ДОКУМЕНТА]
+`;
+          hasAttachmentText = true;
+        }
+      }
+    }
+    
+    // Возвращаем сгенерированный combinedText или сообщение о его отсутствии
+    if (!hasOriginalText && !hasAttachmentText) {
+      return "СПРАВКА: Ни пояснения пользователя, ни вложенные документы не содержат текста для анализа.";
+    }
+    
+    return combinedText;
+  };
 
   // Middleware для проверки JSON только для POST и PUT запросов с JSON телом
   // Так как express.json() уже применяется в app.mjs, здесь мы просто добавим дополнительную проверку
@@ -49,7 +105,29 @@ export default function documentRoutes({ db, upload }) {
       }
       return "";
     } else if (file.mimetype === 'text/plain') {
-      const text = await fs.readFile(file.path, 'utf-8');
+      // Чтение файла в бинарном виде для определения кодировки
+      const buffer = await fs.readFile(file.path);
+      
+      // Определяем кодировку и конвертируем в UTF-8
+      // Попробуем сначала UTF-8
+      let text;
+      try {
+        text = buffer.toString('utf-8');
+        
+        // Проверяем, есть ли подозрение на неправильную кодировку (например, крякозябры)
+        // Если текст содержит много вопросительных знаков или непечатных символов, 
+        // возможно, это ошибка кодировки
+        const nonPrintableChars = text.match(/[^\x20-\x7E\x0A\x0D\x09\u0400-\u04FF\u00C0-\u017F]/g);
+        if (nonPrintableChars && nonPrintableChars.length > text.length * 0.3) { // если больше 30% непечатных символов
+          // Попробуем кодировку Windows-1251 для кириллицы
+          text = iconv.decode(buffer, 'win1251');
+        }
+      } catch (error) {
+        console.log("Ошибка декодирования UTF-8, пробуем win1251:", error.message);
+        // Если UTF-8 не сработал, используем win1251
+        text = iconv.decode(buffer, 'win1251');
+      }
+      
       console.log('Извлеченный текст из TXT:', text ? text.substring(0, 100) + '...' : 'null');
       
       // Проверка типа текста из TXT
@@ -98,7 +176,7 @@ export default function documentRoutes({ db, upload }) {
         const newDocument = {
           id: uuidv4(),
           date: new Date().toISOString().split('T')[0],
-          agency: '',
+          fsspDepartment: '',
           originalText: validUserText, 
           summary: '',
           documentDate: '',
@@ -137,6 +215,12 @@ export default function documentRoutes({ db, upload }) {
 
         db.data.documents.push(newDocument);
         await db.write();
+
+
+
+
+
+
         filesData.push(newDocument);
         try {
           await fs.unlink(file.path);
@@ -174,10 +258,16 @@ export default function documentRoutes({ db, upload }) {
     // Добавляем обработку нарушений
     doc.violations = Array.isArray(analysis.violations) ? analysis.violations : 
                     (Array.isArray(doc.violations) ? doc.violations : []);
+    // Сохраняем объединённый текст для отладки
+    doc.combinedText = analysis.combinedText || doc.combinedText || "";
     doc.analysisStatus = 'completed';
     doc.lastAnalyzedAt = new Date().toISOString();
     doc.updatedAt = new Date().toISOString();
+    // Сохраняем regionCode, чтобы он не потерялся при анализе
+    // (regionCode устанавливается при создании/редактировании документа)
+    doc.regionCode = doc.regionCode || "";
     console.log("Данные анализа обновлены для документа", doc.id);
+    console.log('Saved combinedText:', doc.combinedText.substring(0, 200));
   };
 
   // Сохранение жалобы
@@ -194,7 +284,7 @@ export default function documentRoutes({ db, upload }) {
     doc.updatedAt = new Date().toISOString();
   };
 
-  // Загрузка документа (текст + файлы)
+  // Загрузка файлов для временного хранения (без создания документа в базе)
   router.post('/upload', upload.array('files'), async (req, res) => {
     try {
       // Проверка типа userText
@@ -211,54 +301,68 @@ export default function documentRoutes({ db, upload }) {
       const userComments = req.body.comments || "";
       console.log('Получены данные для загрузки:', { userText, userComments, files: req.files });
 
-      // Обработка только текста
-      if (userText && (!req.files || req.files.length === 0)) {
-        const newDocument = {
-          id: uuidv4(),
-          date: new Date().toISOString().split('T')[0],
-          agency: '',
+      // Если есть файлы для обработки
+      if (req.files && req.files.length > 0) {
+        const processedAttachments = [];
+        
+        for (const file of req.files) {
+          try {
+            console.log('Обработка файла:', file);
+            console.log('MIME-тип файла:', file.mimetype);
+            const fileContent = await extractFileContent(file);
+            console.log('Извлеченный текст из файла:', fileContent ? fileContent.substring(0, 100) + '...' : 'null');
+            console.log('Длина текста файла:', fileContent ? fileContent.length : 0);
+            
+            const attachment = {
+              id: uuidv4(),
+              name: Buffer.from(file.originalname, 'latin1').toString('utf8'), // Исправляем кодировку
+              type: file.mimetype,
+              size: file.size,
+              path: `/uploads/${file.filename}`,
+              text: fileContent || '', 
+              analysis: null,
+              documentDate: '',
+              senderAgency: '',
+              summary: '',
+              keySentences: []
+            };
+            
+            processedAttachments.push(attachment);
+            
+            // Удаляем временный файл
+            try {
+              await fs.unlink(file.path);
+            } catch (unlinkError) {
+              console.error(`Не удалось удалить временный файл ${file.path}:`, unlinkError);
+              // Не прерываем выполнение, просто логируем ошибку
+            }
+          } catch (fileError) {
+            console.error(`Ошибка обработки файла ${Buffer.from(file.originalname, 'latin1').toString('utf8')}:`, fileError);
+            continue;
+          }
+        }
+        
+        // Возвращаем только обработанные вложения и текст, без создания документа в базе
+        return res.status(201).json({
+          attachments: processedAttachments,
           originalText: userText,
-          summary: '',
-          documentDate: '',
-          senderAgency: '',
-          keySentences: [], // Используем keySentences
-          attachments: [],
-          complaints: [],
-          analysisStatus: 'pending',
-          lastAnalyzedAt: null,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          violations: []
-        };
-        
-        console.log('Созданный документ (только текст):', newDocument);
-        
-        // Инициализация коллекции документов, если её нет
-        if (!db.data) {
-          db.data = {};
-        }
-        if (!db.data.documents) {
-          db.data.documents = [];
-        }
-        
-        db.data.documents.push(newDocument);
-        await db.write();
-        
-        // Создаем запись в летописи
-        try {
-          await chronicleService.createEntryForNewDocument(newDocument, userComments);
-        } catch (chronicleErr) {
-          console.error('Ошибка создания записи в летописи:', chronicleErr);
-          // Не прерываем выполнение основного запроса из-за ошибки летописи
-        }
-        
-        return res.status(201).json(newDocument);
+          comments: userComments
+        });
       }
-
-      // Обработка файлов
-      const filesData = await processUploadedFiles(req.files, userText, userComments);
-      console.log('Загруженные файлы:', filesData);
-      res.status(201).json(filesData[0]);
+      
+      // Если есть только текст без файлов
+      if (userText) {
+        return res.status(201).json({
+          attachments: [],
+          originalText: userText,
+          comments: userComments
+        });
+      }
+      
+      // Если нет ни текста, ни файлов
+      return res.status(400).json({ 
+        message: 'Необходимо предоставить текст или файлы для загрузки' 
+      });
     } catch (err) {
       console.error('Ошибка загрузки:', err);
       res.status(500).json({ 
@@ -300,7 +404,8 @@ export default function documentRoutes({ db, upload }) {
       const newDocument = {
         id: docData.id,
         date: docData.date,
-        agency: docData.agency || '',
+        fsspDepartment: docData.fsspDepartment || '',
+        regionCode: docData.regionCode || '',
         originalText: validOriginalText,
         summary: docData.summary || '',
         documentDate: docData.documentDate || '',
@@ -337,7 +442,11 @@ export default function documentRoutes({ db, upload }) {
         lastAnalyzedAt: docData.lastAnalyzedAt || null,
         createdAt: docData.createdAt,
         updatedAt: docData.updatedAt,
-        violations: Array.isArray(docData.violations) ? docData.violations : []
+        violations: Array.isArray(docData.violations) ? docData.violations : [],
+        combinedText: docData.combinedText || generateCombinedText({
+          originalText: docData.originalText || "",
+          attachments: docData.attachments || []
+        })
       };
       
       console.log('Созданный документ:', newDocument);
@@ -353,13 +462,8 @@ export default function documentRoutes({ db, upload }) {
       db.data.documents.push(newDocument);
       await db.write();
       
-      // Создаем запись в летописи
-      try {
-        await chronicleService.createEntryForNewDocument(newDocument);
-      } catch (chronicleErr) {
-        console.error('Ошибка создания записи в летописи:', chronicleErr);
-        // Не прерываем выполнение основного запроса из-за ошибки летописи
-      }
+      
+
       
       res.status(201).json(newDocument);
     } catch (err) {
@@ -464,7 +568,8 @@ export default function documentRoutes({ db, upload }) {
         // Обновляем простые поля (игнорируем неизвестные)
         id: updateData.id || existingDoc.id,
         date: updateData.date || existingDoc.date,
-        agency: updateData.agency || existingDoc.agency,
+        fsspDepartment: updateData.fsspDepartment || existingDoc.fsspDepartment,
+        regionCode: updateData.regionCode || existingDoc.regionCode,
         originalText: validOriginalText,
         summary: updateData.summary || existingDoc.summary,
         documentDate: updateData.documentDate || existingDoc.documentDate,
@@ -548,7 +653,7 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  // Анализ документа по ID
+  // Анализ документа по ID (может быть как сохранённый, так и временный документ)
   router.post('/:id/analyze', async (req, res) => {
     try {
       console.log("Начало обработки запроса на анализ документа");
@@ -556,7 +661,7 @@ export default function documentRoutes({ db, upload }) {
       console.log("Параметры запроса:", req.params);
       
       // Корректная обработка типа для strictMode
-      let { instructions = "", strictMode = false, model } = req.body;
+      let { instructions = "", strictMode = false, model, originalText, attachments = [] } = req.body;
       console.log("Тело запроса:", req.body);
       
       // Преобразуем strictMode в boolean, если он пришел как строка
@@ -578,22 +683,67 @@ export default function documentRoutes({ db, upload }) {
         });
       }
       
-      const doc = db.data.documents.find(d => d.id === id);
+      // Сначала проверяем, существует ли документ в базе данных
+      let doc = db.data.documents.find(d => d.id === id);
       
-      if (!doc) {
-        console.log(`Документ с ID ${id} не найден`);
-        return res.status(404).json({ 
-          message: 'Документ не найден',
-          documentId: id
+      if (doc) {
+        // Документ существует в базе данных
+        console.log(`Найден документ в базе:`, {
+          id: doc.id,
+          hasOriginalText: !!doc.originalText,
+          originalTextLength: doc.originalText ? doc.originalText.length : 0,
+          attachmentsCount: doc.attachments ? doc.attachments.length : 0
+        });
+      } else {
+        // Документ не существует в базе данных, используем данные из тела запроса
+        console.log(`Документ с ID ${id} не найден в базе, используем данные из тела запроса`);
+        
+        // Проверяем, что основной текст и вложения переданы в теле запроса
+        if (!originalText && (!attachments || !Array.isArray(attachments) || attachments.length === 0)) {
+          return res.status(400).json({ 
+            message: 'Для анализа временного документа обязательно должны быть переданы originalText или attachments',
+            documentId: id
+          });
+        }
+        
+        // Создаем временный документ для анализа
+        doc = {
+          id: id,
+          date: new Date().toISOString().split('T')[0],
+          fsspDepartment: '',
+          originalText: originalText || '',
+          summary: '',
+          documentDate: '',
+          senderAgency: '',
+          keySentences: [],
+          attachments: attachments.map(att => ({
+            id: att.id || uuidv4(),
+            name: att.name || 'Без названия',
+            type: att.type || '',
+            size: att.size || 0,
+            path: att.path || '',
+            text: att.text || '',
+            analysis: null,
+            documentDate: '',
+            senderAgency: '',
+            summary: '',
+            keySentences: []
+          })),
+          complaints: [],
+          analysisStatus: 'pending',
+          lastAnalyzedAt: null,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          violations: []
+        };
+        
+        console.log(`Создан временный документ для анализа:`, {
+          id: doc.id,
+          hasOriginalText: !!doc.originalText,
+          originalTextLength: doc.originalText ? doc.originalText.length : 0,
+          attachmentsCount: doc.attachments ? doc.attachments.length : 0
         });
       }
-      
-      console.log(`Найден документ:`, {
-        id: doc.id,
-        hasOriginalText: !!doc.originalText,
-        originalTextLength: doc.originalText ? doc.originalText.length : 0,
-        attachmentsCount: doc.attachments ? doc.attachments.length : 0
-      });
       
       // Проверяем, что документ содержит текст или вложения
       const hasOriginalText = doc.originalText && doc.originalText.trim().length > 0;
@@ -609,24 +759,29 @@ export default function documentRoutes({ db, upload }) {
         });
       }
       
-      // Обновление статуса
-      doc.analysisStatus = 'processing';
-      doc.updatedAt = new Date().toISOString();
-      await db.write();
-      console.log(`Статус документа обновлен на 'processing'`);
+      // Обновление статуса, если документ существует в базе
+      if (doc.id && db.data.documents.some(d => d.id === doc.id)) {
+        doc.analysisStatus = 'processing';
+        doc.updatedAt = new Date().toISOString();
+        await db.write();
+        console.log(`Статус документа обновлен на 'processing'`);
+      }
 
       console.log("Вызов analyzeDocument");
       const analysisResult = await analyzeDocument(doc, instructions, strictMode);
       console.log("Результат analyzeDocument:", analysisResult);
       
       if (analysisResult.success) {
-        // Обновление документа
-        console.log("Вызов updateDocumentAnalysis");
-        updateDocumentAnalysis(doc, analysisResult.data);
-        await db.write();
-        console.log(`Документ обновлен после анализа`);
+        // Если документ существует в базе, обновляем его
+        if (doc.id && db.data.documents.some(d => d.id === doc.id)) {
+          // Обновление документа в базе данных
+          console.log("Вызов updateDocumentAnalysis");
+          updateDocumentAnalysis(doc, analysisResult.data);
+          await db.write();
+          console.log(`Документ обновлен после анализа`);
+        }
 
-        // Создаем запись в летописи
+        // Создаем запись в летописи всегда при успешном анализе
         try {
           await chronicleService.createEntryForAnalyzedDocument(doc);
         } catch (chronicleErr) {
@@ -636,8 +791,9 @@ export default function documentRoutes({ db, upload }) {
 
         res.json({
           ...analysisResult.data,
-          modelUsed: model || process.env.AI_MODEL || "llama3.1/18/8192",
-          analyzedAt: doc.lastAnalyzedAt
+          modelUsed: model || process.env.AI_MODEL || process.env.MODEL_NAME || "qwen3:30b",
+          analyzedAt: doc.lastAnalyzedAt,
+          combinedText: analysisResult.data.combinedText || doc.combinedText || ""
         });
       } else {
         throw new Error(analysisResult.error || "Неизвестная ошибка анализа");
@@ -646,7 +802,7 @@ export default function documentRoutes({ db, upload }) {
       console.error(`Ошибка анализа документа:`, err);
       console.error("Стек ошибки:", err.stack);
       
-      // Обновление статуса документа в случае ошибки
+      // Обновление статуса документа в случае ошибки (только если документ существует в базе)
       try {
         const { id } = req.params;
         if (db && db.data && db.data.documents) {
@@ -668,51 +824,7 @@ export default function documentRoutes({ db, upload }) {
     }
   });
 
-  // Анализ произвольного текста
-  router.post('/analyze', async (req, res) => {
-    console.log('Получен req.body:', req.body);
-    try {
-      // Корректная обработка типа для strictMode
-      let { text, instructions = "", strictMode = false } = req.body;
-      
-      // Преобразуем strictMode в boolean, если он пришел как строка
-      if (typeof strictMode === 'string') {
-        strictMode = strictMode.toLowerCase() === 'true';
-      } else if (typeof strictMode !== 'boolean') {
-        // Если strictMode не boolean и не строка, используем значение по умолчанию
-        strictMode = false;
-      }
-      
-      if (!text) {
-        return res.status(400).json({ message: 'Текст обязателен' });
-      }
-      
-      // Проверка типа параметра text
-      if (typeof text !== 'string') {
-        return res.status(400).json({ 
-          message: 'Параметр text должен быть строкой',
-          receivedType: typeof text,
-          receivedValue: typeof text === 'object' ? '[object Object]' : String(text)
-        });
-      }
-      
-      // Анализируем текст
-      console.log("Анализ текста через упрощенный путь анализа");
-      const analysisResult = await analyzeText(text, instructions, strictMode);
-      
-      if (analysisResult.success) {
-        res.json(analysisResult.data);
-      } else {
-        throw new Error(analysisResult.error);
-      }
-    } catch (err) {
-      console.error('Ошибка анализа текста:', err);
-      res.status(500).json({ 
-        message: 'Ошибка при анализе текста',
-        error: err.message 
-      });
-    }
-  });
+
 
   return router; 
 }

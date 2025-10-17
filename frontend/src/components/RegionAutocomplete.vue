@@ -20,7 +20,7 @@
         {{ selectedRegionCode }}
       </div>
     </div>
-    <div v-if="showSuggestions" class="suggestions-container">
+    <div v-if="showSuggestions" class="suggestions-container" @click="onSuggestionsClick">
       <ul v-if="filteredRegions.length > 0" class="suggestions-list">
         <li
           v-for="(region, index) in filteredRegions"
@@ -126,6 +126,12 @@ export default {
     };
 
     const onFocus = () => {
+      // Сохраняем текущий регион перед сбросом
+      if (searchTerm.value) {
+        lastSelectedRegion.value = searchTerm.value;
+      }
+      // Сбрасываем текущий регион при фокусе
+      searchTerm.value = '';
       showSuggestions.value = true;
       selectedIndex.value = -1;
 
@@ -141,16 +147,14 @@ export default {
     };
 
     const onClick = () => {
-      // Не сбрасываем значение при клике, если уже выбран регион
-      if (!searchTerm.value) {
-        // Только если поле пустое, показываем все регионы
-        showSuggestions.value = true;
-        selectedIndex.value = -1;
-      } else {
-        // Если есть значение, показываем список с фильтрацией
-        showSuggestions.value = true;
-        selectedIndex.value = -1;
+      // Сохраняем текущий регион перед сбросом
+      if (searchTerm.value) {
+        lastSelectedRegion.value = searchTerm.value;
       }
+      // Сбрасываем текущий регион при клике на инпут
+      searchTerm.value = '';
+      showSuggestions.value = true;
+      selectedIndex.value = -1;
     };
 
     const onInput = () => {
@@ -164,6 +168,11 @@ export default {
         if (!event.relatedTarget || !event.relatedTarget.closest('.autocomplete-wrapper')) {
           showSuggestions.value = false;
           selectedIndex.value = -1;
+          // Восстанавливаем последний выбранный регион, если пользователь не выбрал новый
+          if (!searchTerm.value && lastSelectedRegion.value) {
+            searchTerm.value = lastSelectedRegion.value;
+            emit('update:modelValue', lastSelectedRegion.value);
+          }
         }
       }, 200);
     };
@@ -207,6 +216,19 @@ export default {
     const onEscape = () => {
       showSuggestions.value = false;
       selectedIndex.value = -1;
+    };
+
+    const onSuggestionsClick = (event) => {
+      // Если клик был непосредственно на контейнере (а не на элементе списка), сбрасываем регион
+      if (event.target === event.currentTarget) {
+        // Сохраняем текущий регион как последний, если он есть
+        if (searchTerm.value) {
+          lastSelectedRegion.value = searchTerm.value;
+        }
+        // Сбрасываем текущий регион
+        searchTerm.value = '';
+        emit('update:modelValue', '');
+      }
     };
 
     const scrollToSelectedIndex = () => {
@@ -281,6 +303,7 @@ export default {
       onArrowUp,
       onEnter,
       onEscape,
+      onSuggestionsClick,
       selectRegion,
       scrollToRegionCenter,
       scrollToSelectedIndex

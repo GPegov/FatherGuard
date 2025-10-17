@@ -116,11 +116,11 @@ const submitData = async () => {
   errorMessage.value = '';
 
   try {
-    // Инициализируем новый документ с полной структурой
+    // Инициализируем новый документ с полной структурой (временно, до сохранения)
     const newDocument = {
       id: uuidv4(), // Генерируем уникальный ID сразу при создании документа
       date: new Date().toISOString().split('T')[0],
-      agency: '', // Вначале оставляем пустым, будет заполнено конкретным отделением ФССП позже
+      fsspDepartment: '', // Вначале оставляем пустым, будет заполнено конкретным отделением ФССП позже
       originalText: userText.value,
       summary: '',
       documentDate: '',
@@ -140,7 +140,7 @@ const submitData = async () => {
     // Обновляем документ в хранилище
     documentStore.currentDocument = newDocument;
 
-    // Если есть файлы для загрузки, сначала загружаем их
+    // Если есть файлы для загрузки, сначала загружаем их (но документ в базе не создаем)
     if (files.value.length > 0) {
       try {
         // Загружаем файлы и обновляем документ
@@ -159,20 +159,17 @@ const submitData = async () => {
       regionCode: selectedRegionCode.value
     };
 
-    // Переходим к предпросмотру без сохранения документа
+    // Переходим к предпросмотру без сохранения документа в базе
     // Используем реальный ID документа
     router.push({ 
       name: 'review', 
       params: { id: newDocument.id }
     });
   } catch (error) {
-    console.error('Ошибка при создании документа:', error);
+    console.error('Ошибка при подготовке документа:', error);
     errorMessage.value = error.response?.data?.message || 
                          error.message || 
-                         'Произошла ошибка при сохранении документа';
-    
-    // Сбрасываем статус анализа в случае ошибки
-    documentStore.currentDocument.analysisStatus = 'failed';
+                         'Произошла ошибка при подготовке документа';
   } finally {
     isLoading.value = false;
   }

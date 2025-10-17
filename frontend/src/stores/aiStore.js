@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import axios from "axios";
+import { AITemperatureConfig } from "../config/aiConfig.js";
 
 export const useAIStore = defineStore("ai", () => {
   // Состояние
@@ -9,18 +10,20 @@ export const useAIStore = defineStore("ai", () => {
   const apiStatus = ref("unknown");
   
   const apiUrl = ref("http://localhost:11434/api/generate");
-  const model = ref("llama3.1/18/8192");
+  const model = ref("qwen3:30b");
   
   const availableModels = ref([
     {
-      name: "llama3.1/18/8192",
-      description: "using 18 threads with 8192 num_ctx",
+      name: "qwen3:30b",
+      description: "Qwen 3 30B model",
       parameters: {
-        temperature: 0.3,
+        temperature: AITemperatureConfig.DEFAULT,
         top_p: 0.9,
       },
     },
   ]);
+  
+
 
   const agencies = ref(["ФССП", "Прокуратура", "Суд", "Омбудсмен"]);
 
@@ -49,7 +52,7 @@ export const useAIStore = defineStore("ai", () => {
         prompt: text,
         stream: false,
         options: {
-          temperature: options.temperature || 0.3,
+          temperature: options.temperature || AITemperatureConfig.DEFAULT,
           top_p: options.top_p || 0.9,
         }
       }, { timeout: 30000 });

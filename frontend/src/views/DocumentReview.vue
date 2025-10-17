@@ -20,7 +20,7 @@
     </div>
 
     <div v-else class="review-container">
-      <form @submit.prevent="handleSubmit" class="review-form">
+      <form  class="review-form">
         <!-- Информация о выбранном регионе -->
         <div class="region-info" v-if="document.regionCode">
           <p><strong>Выбранный регион:</strong> {{ documentStore.getRegionNameByCode(document.regionCode) }}</p>
@@ -43,9 +43,9 @@
               В выбранном регионе нет известных отделений ФССП
             </div>
             <AgencyAutocomplete
-              id="agency"
+              id="fsspDepartment"
               :agencies="agenciesList"
-              v-model="document.agency"
+              v-model="document.fsspDepartment"
               @agency-selected="onAgencySelected"
               :placeholder="agenciesList.length > 0 ? 'Выберите отделение ФССП' : 'Отделения недоступны'"
               class="agency-autocomplete"
@@ -82,6 +82,7 @@
               </button>
             </div>
           </div>
+        
 
           <!-- Важные предложения -->
           <div class="form-group" v-if="document.analysisStatus === 'completed'">
@@ -195,7 +196,8 @@
           </button>
 
           <button 
-            type="submit" 
+            type="button" 
+            @click="handleSubmit" 
             class="save-btn" 
             :disabled="isSaving"
             :class="{ 'save-btn-active': documentStore.isCurrentDocumentAnalyzed && !isSaving }"
@@ -273,7 +275,6 @@ const agenciesList = computed(() => {
   // Возвращаем отделения, если они есть, иначе пустой массив
   // Загрузка отделений происходит в отдельном watcher
   const result = departments || [];
-  console.log('Список отделений ФССП из стора:', result);
   return result;
 });
 
@@ -305,9 +306,9 @@ watch(
 );
 
 // Обработка выбора агентства
-const onAgencySelected = (agency) => {
-  document.value.agency = agency;
-  console.log('Выбрано ведомство:', agency);
+const onAgencySelected = (fsspDepartment) => {
+  document.value.fsspDepartment = fsspDepartment;
+  console.log('Выбрано отделение ФССП:', fsspDepartment);
 };
 
 // Выносим логику загрузки отделений в отдельную функцию для повторного использования
@@ -346,13 +347,14 @@ onMounted(async () => {
     console.log('Инициализация компонента DocumentReview, текущий document.value.id:', document.value.id);
     await aiStore.checkServerStatus();
 
-    // Проверяем, есть ли ID у документа
+    // Проверяем, существует ли документ в локальном списке (это покажет, что документ уже был сохранен)
     const routeId = document.value.id;
-    // Убираем проверку routeId !== 'new', так как теперь у всех документов всегда есть реальный ID
-    if (routeId) {
+    const isDocumentSaved = documentStore.documents.some(doc => doc.id === routeId);
+    
+    if (routeId && isDocumentSaved) {
       console.log('Проверка наличия документа по ID:', routeId);
       
-      // Попробуем загрузить документ с сервера
+      // Попробуем загрузить документ с сервера только если он уже существует в списке
       try {
         await documentStore.fetchDocumentById(routeId);
         document.value = {
@@ -376,6 +378,16 @@ onMounted(async () => {
           })) || []
         };
       }
+    } else {
+      // Если документ не сохранен, используем текущий документ из store
+      console.log('Документ новый, используем локальный документ из стора:', document.value);
+      document.value = {
+        ...documentStore.currentDocument,
+        attachments: documentStore.currentDocument.attachments?.map(att => ({
+          ...att,
+          analysis: att.analysis || null
+        })) || []
+      };
     }
 
     // Загружаем отделения ФССП, если есть код региона
@@ -451,6 +463,12 @@ const removeSentence = (index) => {
 }
 
 const analyzeDocument = async () => {
+  // Дополнительная защита от повторного вызова на уровне компонента
+  if (isAnalyzing.value) {
+    console.log('Анализ уже выполняется в компоненте, пропускаем повторный вызов');
+    return;
+  }
+  
   isAnalyzing.value = true
   error.value = null
 
@@ -496,7 +514,13 @@ const regenerateSummary = async () => {
     document.value.summary = analysis.summary || 'Не удалось сгенерировать краткую суть';
     document.value.keySentences = Array.isArray(analysis.keySentences) ? analysis.keySentences : [];
     document.value.violations = Array.isArray(analysis.violations) ? analysis.violations : [];
-    document.value.documentDate = analysis.documentDate || '';
+    // Извлекаем дату в формате YYYY-MM-DD, если она содержит пояснение
+    let cleanDate = analysis.documentDate || '';
+    if (typeof cleanDate === 'string' && cleanDate.includes('(')) {
+      // Извлекаем дату до скобки (если присутствует форматирование с пояснением)
+      cleanDate = cleanDate.split('(')[0].trim();
+    }
+    document.value.documentDate = cleanDate;
     document.value.senderAgency = analysis.senderAgency || '';
     
     // Обновляем currentDocument в хранилище
@@ -524,8 +548,33 @@ const handleSubmit = async () => {
       document.value.id = String(document.value.id);
     }
     
+    // Очищаем даты от поясняющего текста перед сохранением
+    // Убираем текст после скобок или других пояснений, оставляем только формат YYYY-MM-DD
+    if (document.value.documentDate && typeof document.value.documentDate === 'string') {
+      // Извлекаем дату в формате YYYY-MM-DD из строки, которая может содержать пояснение
+      const dateMatch = document.value.documentDate.match(/^\d{4}-\d{2}-\d{2}/);
+      document.value.documentDate = dateMatch ? dateMatch[0] : '';
+    }
+    
+    // Очищаем даты для вложений
+    if (document.value.attachments && Array.isArray(document.value.attachments)) {
+      document.value.attachments = document.value.attachments.map(attachment => {
+        if (attachment.documentDate && typeof attachment.documentDate === 'string') {
+          const dateMatch = attachment.documentDate.match(/^\d{4}-\d{2}-\d{2}/);
+          return {
+            ...attachment,
+            documentDate: dateMatch ? dateMatch[0] : ''
+          };
+        }
+        return attachment;
+      });
+    }
+    
     // Обновляем currentDocument в хранилище перед сохранением
-    documentStore.currentDocument = document.value
+    // но только если данные действительно изменились
+    if (JSON.stringify(documentStore.currentDocument) !== JSON.stringify(document.value)) {
+      documentStore.currentDocument = document.value;
+    }
     console.log("Сохранение документа начато:", document.value.id);
     await documentStore.saveDocument()
     console.log("Документ успешно сохранён, перенаправление на /documents");

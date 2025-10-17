@@ -234,7 +234,7 @@ const filteredDocuments = computed(() => {
       doc.originalText.toLowerCase().includes(searchQuery.value.toLowerCase())
 
     const matchesAgency =
-      selectedAgency.value === '' || doc.agency === selectedAgency.value
+      selectedAgency.value === '' || doc.fsspDepartment === selectedAgency.value
 
     return matchesSearch && matchesAgency
   })

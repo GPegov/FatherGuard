@@ -4,13 +4,13 @@ import ejs from 'ejs';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { aiService } from './documentService.js';
 
 // Получаем __dirname в ES модулях
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Создаем экземпляр AIService
-const aiService = new AIService();
+// Используем общий экземпляр AIService из documentService
 
 class ComplaintService {
   constructor() {
@@ -45,8 +45,8 @@ class ComplaintService {
         // Попробуем найти агентство в других возможных местах
         if (requestData.documentId && db.data.documents) {
           const doc = db.data.documents.find(d => d.id === requestData.documentId);
-          if (doc && doc.agency) {
-            agency = doc.agency;
+          if (doc && doc.fsspDepartment) {
+            agency = doc.fsspDepartment;
             console.log('Агентство найдено из документа:', agency);
           }
         }
@@ -143,17 +143,15 @@ class ComplaintService {
       keySentences: Array.isArray(doc.keySentences) ? doc.keySentences : [],
       violations: Array.isArray(doc.violations) ? doc.violations : [],
       documentDate: doc.documentDate || doc.date || '',
-      senderAgency: doc.senderAgency || doc.agency || '',
+      senderAgency: doc.senderAgency || doc.fsspDepartment || '',
       date: doc.date || new Date().toISOString().split('T')[0],
-      agency: doc.agency || ''
+      agency: doc.fsspDepartment || ''
     };
   }
 
-  // Генерация жалобы через AI
   async generateWithAI(mainDocData, relatedDocsData, agency) {
     try {
       console.log("=== НАЧАЛО GENERATE WITH AI ===");
-      // Подготавливаем данные для анализа
       const analysisData = {
         summary: mainDocData.summary,
         keySentences: mainDocData.keySentences,
@@ -162,15 +160,10 @@ class ComplaintService {
         senderAgency: mainDocData.senderAgency,
         attachments: relatedDocsData
       };
-      
-      // Используем метод из aiService для построения промпта
-      const promptData = aiService.buildComplaintPrompt(analysisData, agency);
-      const prompt = aiService.preparePrompt(promptData, "generate_complaint", { agency });
-      
-      console.log('Отправка запроса к AI с промптом:', prompt.substring(0, 200) + '...');
-      console.log('Полная длина промпта:', prompt.length);
+
+      console.log('Отправка запроса к AI для генерации жалобы...');
       console.log("=== КОНЕЦ GENERATE WITH AI ===");
-      
+
       // Проверим наличие текста в документе
       if (!mainDocData.originalText || mainDocData.originalText.trim().length === 0) {
         console.log('Внимание: основной документ не содержит текста');
@@ -180,21 +173,17 @@ class ComplaintService {
       } else {
         console.log('Текст основного документа (первые 200 символов):', mainDocData.originalText.substring(0, 200) + '...');
       }
-      
-      const response = await aiService.queryLocalModel(prompt, {
-        temperature: 0.6,
-        format: "json"
-      });
-      
+
+      // ЕДИНСТВЕННЫЙ ВЫЗОВ — через aiService
+      const response = await aiService.generateComplaint(analysisData, agency, 'user_explanation');
+
       console.log('Ответ от AI получен:', typeof response);
       if (typeof response === 'string') {
         console.log('Ответ от AI (первые 200 символов):', response.substring(0, 200));
       } else {
         console.log('Ответ от AI (объект):', JSON.stringify(response).substring(0, 200));
       }
-      
       return this.parseAIResponse(response);
-      
     } catch (aiError) {
       console.error('Ошибка AI генерации:', aiError);
       console.error('Стек ошибки:', aiError.stack);
@@ -407,7 +396,7 @@ class ComplaintService {
       applicantEmail: applicantData.email,
       documentDate: documentData.date,
       documentNumber: documentData.number,
-      documentAgency: documentData.agency,
+      documentAgency: documentData.fsspDepartment,
       documentSummary: documentData.summary,
       violations: documentData.violations,
       legalReferences: mainDocData.legalReferences || [],

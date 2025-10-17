@@ -9,11 +9,10 @@ import { JSONFile } from "lowdb/node";
 import multer from "multer";
 import { v4 as uuidv4 } from "uuid";
 import fs from "fs/promises";
-import AIService from "./services/aiService.js";
+import { aiService } from "./services/documentService.js";
+import { AIConfig } from "./config/aiConfig.js";
 
-// Создаем экземпляр AIService
-console.log("Инициализация AIService...");
-const aiService = new AIService();
+// Используем общий экземпляр AIService
 console.log("AIService инициализирован с параметрами:", {
   apiUrl: aiService.apiUrl,
   activeModel: aiService.activeModel
@@ -188,7 +187,7 @@ async function startServer() {
         const testPrompt = "Ответь кратко: Что такое юридический документ?";
         console.log("Отправка тестового запроса к AIService...");
         const result = await app.locals.aiService.queryLocalModel(testPrompt, {
-          temperature: 0.1,
+          temperature: AIConfig.TEMPERATURE.KEY_SENTENCES,
           format: "json"
         });
         

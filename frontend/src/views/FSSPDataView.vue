@@ -1,7 +1,7 @@
 <template>
   <div class="fssp-container">
     <div class="header">
-      <h1>Отделения Федеральной службы Судебных Приставов</h1>
+      <h1>Отделения Федеральной Службы Судебных Приставов</h1>
       <div class="controls">
         <RegionAutocomplete
           :regions="availableRegions"

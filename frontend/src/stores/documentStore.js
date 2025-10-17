@@ -34,7 +34,7 @@ export const useDocumentStore = defineStore("document", () => {
   const currentDocument = ref({
     id: uuidv4(), // Устанавливаем ID сразу при создании
     date: new Date().toISOString().split("T")[0],
-    agency: "",
+    fsspDepartment: "", // конкретное отделение ФССП, которое допустило нарушение
     originalText: "",
     summary: "",
     keySentences: [],
@@ -61,13 +61,13 @@ export const useDocumentStore = defineStore("document", () => {
     const allAgencies = new Set(complaintAgencies);
 
     documents.value.forEach((doc) => {
-      const agency = doc.agency || doc.senderAgency;
+      const fsspDepartment = doc.fsspDepartment || doc.senderAgency;
       if (
-        agency &&
-        typeof agency === "string" &&
-        !complaintAgencies.has(agency)
+        fsspDepartment &&
+        typeof fsspDepartment === "string" &&
+        !complaintAgencies.has(fsspDepartment)
       ) {
-        allAgencies.add(agency);
+        allAgencies.add(fsspDepartment);
       }
     });
 
@@ -207,7 +207,7 @@ export const useDocumentStore = defineStore("document", () => {
     currentDocument.value = {
       id: uuidv4(), // Устанавливаем новый ID при сбросе
       date: new Date().toISOString().split("T")[0],
-      agency: "",
+      fsspDepartment: "",
       originalText: "",
       summary: "",
       keySentences: [],
@@ -285,9 +285,6 @@ export const useDocumentStore = defineStore("document", () => {
 
       console.log("Результат загрузки файлов:", data);
       
-      // Проверяем тип ID в возвращенных данных
-      validateDocumentId(data, "uploadFiles (response)");
-      
       // Обновляем только вложения, чтобы не потерять другие поля документа (например, regionCode)
       if (data.attachments && Array.isArray(data.attachments)) {
         currentDocument.value.attachments = data.attachments;
@@ -298,9 +295,7 @@ export const useDocumentStore = defineStore("document", () => {
         currentDocument.value.originalText = data.originalText;
       }
       
-      // Проверяем тип ID после обновления
-      validateDocumentId(currentDocument.value, "uploadFiles (after update)");
-      
+      // Возвращаем обновленные данные (но без ID документа, так как документ еще не создан в базе)
       return data;
     });
   };
@@ -323,42 +318,23 @@ export const useDocumentStore = defineStore("document", () => {
           : "";
 
       let savedDocument;
-      // Проверяем, существует ли документ на сервере (поиск по ID)
-      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
-        // Проверим, существует ли документ с таким ID на сервере
-        try {
-          await axios.get(`${API_BASE}/api/documents/${currentDocument.value.id}`);
-          // Если документ существует, обновляем его
-          const { data } = await axios.put(
-            `${API_BASE}/api/documents/${currentDocument.value.id}`,
-            currentDocument.value
-          );
-          savedDocument = data;
-        } catch (error) {
-          // Если документ не существует, создаем новый
-          console.log("Документ с ID не найден, создание нового документа");
-          const newDocToSave = {
-            ...currentDocument.value,
-            createdAt:
-              currentDocument.value.createdAt || new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            originalText:
-              currentDocument.value.originalText !== undefined
-                ? currentDocument.value.originalText
-                : "",
-          };
-          const { data } = await axios.post(
-            `${API_BASE}/api/documents`,
-            newDocToSave
-          );
-          savedDocument = data;
-        }
+      
+      // Проверяем, существует ли документ в локальном списке (это означает, что он уже был сохранен)
+      const isDocumentInList = documents.value.some(doc => doc.id === currentDocument.value.id);
+      
+      if (isDocumentInList && currentDocument.value.id && typeof currentDocument.value.id === 'string') {
+        // Документ уже существует в списке, обновляем его
+        console.log("Обновление существующего документа");
+        const { data } = await axios.put(
+          `${API_BASE}/api/documents/${currentDocument.value.id}`,
+          currentDocument.value
+        );
+        savedDocument = data;
       } else {
-        // Если ID не определен, создаем новый документ
-        console.log("Создание нового документа с новым ID");
+        // Документ новый или не в списке, создаем его
+        console.log("Создание нового документа");
         const newDocToSave = {
           ...currentDocument.value,
-          id: uuidv4(), // Генерируем новый UUID
           createdAt:
             currentDocument.value.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -406,14 +382,27 @@ export const useDocumentStore = defineStore("document", () => {
   };
 
   const analyzeDocument = async (documentId = null) => {
+    // Защита от повторного вызова во время анализа
+    if (isAnalyzing.value) {
+      console.log("Анализ уже выполняется, пропускаем повторный вызов");
+      return;
+    }
     
-    // Если передан ID документа, загружаем его
+    // Если передан ID документа, проверим, существует ли он в локальном списке
     if (documentId) {
-      try {
-        await fetchDocumentById(documentId);
-      } catch (fetchErr) {
-        // Если документ не найден на сервере, возможно это документ с временным ID
-        console.log("Документ с ID не найден на сервере, используем currentDocument:", fetchErr.message);
+      const isDocumentInList = documents.value.some(doc => doc.id === documentId);
+      
+      if (isDocumentInList) {
+        // Документ существует в локальном списке, можем безопасно загрузить его с сервера
+        try {
+          await fetchDocumentById(documentId);
+        } catch (fetchErr) {
+          // Если документ не найден на сервере, несмотря на наличие в списке, используем currentDocument
+          console.log("Документ с ID не найден на сервере, используем currentDocument:", fetchErr.message);
+        }
+      } else {
+        // Документ не существует в локальном списке, пропускаем загрузку с сервера
+        console.log("Документ не найден в локальном списке, используем currentDocument (новый документ)");
       }
     }
 
@@ -425,6 +414,13 @@ export const useDocumentStore = defineStore("document", () => {
       hasOriginalText,
       hasAttachmentsWithText,
     });
+
+    // Если есть вложения, но нет основного текста (пояснений пользователя), показываем ошибку
+    if (hasAttachmentsWithText && !hasOriginalText) {
+      error.value = "Для анализа вложений необходимо добавить пояснения пользователя в основной текст документа";
+      console.log("Нет пояснений пользователя для анализа вложений");
+      return;
+    }
 
     if (!hasOriginalText && !hasAttachmentsWithText) {
       error.value = "Нет текста для анализа";
@@ -439,125 +435,39 @@ export const useDocumentStore = defineStore("document", () => {
       // Проверяем тип ID перед анализом
       validateDocumentId(currentDocument.value, "analyzeDocument (before analysis)");
       
-      // Проверяем, существует ли документ на сервере
-      let documentExistsOnServer = false;
-      if (currentDocument.value.id && typeof currentDocument.value.id === 'string') {
-        try {
-          await axios.get(`${API_BASE}/api/documents/${currentDocument.value.id}`);
-          documentExistsOnServer = true;
-        } catch (err) {
-          if (err.response?.status === 404) {
-            documentExistsOnServer = false;
-            console.log("Документ с ID не существует на сервере, анализируем как новый документ");
-          } else {
-            // Если произошла другая ошибка, прерываем
-            throw err;
-          }
-        }
-      }
-      
-      // Если документ существует на сервере, анализируем его по ID
-      if (documentExistsOnServer) {
-        currentDocument.value.analysisStatus = "processing";
+      // Всегда используем один и тот же эндпоинт для анализа - по ID
+      // Даже если документ не сохранен, мы передаем все необходимые данные в теле запроса
+      currentDocument.value.analysisStatus = "processing";
 
-        // Вызываем бэкенд для анализа документа
-        const { data } = await axios.post(
-          `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
-          {
-            instructions: "",
-            strictMode: false
-          }
-        );
+      // Подготовим данные для анализа
+      const analyzeData = {
+        originalText: currentDocument.value.originalText || "",
+        attachments: currentDocument.value.attachments || [],
+        instructions: "",
+        strictMode: false
+      };
 
-        currentDocument.value = {
-          ...currentDocument.value,
-          summary: data.summary || "Не удалось сгенерировать краткую суть",
-          keySentences: Array.isArray(data.keySentences) ? 
-            data.keySentences : 
-            [],
-          violations: Array.isArray(data.violations) ?
-            data.violations :
-            [],
-          documentDate: data.documentDate || "",
-          senderAgency: data.senderAgency || "",
-          attachments: data.attachments ? 
-            currentDocument.value.attachments.map(attachment => {
-              // Найдем соответствующий анализ в результатах
-              const analysis = data.attachments.find(a => a.id === attachment.id);
-              if (analysis) {
-                return {
-                  ...attachment,
-                  analysis: {
-                    documentType: analysis.documentType || "Документ",
-                    sentDate: analysis.sentDate || "",
-                    senderAgency: analysis.senderAgency || "",
-                    summary: analysis.summary || "",
-                    keySentences: analysis.keySentences || []
-                  },
-                  documentDate: analysis.sentDate || attachment.documentDate || "",
-                  senderAgency: analysis.senderAgency || attachment.senderAgency || "",
-                  summary: analysis.summary || attachment.summary || "",
-                  keySentences: analysis.keySentences || attachment.keySentences || [],
-                  text: attachment.text || ""  // Сохраняем исходный текст вложения
-                };
-              }
-              return attachment;
-            }) : 
-            currentDocument.value.attachments,
-          analysisStatus: "completed",
-          lastAnalyzedAt: new Date().toISOString(),
-        };
+      // Вызываем бэкенд для анализа документа по ID
+      const { data } = await axios.post(
+        `${API_BASE}/api/documents/${currentDocument.value.id}/analyze`,
+        analyzeData
+      );
 
-        const savedDocument = await saveDocument();
-        return savedDocument;
-      } 
-      // Если документ не существует на сервере, анализируем его напрямую по тексту
-      else {
-        const textToAnalyze = (currentDocument.value.originalText || "").trim();
-        const attachmentsToAnalyze = currentDocument.value.attachments?.filter(att => att.text && att.text.trim().length > 0) || [];
-        
-        if (textToAnalyze === "" && attachmentsToAnalyze.length === 0) {
-          error.value = "Нет текста для анализа";
-          isAnalyzing.value = false;
-          console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
-          return;
-        }
-
-        console.log("Анализ документа: текст =", JSON.stringify(textToAnalyze), ", вложения =", attachmentsToAnalyze.length);
-
-        // Подготовим данные для анализа
-        const analyzeData = {
-          text: textToAnalyze,
-          instructions: "",
-          strictMode: false,
-          attachments: attachmentsToAnalyze.map(att => ({
-            id: att.id,
-            name: att.name,
-            text: att.text
-          }))
-        };
-
-        // Вызываем бэкенд для анализа текста напрямую
-        const { data } = await axios.post(
-          `${API_BASE}/api/documents/analyze`,
-          analyzeData
-        );
-
-        // Обновляем документ результатами анализа
-        currentDocument.value = {
-          ...currentDocument.value,
-          summary: data.summary || "Не удалось сгенерировать краткую суть",
-          keySentences: Array.isArray(data.keySentences) ? 
-            data.keySentences : 
-            [],
-          violations: Array.isArray(data.violations) ?
-            data.violations :
-            [],
-          documentDate: data.documentDate || "",
-          senderAgency: data.senderAgency || "",
-          attachments: currentDocument.value.attachments.map(attachment => {
+      currentDocument.value = {
+        ...currentDocument.value,
+        summary: data.summary || "Не удалось сгенерировать краткую суть",
+        keySentences: Array.isArray(data.keySentences) ? 
+          data.keySentences : 
+          [],
+        violations: Array.isArray(data.violations) ?
+          data.violations :
+          [],
+        documentDate: data.documentDate || "",
+        senderAgency: data.senderAgency || "",
+        attachments: data.attachments ? 
+          currentDocument.value.attachments.map(attachment => {
             // Найдем соответствующий анализ в результатах
-            const analysis = data.attachments?.find(a => a.id === attachment.id);
+            const analysis = data.attachments.find(a => a.id === attachment.id);
             if (analysis) {
               return {
                 ...attachment,
@@ -576,26 +486,22 @@ export const useDocumentStore = defineStore("document", () => {
               };
             }
             return attachment;
-          }),
-          analysisStatus: "completed",
-          lastAnalyzedAt: new Date().toISOString(),
-        };
+          }) : 
+          currentDocument.value.attachments,
+        // Сохраняем объединённый текст для отладки
+        combinedText: data.combinedText || currentDocument.value.combinedText || "",
+        analysisStatus: "completed",
+        lastAnalyzedAt: new Date().toISOString(),
+      };
 
-        // Возвращаем обновленный документ без сохранения
-        return currentDocument.value;
-      }
+      // Возвращаем обновленный документ
+      return currentDocument.value;
     } catch (err) {
-
       console.error("Ошибка анализа документа:", err);
       console.error("Статус:", err.response?.status);
       console.error("Данные ошибки:", err.response?.data);
 
-
       currentDocument.value.analysisStatus = "failed";
-      // Для новых документов не вызываем saveDocument в случае ошибки
-      if (currentDocument.value.id && typeof currentDocument.value.id === 'string' && documentExistsOnServer) {
-        await saveDocument();
-      }
       throw err;
     } finally {
       isAnalyzing.value = false;

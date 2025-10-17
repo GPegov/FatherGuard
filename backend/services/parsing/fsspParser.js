@@ -10,6 +10,7 @@ import { parseKareliaData } from "./specialCases/kareliaParser.js";
 import { parseKomiData } from "./specialCases/komiParser.js";
 import { parseMordoviaData } from "./specialCases/mordoviaParser.js";
 import { parseYakutiaData } from "./specialCases/yakutiaParser.js";
+import { parseSaratovData } from "./specialCases/saratovParser.js";
 
 // Получаем __dirname в ES модуле
 const __filename = fileURLToPath(import.meta.url);
@@ -123,6 +124,9 @@ class FSSPParser {
       } else if (this.regionCode === 14) {
         rawData = parseYakutiaData(htmlContent);
         console.log("Применение специальной логики парсинга для Республики Саха (Якутия)");
+      } else if (this.regionCode === 64) {
+        rawData = parseSaratovData(htmlContent);
+        console.log("Применение специальной логики парсинга для Саратовской области");
       } else {
         rawData = await page.evaluate((regionCode) => {
           const departments = [];
@@ -250,7 +254,7 @@ class FSSPParser {
     ];
 
     // 1. Пытаемся найти город по префиксу: "г.", "город", "с.", "п."
-    const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.)\s*([^\d,;]+)/i);
+    const prefixMatch = address.match(/(?:г\.|город|с\.|село|п\.|посёлок|пос\.|р\/п|р\.п\.|рабочий\s+посёлок)\s*([^\d,;]+)/i);
     if (prefixMatch) {
       let cityPart = prefixMatch[1].trim();
 
